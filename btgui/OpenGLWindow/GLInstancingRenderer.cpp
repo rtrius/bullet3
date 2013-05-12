@@ -1329,7 +1329,15 @@ void GLInstancingRenderer::RenderScene(void)
 	
 	err = glGetError();
 	assert(err==GL_NO_ERROR);
-	
+
+	//ScreenSpaceFluidRendererGL uses OpenGL 2.x and will not work unless the matrices are loaded here
+	//Remove this after updating it to OpenGL 3.x
+	{
+		glMatrixMode(GL_PROJECTION);
+		glLoadMatrixf(projectionMatrix);
+		glMatrixMode(GL_MODELVIEW);
+		glLoadMatrixf(modelviewMatrix);
+	}
 }
 
 

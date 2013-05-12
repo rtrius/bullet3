@@ -26,5 +26,7 @@ premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/RigidBody
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/RigidBody//kernels/solveContact.cl" --headerfile="../src/Bullet3OpenCL/RigidBody//kernels/solveContact.h" --stringname="solveContactCL" stringify
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/RigidBody//kernels/solveFriction.cl" --headerfile="../src/Bullet3OpenCL/RigidBody//kernels/solveFriction.h" --stringname="solveFrictionCL" stringify
 
+premake4 --file=stringifyKernel.lua --kernelfile="../src/BulletFluidsOpenCL/fluidSph.cl" --headerfile="../src/BulletFluidsOpenCL/fluidSphCL.h" --stringname="fluidSphCL" stringify
+
 
 pause

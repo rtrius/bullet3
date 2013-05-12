@@ -120,6 +120,8 @@
 		include "../src/Bullet3Common"
 		include "../src/Bullet3Geometry"
 		include "../src/Bullet3Collision"
+		include "../src/BulletFluids"
+		include "../src/BulletFluidsOpenCL"
 		include "../src/Bullet3Serialize/Bullet2FileLoader"
 	
 		include "../src/Bullet3OpenCL"

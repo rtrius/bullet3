@@ -33,6 +33,8 @@
 #include "rigidbody/Bullet2FileDemo.h"
 //#include "BroadphaseBenchmark.h"
 
+#include "FluidSph/GpuBoxPlaneFluidScene.h"
+
 int g_OpenGLWidth=1024;
 int g_OpenGLHeight = 768;
 bool dump_timings = false;
@@ -70,6 +72,7 @@ GpuDemo::CreateFunc* allDemos[]=
 
 	Bullet2FileDemo::MyCreateFunc,
 	GpuBoxPlaneScene::MyCreateFunc,	
+	GpuBoxPlaneFluidScene::MyCreateFunc,	
 	GpuConvexPlaneScene::MyCreateFunc,
 	
 	ConcaveSphereScene::MyCreateFunc,
