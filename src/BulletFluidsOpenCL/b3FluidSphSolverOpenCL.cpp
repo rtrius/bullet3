@@ -47,6 +47,12 @@ b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_command_qu
 	b3Assert(m_kernel_sphComputePressure);
 	m_kernel_sphComputeForce = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputeForce", &error, m_fluidsProgram, additionalMacros );
 	b3Assert(m_kernel_sphComputeForce);
+	m_applyForcesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "applyForces", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_applyForcesKernel);
+	m_collideAabbImpulseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "collideAabbImpulse", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_collideAabbImpulseKernel);
+	m_integratePositionKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "integratePositions", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_integratePositionKernel);
 }
 
 b3FluidSphSolverOpenCL::~b3FluidSphSolverOpenCL()
@@ -55,6 +61,9 @@ b3FluidSphSolverOpenCL::~b3FluidSphSolverOpenCL()
 	clReleaseKernel(m_kernel_findGridCellIndexPerParticle);
 	clReleaseKernel(m_kernel_sphComputePressure);
 	clReleaseKernel(m_kernel_sphComputeForce);
+	clReleaseKernel(m_applyForcesKernel);
+	clReleaseKernel(m_collideAabbImpulseKernel);
+	clReleaseKernel(m_integratePositionKernel);
 	clReleaseProgram(m_fluidsProgram);
 }
 
@@ -158,6 +167,7 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 //B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT is not supported when using OpenCL grid update.
 #ifdef B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT
 	const bool UPDATE_GRID_ON_GPU = false;
+	b3Assert(0);	//	current implementation requires GPU grid update
 #else
 	const bool UPDATE_GRID_ON_GPU = true;
 #endif
@@ -241,7 +251,7 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 			clFlush(m_commandQueue);
 			
 			//This branch is executed on CPU, while findNeighborCells() and sphComputePressure/Force() is simultaneously executed on GPU
-			if(UPDATE_GRID_ON_GPU)
+			if(0 && UPDATE_GRID_ON_GPU)
 			{
 				B3_PROFILE("simultaneous rearrange/AABB update");
 			
@@ -272,22 +282,90 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 		}
 	}
 	
-	//Read data from OpenCL to CPU
+	const bool GPU_INTEGRATE = true;
+	if(GPU_INTEGRATE)
 	{
-		B3_PROFILE("readFromOpenCL, applySphForce()");
+		B3_PROFILE("apply boundary impulses, integrate");
+		
 		for(int i = 0; i < numValidFluids; ++i)
 		{
-			if( m_tempSphForce.size() < validFluids[i]->numParticles() ) m_tempSphForce.resize( validFluids[i]->numParticles() );
+			b3FluidSph* fluid = validFluids[i];
+			b3FluidSphOpenCL* fluidData = m_fluidData[i];
+			int numFluidParticles = fluid->numParticles();
 		
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{ 
+					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
+					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_accumulatedForce.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(numFluidParticles);
+				
+				launcher.launch1D(numFluidParticles);
+			}
+			
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{ 
+					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
+					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_collideAabbImpulseKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(numFluidParticles);
+				
+				launcher.launch1D(numFluidParticles);
+			}
+			
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{ 
+					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_vel.getBufferCL() )
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(numFluidParticles);
+				
+				launcher.launch1D(numFluidParticles);
+			}
+		}
+		
+		clFinish(m_commandQueue);
+	}
+	
+	//Read data from OpenCL to CPU
+	{
+		B3_PROFILE("readFromOpenCL");
+		for(int i = 0; i < numValidFluids; ++i)
+		{
 			if(UPDATE_GRID_ON_GPU) m_gridData[i]->readFromOpenCL( m_commandQueue, validFluids[i]->internalGetGrid() );
-			m_fluidData[i]->readFromOpenCL( m_commandQueue, m_tempSphForce );
+		
+			if( m_tempSphForce.size() < validFluids[i]->numParticles() ) m_tempSphForce.resize( validFluids[i]->numParticles() );
+			m_fluidData[i]->readFromOpenCL( m_commandQueue, validFluids[i]->internalGetParticles(), m_tempSphForce);
 			
-			applySphForce(FG, validFluids[i], m_tempSphForce);
-			
-			b3FluidSphSolver::applyForcesSingleFluid(FG, validFluids[i]);
-			applyAabbImpulsesSingleFluid(FG, validFluids[i]);
-			
-			b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->internalGetParticles() );
+			if(!GPU_INTEGRATE)
+			{
+				applySphForce(FG, validFluids[i], m_tempSphForce);
+				
+				b3FluidSphSolver::applyForcesSingleFluid(FG, validFluids[i]);
+				applyAabbImpulsesSingleFluid(FG, validFluids[i]);
+				
+				b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->internalGetParticles() );
+			}
 		}
 	}
 }
@@ -296,7 +374,7 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 void b3FluidSphSolverOpenCL::findNeighborCells(int numActiveGridCells, int numFluidParticles, 
 												b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData)
 {
-	//B3_PROFILE("findNeighborCells");
+	B3_PROFILE("findNeighborCells");
 	
 	//Perform 9 binary searches per cell, to locate the 27 neighbor cells
 	{
@@ -331,10 +409,12 @@ void b3FluidSphSolverOpenCL::findNeighborCells(int numActiveGridCells, int numFl
 		
 		launcher.launch1D(numActiveGridCells);
 	}
+	
+	clFinish(m_commandQueue);
 }
 void b3FluidSphSolverOpenCL::sphComputePressure(int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
 {
-	//B3_PROFILE("sphComputePressure");
+	B3_PROFILE("sphComputePressure");
 	
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
@@ -351,11 +431,11 @@ void b3FluidSphSolverOpenCL::sphComputePressure(int numFluidParticles, b3FluidSo
 	launcher.setConst(numFluidParticles);
 	
 	launcher.launch1D(numFluidParticles);
-	//clFinish(m_commandQueue);
+	clFinish(m_commandQueue);
 }
 void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
 {
-	//B3_PROFILE("sphComputeForce");
+	B3_PROFILE("sphComputeForce");
 	
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
@@ -374,5 +454,5 @@ void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSorti
 	launcher.setConst(numFluidParticles);
 	
 	launcher.launch1D(numFluidParticles);
-	//clFinish(m_commandQueue);
+	clFinish(m_commandQueue);
 }

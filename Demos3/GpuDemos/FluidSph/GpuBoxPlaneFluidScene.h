@@ -21,11 +21,11 @@ public:
 
 	GpuBoxPlaneFluidScene()
 	{
-		m_sphFluid = new b3FluidSph(m_globalParameters, 65536);
+		m_sphFluid = new b3FluidSph(m_globalParameters, 1048576);
 		
 		b3FluidSphParametersLocal FL = m_sphFluid->getLocalParameters();
 		
-		b3Scalar EXTENT(35.0);
+		b3Scalar EXTENT(105.0);
 		FL.m_aabbBoundaryMin = b3Vector3(-EXTENT, 0, -EXTENT);
 		FL.m_aabbBoundaryMax = b3Vector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
@@ -60,9 +60,9 @@ public:
 	{
 		int numObjects = GpuBoxPlaneScene::createDynamicsObjects(ci);
 		
-		b3Scalar EXTENT(30.0);
-		b3Vector3 MIN(-EXTENT, EXTENT, -EXTENT);
-		b3Vector3 MAX(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
+		b3Scalar EXTENT(90.0);
+		b3Vector3 MIN(-EXTENT, b3Scalar(0.0), -EXTENT);
+		b3Vector3 MAX(EXTENT, EXTENT, EXTENT);
 		b3FluidEmitter::addVolume( m_sphFluid, MIN, MAX, b3Scalar(1.0) );
 		
 		return numObjects;
@@ -99,8 +99,8 @@ public:
 		{
 			counter = 0;
 			printf("m_sphFluid->numParticles(): %d \n", m_sphFluid->numParticles());
+			//printf("m_sphFluid->getGrid().getNumGridCells(): %d \n", m_sphFluid->getGrid().getNumGridCells());
 		}
-		//printf("m_sphFluid->getParticles().m_vel[0].y: %f \n", m_sphFluid->getParticles().m_vel[0].y);
 		
 		GpuBoxPlaneScene::clientMoveAndDisplay();
 	}

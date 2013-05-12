@@ -25,24 +25,33 @@ struct b3FluidParticles;
 class b3FluidSphOpenCL
 {
 public:
+	bool m_initialized;
+
 	b3OpenCLArray<b3FluidSphParametersLocal> m_localParameters;
 	
 	b3OpenCLArray<b3Vector3> m_pos;
+	b3OpenCLArray<b3Vector3> m_vel;
 	b3OpenCLArray<b3Vector3> m_vel_eval;
+	b3OpenCLArray<b3Vector3> m_accumulatedForce;
+	
 	b3OpenCLArray<b3Vector3> m_sph_force;
 	b3OpenCLArray<b3Scalar> m_density;
 	b3OpenCLArray<int> m_cellIndex;
-
+	
 	b3FluidSphOpenCL(cl_context context, cl_command_queue queue) :
+		m_initialized(0),
+	
 		m_localParameters(context, queue),
 		m_pos(context, queue),
+		m_vel(context, queue),
 		m_vel_eval(context, queue),
+		m_accumulatedForce(context, queue),
 		m_sph_force(context, queue),
 		m_density(context, queue),
 		m_cellIndex(context, queue) {}
 	
 	void writeToOpenCL(cl_command_queue queue, const b3FluidSphParametersLocal& FL, b3FluidParticles& particles);
-	void readFromOpenCL(cl_command_queue queue, b3AlignedObjectArray<b3Vector3>& sphForce);
+	void readFromOpenCL(cl_command_queue queue, b3FluidParticles& particles, b3AlignedObjectArray<b3Vector3>& sphForce);
 };
 
 #endif

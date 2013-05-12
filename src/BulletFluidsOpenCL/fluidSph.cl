@@ -17,87 +17,87 @@ subject to the following restrictions:
 	#pragma OPENCL EXTENSION cl_amd_printf : enable
 #endif
 
-typedef float btScalar;
-typedef float4 btVector3;
-#define btMax max
-#define btMin min
+typedef float b3Scalar;
+typedef float4 b3Vector3;
+#define b3Max max
+#define b3Min min
 
 
 //Note that these are vector3 functions -- OpenCL functions are vector4 functions
-inline btScalar btVector3_length2(btVector3 v) { return v.x*v.x + v.y*v.y + v.z*v.z; }
-inline btScalar btVector3_dot(btVector3 a, btVector3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
-inline btVector3 btVector3_normalize(btVector3 v)
+inline b3Scalar b3Vector3_length2(b3Vector3 v) { return v.x*v.x + v.y*v.y + v.z*v.z; }
+inline b3Scalar b3Vector3_dot(b3Vector3 a, b3Vector3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+inline b3Vector3 b3Vector3_normalize(b3Vector3 v)
 {
-	btScalar length2 = btVector3_length2(v);
-	if( length2 != (btScalar)0.0f ) v /= sqrt(length2);
+	b3Scalar length2 = b3Vector3_length2(v);
+	if( length2 != (b3Scalar)0.0f ) v /= sqrt(length2);
 	
 	return v;
 }
-//Defined in btFluidSortingGrid.h
+//Defined in b3FluidSortingGrid.h
 #define INVALID_FIRST_INDEX -1
 #define INVALID_LAST_INDEX -2
 
 
-//Syncronize with 'struct btFluidSphParametersGlobal' in btFluidSphParameters.h
+//Syncronize with 'struct b3FluidSphParametersGlobal' in b3FluidSphParameters.h
 typedef struct
 {
-	btScalar m_timeStep;
-	btScalar m_simulationScale;
-	btScalar m_speedLimit;
-	btScalar m_sphSmoothRadius;
-	btScalar m_sphRadiusSquared;
-	btScalar m_poly6KernCoeff;
-	btScalar m_spikyKernGradCoeff;
-	btScalar m_viscosityKernLapCoeff;
-	btScalar m_initialSum;
-} btFluidSphParametersGlobal;
+	b3Scalar m_timeStep;
+	b3Scalar m_simulationScale;
+	b3Scalar m_speedLimit;
+	b3Scalar m_sphSmoothRadius;
+	b3Scalar m_sphRadiusSquared;
+	b3Scalar m_poly6KernCoeff;
+	b3Scalar m_spikyKernGradCoeff;
+	b3Scalar m_viscosityKernLapCoeff;
+	b3Scalar m_initialSum;
+} b3FluidSphParametersGlobal;
 
-//Syncronize with 'struct btFluidSphParametersLocal' in btFluidSphParameters.h
+//Syncronize with 'struct b3FluidSphParametersLocal' in b3FluidSphParameters.h
 typedef struct
 {
-	btVector3 m_aabbBoundaryMin;
-	btVector3 m_aabbBoundaryMax;
+	b3Vector3 m_aabbBoundaryMin;
+	b3Vector3 m_aabbBoundaryMax;
 	int m_enableAabbBoundary;
-	btVector3 m_gravity;
-	btScalar m_viscosity;
-	btScalar m_restDensity;
-	btScalar m_sphParticleMass;
-	btScalar m_stiffness;
-	btScalar m_particleDist;
-	btScalar m_particleRadius;
-	btScalar m_particleMargin;
-	btScalar m_particleMass;
-	btScalar m_boundaryStiff;
-	btScalar m_boundaryDamp;
-	btScalar m_boundaryFriction;
-	btScalar m_boundaryRestitution;
-	btScalar m_boundaryErp;
-} btFluidSphParametersLocal;
+	b3Vector3 m_gravity;
+	b3Scalar m_viscosity;
+	b3Scalar m_restDensity;
+	b3Scalar m_sphParticleMass;
+	b3Scalar m_stiffness;
+	b3Scalar m_particleDist;
+	b3Scalar m_particleRadius;
+	b3Scalar m_particleMargin;
+	b3Scalar m_particleMass;
+	b3Scalar m_boundaryStiff;
+	b3Scalar m_boundaryDamp;
+	b3Scalar m_boundaryFriction;
+	b3Scalar m_boundaryRestitution;
+	b3Scalar m_boundaryErp;
+} b3FluidSphParametersLocal;
 
 
-//#define BT_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT	//Ensure that this is also #defined in btFluidSortingGrid.h
-#ifdef BT_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT	
-	typedef unsigned long btFluidGridUint64;
-	typedef btFluidGridUint64 btFluidGridCombinedPos;	//Range must contain BT_FLUID_GRID_COORD_RANGE^3
-	#define BT_FLUID_GRID_COORD_RANGE 2097152		//2^21
+//#define B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT	//Ensure that this is also #defined in b3FluidSortingGrid.h
+#ifdef B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT	
+	typedef unsigned long b3FluidGridUint64;
+	typedef b3FluidGridUint64 b3FluidGridCombinedPos;	//Range must contain B3_FLUID_GRID_COORD_RANGE^3
+	#define B3_FLUID_GRID_COORD_RANGE 2097152		//2^21
 	
-	inline void splitCombinedPosition(btFluidGridUint64 resolutionX, btFluidGridUint64 resolutionY, 
-										btFluidGridUint64 value, int* out_x, int* out_y, int* out_z)
+	inline void splitCombinedPosition(b3FluidGridUint64 resolutionX, b3FluidGridUint64 resolutionY, 
+										b3FluidGridUint64 value, int* out_x, int* out_y, int* out_z)
 	{
-		btFluidGridUint64 cellsPerLine = resolutionX;
-		btFluidGridUint64 cellsPerPlane = resolutionX * resolutionY;
+		b3FluidGridUint64 cellsPerLine = resolutionX;
+		b3FluidGridUint64 cellsPerPlane = resolutionX * resolutionY;
 		
-		btFluidGridUint64 x = value % cellsPerLine;
-		btFluidGridUint64 z = value / cellsPerPlane;
-		btFluidGridUint64 y = (value - z*cellsPerPlane) / cellsPerLine;
+		b3FluidGridUint64 x = value % cellsPerLine;
+		b3FluidGridUint64 z = value / cellsPerPlane;
+		b3FluidGridUint64 y = (value - z*cellsPerPlane) / cellsPerLine;
 		
 		*out_x = (int)x;
 		*out_z = (int)z;
 		*out_y = (int)y;
 	}
 #else
-	typedef unsigned int btFluidGridCombinedPos;		//Range must contain BT_FLUID_GRID_COORD_RANGE^3
-	#define BT_FLUID_GRID_COORD_RANGE 1024			//2^10	
+	typedef unsigned int b3FluidGridCombinedPos;		//Range must contain B3_FLUID_GRID_COORD_RANGE^3
+	#define B3_FLUID_GRID_COORD_RANGE 1024			//2^10	
 	
 	inline void splitCombinedPosition(int resolutionX, int resolutionY, int value, int* out_x, int* out_y, int* out_z)
 	{
@@ -111,8 +111,8 @@ typedef struct
 	}
 #endif
 
-typedef int btFluidGridCoordinate;
-#define BT_FLUID_GRID_COORD_RANGE_HALVED BT_FLUID_GRID_COORD_RANGE/2
+typedef int b3FluidGridCoordinate;
+#define B3_FLUID_GRID_COORD_RANGE_HALVED B3_FLUID_GRID_COORD_RANGE/2
 
 
 
@@ -121,7 +121,7 @@ typedef struct
 	int m_firstIndex;
 	int m_lastIndex;
 	
-} btFluidGridIterator;
+} b3FluidGridIterator;
 
 
 //Since the hash function used to determine the 'value' of particles is simply 
@@ -131,69 +131,69 @@ typedef struct
 //by using a 'binary range search' in the range [current_cell_value-1, current_cell_value+1]. 
 //Furthermore, as the 3 particle index ranges returned are also adjacent, it is also possible to 
 //stitch them together to form a single index range.
-#define btFluidSortingGrid_NUM_FOUND_CELLS_GPU 9
+#define b3FluidSortingGrid_NUM_FOUND_CELLS_GPU 9
 
 typedef struct
 {
-	btFluidGridIterator m_iterators[btFluidSortingGrid_NUM_FOUND_CELLS_GPU];
+	b3FluidGridIterator m_iterators[b3FluidSortingGrid_NUM_FOUND_CELLS_GPU];
 	
-} btFluidSortingGridFoundCellsGpu;		//btFluidSortingGrid::FoundCellsGpu in btFluidSortingGrid.h
+} b3FluidSortingGridFoundCellsGpu;		//b3FluidSortingGrid::FoundCellsGpu in b3FluidSortingGrid.h
 
 typedef struct 
 {
-	btFluidGridCombinedPos m_value;
+	b3FluidGridCombinedPos m_value;
 	int m_index;
 	
-} btFluidGridValueIndexPair;
+} b3FluidGridValueIndexPair;
 
 typedef struct
 {
-	btFluidGridCoordinate x;		
-	btFluidGridCoordinate y;
-	btFluidGridCoordinate z;
-	btFluidGridCoordinate padding;
+	b3FluidGridCoordinate x;		
+	b3FluidGridCoordinate y;
+	b3FluidGridCoordinate z;
+	b3FluidGridCoordinate padding;
 	
-} btFluidGridPosition;
+} b3FluidGridPosition;
 
-btFluidGridPosition getDiscretePosition(btScalar cellSize, btVector3 position)	//btFluidSortingGrid::getDiscretePosition()
+b3FluidGridPosition getDiscretePosition(b3Scalar cellSize, b3Vector3 position)	//b3FluidSortingGrid::getDiscretePosition()
 {
-	btVector3 discretePosition = position / cellSize;
+	b3Vector3 discretePosition = position / cellSize;
 	
-	btFluidGridPosition result;
-	result.x = (btFluidGridCoordinate)( (position.x >= 0.0f) ? discretePosition.x : floor(discretePosition.x) );
-	result.y = (btFluidGridCoordinate)( (position.y >= 0.0f) ? discretePosition.y : floor(discretePosition.y) );
-	result.z = (btFluidGridCoordinate)( (position.z >= 0.0f) ? discretePosition.z : floor(discretePosition.z) );
+	b3FluidGridPosition result;
+	result.x = (b3FluidGridCoordinate)( (position.x >= 0.0f) ? discretePosition.x : floor(discretePosition.x) );
+	result.y = (b3FluidGridCoordinate)( (position.y >= 0.0f) ? discretePosition.y : floor(discretePosition.y) );
+	result.z = (b3FluidGridCoordinate)( (position.z >= 0.0f) ? discretePosition.z : floor(discretePosition.z) );
 	
 	return result;
 }
-btFluidGridCombinedPos getCombinedPosition(btFluidGridPosition quantizedPosition)	//btFluidGridPosition::getCombinedPosition()
+b3FluidGridCombinedPos getCombinedPosition(b3FluidGridPosition quantizedPosition)	//b3FluidGridPosition::getCombinedPosition()
 {
-	btFluidGridCoordinate signedX = quantizedPosition.x + BT_FLUID_GRID_COORD_RANGE_HALVED;
-	btFluidGridCoordinate signedY = quantizedPosition.y + BT_FLUID_GRID_COORD_RANGE_HALVED;
-	btFluidGridCoordinate signedZ = quantizedPosition.z + BT_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedX = quantizedPosition.x + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedY = quantizedPosition.y + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedZ = quantizedPosition.z + B3_FLUID_GRID_COORD_RANGE_HALVED;
 	
-	btFluidGridCombinedPos unsignedX = (btFluidGridCombinedPos)signedX;
-	btFluidGridCombinedPos unsignedY = (btFluidGridCombinedPos)signedY * BT_FLUID_GRID_COORD_RANGE;
-	btFluidGridCombinedPos unsignedZ = (btFluidGridCombinedPos)signedZ * BT_FLUID_GRID_COORD_RANGE * BT_FLUID_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedX = (b3FluidGridCombinedPos)signedX;
+	b3FluidGridCombinedPos unsignedY = (b3FluidGridCombinedPos)signedY * B3_FLUID_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedZ = (b3FluidGridCombinedPos)signedZ * B3_FLUID_GRID_COORD_RANGE * B3_FLUID_GRID_COORD_RANGE;
 	
 	return unsignedX + unsignedY + unsignedZ;
 }
 
-__kernel void generateValueIndexPairs(__global btVector3* fluidPositions, __global btFluidGridValueIndexPair* out_pairs, 
-										btScalar cellSize, int numFluidParticles)
+__kernel void generateValueIndexPairs(__global b3Vector3* fluidPositions, __global b3FluidGridValueIndexPair* out_pairs, 
+										b3Scalar cellSize, int numFluidParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numFluidParticles) return;
 	
-	btFluidGridValueIndexPair result;
+	b3FluidGridValueIndexPair result;
 	result.m_index = index;
 	result.m_value = getCombinedPosition( getDiscretePosition(cellSize, fluidPositions[index]) );
 	
 	out_pairs[index] = result;
 }
 
-__kernel void rearrangeParticleArrays(__global btFluidGridValueIndexPair* sortedPairs, __global btVector3* rearrange, 
-										__global btVector3* temporary, int numFluidParticles)
+__kernel void rearrangeParticleArrays(__global b3FluidGridValueIndexPair* sortedPairs, __global b3Vector3* rearrange, 
+										__global b3Vector3* temporary, int numFluidParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numFluidParticles) return;
@@ -206,20 +206,20 @@ __kernel void rearrangeParticleArrays(__global btFluidGridValueIndexPair* sorted
 }
 
 
-__kernel void markUniques(__global btFluidGridValueIndexPair* valueIndexPairs, __global int* out_retainValueAtThisIndex, int numFluidParticles)
+__kernel void markUniques(__global b3FluidGridValueIndexPair* valueIndexPairs, __global int* out_retainValueAtThisIndex, int numFluidParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numFluidParticles) return;
 	
 	int lastValidIndex = numFluidParticles - 1;
 	
-	//Retain if the next particle has a different btFluidGridCombinedPos(is in another cell)
+	//Retain if the next particle has a different b3FluidGridCombinedPos(is in another cell)
 	int isRetained = (index < lastValidIndex) ? (valueIndexPairs[index].m_value != valueIndexPairs[index+1].m_value) : 1;
 	
 	out_retainValueAtThisIndex[index] = isRetained;
 }
-__kernel void storeUniques(__global btFluidGridValueIndexPair* valueIndexPairs, __global int* retainValue, __global int* scanResults, 
-							__global btFluidGridCombinedPos* out_sortGridValues, int numFluidParticles)
+__kernel void storeUniques(__global b3FluidGridValueIndexPair* valueIndexPairs, __global int* retainValue, __global int* scanResults, 
+							__global b3FluidGridCombinedPos* out_sortGridValues, int numFluidParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numFluidParticles) return;
@@ -238,9 +238,9 @@ __kernel void setZero(__global int* array, int numUniques)
 	
 	array[index] = 0;
 }
-inline int binarySearch(__global btFluidGridCombinedPos *sortGridValues, int sortGridValuesSize, btFluidGridCombinedPos value)
+inline int binarySearch(__global b3FluidGridCombinedPos *sortGridValues, int sortGridValuesSize, b3FluidGridCombinedPos value)
 {
-	//From btAlignedObjectArray::findBinarySearch()
+	//From b3AlignedObjectArray::findBinarySearch()
 	//Assumes sortGridValues[] is sorted
 	
 	int first = 0;
@@ -256,13 +256,13 @@ inline int binarySearch(__global btFluidGridCombinedPos *sortGridValues, int sor
 
 	return sortGridValuesSize;
 }
-__kernel void countUniques(__global btFluidGridValueIndexPair* valueIndexPairs, __global btFluidGridCombinedPos* sortGridValues, 
+__kernel void countUniques(__global b3FluidGridValueIndexPair* valueIndexPairs, __global b3FluidGridCombinedPos* sortGridValues, 
 							__global int* out_valuesCount, int numUniqueValues, int numFluidParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numFluidParticles) return;
 	
-	btFluidGridCombinedPos particleValue = valueIndexPairs[index].m_value;
+	b3FluidGridCombinedPos particleValue = valueIndexPairs[index].m_value;
 	
 	int countArrayIndex = binarySearch(sortGridValues, numUniqueValues, particleValue);
 	
@@ -270,7 +270,7 @@ __kernel void countUniques(__global btFluidGridValueIndexPair* valueIndexPairs, 
 	if(countArrayIndex != numUniqueValues) 
 		atomic_inc( &out_valuesCount[countArrayIndex] );
 }
-__kernel void generateIndexRanges(__global int* scanResults, __global btFluidGridIterator* out_iterators, int numActiveCells, int numParticles)
+__kernel void generateIndexRanges(__global int* scanResults, __global b3FluidGridIterator* out_iterators, int numActiveCells, int numParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numActiveCells) return;
@@ -287,18 +287,18 @@ __kernel void generateIndexRanges(__global int* scanResults, __global btFluidGri
 		upperIndex = numParticles - 1;
 	}
 	
-	out_iterators[index] = (btFluidGridIterator){ lowerIndex, upperIndex };
+	out_iterators[index] = (b3FluidGridIterator){ lowerIndex, upperIndex };
 }
 
-__kernel void generateUniques(__global btFluidGridValueIndexPair* sortedPairs, 
-							  __global btFluidGridCombinedPos* out_activeCells, __global btFluidGridIterator* out_cellContents,
+__kernel void generateUniques(__global b3FluidGridValueIndexPair* sortedPairs, 
+							  __global b3FluidGridCombinedPos* out_activeCells, __global b3FluidGridIterator* out_cellContents,
 							  __global int* out_numActiveCells, int numSortedPairs )
 {
 	//Assuming that out_activeCells[] is large enough to contain
 	//all active cells( out_activeCells.size() >= numSortedPairs ).
 
 	//Iterate from sortedPairs[0] to sortedPairs[numSortedPairs-1],
-	//adding unique btFluidGridCombinedPos(s) and btFluidGridIterator(s) to 
+	//adding unique b3FluidGridCombinedPos(s) and b3FluidGridIterator(s) to 
 	//out_activeCells and out_cellContents, respectively.
 	
 	if( get_global_id(0) == 0 )
@@ -308,13 +308,13 @@ __kernel void generateUniques(__global btFluidGridValueIndexPair* sortedPairs,
 		if( numSortedPairs ) 
 		{
 			//Crashes on compiling with Catalyst 13.1 if
-			//(btFluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX} is used directly
+			//(b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX} is used directly
 			int invalidLowerIndex = INVALID_FIRST_INDEX;
 			int invalidUpperIndex = INVALID_LAST_INDEX;
 		
 			out_activeCells[numActiveCells] = sortedPairs[0].m_value;
-			//out_cellContents[numActiveCells] = (btFluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX};
-			out_cellContents[numActiveCells] = (btFluidGridIterator){invalidLowerIndex, invalidUpperIndex};
+			//out_cellContents[numActiveCells] = (b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX};
+			out_cellContents[numActiveCells] = (b3FluidGridIterator){invalidLowerIndex, invalidUpperIndex};
 			++numActiveCells;
 			
 			out_cellContents[0].m_firstIndex = 0;
@@ -325,8 +325,8 @@ __kernel void generateUniques(__global btFluidGridValueIndexPair* sortedPairs,
 				if( sortedPairs[i].m_value != sortedPairs[i - 1].m_value )
 				{
 					out_activeCells[numActiveCells] = sortedPairs[i].m_value;
-					//out_cellContents[numActiveCells] = (btFluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX};
-					out_cellContents[numActiveCells] = (btFluidGridIterator){invalidLowerIndex, invalidUpperIndex};
+					//out_cellContents[numActiveCells] = (b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX};
+					out_cellContents[numActiveCells] = (b3FluidGridIterator){invalidLowerIndex, invalidUpperIndex};
 					++numActiveCells;
 			
 					int lastIndex = numActiveCells - 1;
@@ -350,8 +350,8 @@ __kernel void generateUniques(__global btFluidGridValueIndexPair* sortedPairs,
 	}
 }
 
-inline void binaryRangeSearch(int numActiveCells, __global btFluidGridCombinedPos* cellValues,
-							  btFluidGridCombinedPos lowerValue, btFluidGridCombinedPos upperValue, int* out_lowerIndex, int* out_upperIndex)
+inline void binaryRangeSearch(int numActiveCells, __global b3FluidGridCombinedPos* cellValues,
+							  b3FluidGridCombinedPos lowerValue, b3FluidGridCombinedPos upperValue, int* out_lowerIndex, int* out_upperIndex)
 {
 	int first = 0;
 	int last = numActiveCells - 1;
@@ -387,14 +387,14 @@ inline void binaryRangeSearch(int numActiveCells, __global btFluidGridCombinedPo
 	*out_upperIndex = numActiveCells;
 }
 
-inline void findCellsFromGridPosition(int numActiveCells, __global btFluidGridCombinedPos* cellValues, __global btFluidGridIterator* cellContents, 
-										btFluidGridPosition combinedPosition, btFluidGridIterator* out_cells)
+inline void findCellsFromGridPosition(int numActiveCells, __global b3FluidGridCombinedPos* cellValues, __global b3FluidGridIterator* cellContents, 
+										b3FluidGridPosition combinedPosition, b3FluidGridIterator* out_cells)
 {
-	btFluidGridPosition cellIndicies[btFluidSortingGrid_NUM_FOUND_CELLS_GPU];	//	may be allocated in global memory(slow)
+	b3FluidGridPosition cellIndicies[b3FluidSortingGrid_NUM_FOUND_CELLS_GPU];	//	may be allocated in global memory(slow)
 	
-	btFluidGridPosition indicies = combinedPosition;
+	b3FluidGridPosition indicies = combinedPosition;
 
-	for(int i = 0; i < btFluidSortingGrid_NUM_FOUND_CELLS_GPU; ++i) cellIndicies[i] = indicies;
+	for(int i = 0; i < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++i) cellIndicies[i] = indicies;
 	cellIndicies[1].y++;
 	cellIndicies[2].z++;
 	cellIndicies[3].y++;
@@ -411,22 +411,22 @@ inline void findCellsFromGridPosition(int numActiveCells, __global btFluidGridCo
 	cellIndicies[8].y--;
 	cellIndicies[8].z++;
 	
-	for(int i = 0; i < btFluidSortingGrid_NUM_FOUND_CELLS_GPU; ++i) 
+	for(int i = 0; i < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++i) 
 	{
 		//Crashes on compiling with Catalyst 13.1 if
-		//(btFluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX} is used directly
+		//(b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX} is used directly
 		int invalidLowerIndex = INVALID_FIRST_INDEX;
 		int invalidUpperIndex = INVALID_LAST_INDEX;
-		out_cells[i] = (btFluidGridIterator){invalidLowerIndex, invalidUpperIndex};
-		//out_cells[i] = (btFluidGridIterator){INVALID_FIRST_INDEX, INVALID_LAST_INDEX};
+		out_cells[i] = (b3FluidGridIterator){invalidLowerIndex, invalidUpperIndex};
+		//out_cells[i] = (b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_LAST_INDEX};
 	}
-	for(int i = 0; i < btFluidSortingGrid_NUM_FOUND_CELLS_GPU; ++i)
+	for(int i = 0; i < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++i)
 	{
 	
-		btFluidGridPosition lower = cellIndicies[i];
+		b3FluidGridPosition lower = cellIndicies[i];
 		lower.x--;
 	
-		btFluidGridPosition upper = cellIndicies[i];
+		b3FluidGridPosition upper = cellIndicies[i];
 		upper.x++;
 		
 		int lowerIndex, upperIndex;
@@ -434,63 +434,63 @@ inline void findCellsFromGridPosition(int numActiveCells, __global btFluidGridCo
 		
 		if(lowerIndex != numActiveCells)
 		{
-			out_cells[i] = (btFluidGridIterator){cellContents[lowerIndex].m_firstIndex, cellContents[upperIndex].m_lastIndex};
+			out_cells[i] = (b3FluidGridIterator){cellContents[lowerIndex].m_firstIndex, cellContents[upperIndex].m_lastIndex};
 		}
 	
 	}
 }
 
 
-__kernel void findNeighborCellsPerCell( __constant int* numActiveCells, __global btFluidGridCombinedPos* cellValues, 
-										__global btFluidGridIterator* cellContents, __global btFluidSortingGridFoundCellsGpu* out_foundCells)
+__kernel void findNeighborCellsPerCell( __constant int* numActiveCells, __global b3FluidGridCombinedPos* cellValues, 
+										__global b3FluidGridIterator* cellContents, __global b3FluidSortingGridFoundCellsGpu* out_foundCells)
 {
 	int gridCellIndex = get_global_id(0);
 	if(gridCellIndex >= *numActiveCells) return;
 	
-	btFluidGridCombinedPos combinedPosition = cellValues[gridCellIndex];
+	b3FluidGridCombinedPos combinedPosition = cellValues[gridCellIndex];
 	
-	btFluidGridPosition splitPosition;
-	splitCombinedPosition(BT_FLUID_GRID_COORD_RANGE, BT_FLUID_GRID_COORD_RANGE, combinedPosition, 
+	b3FluidGridPosition splitPosition;
+	splitCombinedPosition(B3_FLUID_GRID_COORD_RANGE, B3_FLUID_GRID_COORD_RANGE, combinedPosition, 
 							&splitPosition.x, &splitPosition.y, &splitPosition.z);
-	splitPosition.x -= BT_FLUID_GRID_COORD_RANGE_HALVED;
-	splitPosition.y -= BT_FLUID_GRID_COORD_RANGE_HALVED;
-	splitPosition.z -= BT_FLUID_GRID_COORD_RANGE_HALVED;
-	btFluidGridIterator foundCells[btFluidSortingGrid_NUM_FOUND_CELLS_GPU];
+	splitPosition.x -= B3_FLUID_GRID_COORD_RANGE_HALVED;
+	splitPosition.y -= B3_FLUID_GRID_COORD_RANGE_HALVED;
+	splitPosition.z -= B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridIterator foundCells[b3FluidSortingGrid_NUM_FOUND_CELLS_GPU];
 	findCellsFromGridPosition(*numActiveCells, cellValues, cellContents, splitPosition, foundCells);
-	for(int cell = 0; cell < btFluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) out_foundCells[gridCellIndex].m_iterators[cell] = foundCells[cell];
+	for(int cell = 0; cell < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) out_foundCells[gridCellIndex].m_iterators[cell] = foundCells[cell];
 }
 
-__kernel void findGridCellIndexPerParticle(__constant int* numActiveCells, __global btFluidGridIterator* cellContents, 
+__kernel void findGridCellIndexPerParticle(__constant int* numActiveCells, __global b3FluidGridIterator* cellContents, 
 											__global int* out_gridCellIndicies)
 {
 	int gridCellIndex = get_global_id(0);
 	if(gridCellIndex >= *numActiveCells) return;
 	
-	btFluidGridIterator foundCell = cellContents[gridCellIndex];
+	b3FluidGridIterator foundCell = cellContents[gridCellIndex];
 	for(int n = foundCell.m_firstIndex; n <= foundCell.m_lastIndex; ++n) out_gridCellIndicies[n] = gridCellIndex;
 }
 
 //
-#define SIMD_EPSILON FLT_EPSILON
-__kernel void sphComputePressure(__constant btFluidSphParametersGlobal* FG,  __constant btFluidSphParametersLocal* FL,
-								  __global btVector3* fluidPosition, __global btScalar* fluidDensity,
-								  __global btFluidSortingGridFoundCellsGpu* foundCells, __global int* foundCellIndex, int numFluidParticles)
+#define B3_EPSILON FLT_EPSILON
+__kernel void sphComputePressure(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL,
+								  __global b3Vector3* fluidPosition, __global b3Scalar* fluidDensity,
+								  __global b3FluidSortingGridFoundCellsGpu* foundCells, __global int* foundCellIndex, int numFluidParticles)
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	btScalar sum = FG->m_initialSum;
+	b3Scalar sum = FG->m_initialSum;
 	
-	for(int cell = 0; cell < btFluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) 
+	for(int cell = 0; cell < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) 
 	{
-		btFluidGridIterator foundCell = foundCells[ foundCellIndex[i] ].m_iterators[cell];
+		b3FluidGridIterator foundCell = foundCells[ foundCellIndex[i] ].m_iterators[cell];
 		
 		for(int n = foundCell.m_firstIndex; n <= foundCell.m_lastIndex; ++n)
 		{
-			btVector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
-			btScalar distanceSquared = btVector3_length2(delta);
+			b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+			b3Scalar distanceSquared = b3Vector3_length2(delta);
 			
-			btScalar c = FG->m_sphRadiusSquared - distanceSquared;
+			b3Scalar c = FG->m_sphRadiusSquared - distanceSquared;
 			sum += (c > 0.0f && i != n) ? c*c*c : 0.0f;		//If c is positive, the particle is within interaction radius(poly6 kernel radius)
 		}
 	}
@@ -499,43 +499,43 @@ __kernel void sphComputePressure(__constant btFluidSphParametersGlobal* FG,  __c
 }
 
 
-__kernel void sphComputeForce(__constant btFluidSphParametersGlobal* FG, __constant btFluidSphParametersLocal* FL,
-							   __global btVector3* fluidPosition, __global btVector3* fluidVelEval, 
-							   __global btVector3* fluidSphForce, __global btScalar* fluidDensity,
-							   __global btFluidSortingGridFoundCellsGpu* foundCells, __global int* foundCellIndex, int numFluidParticles)
+__kernel void sphComputeForce(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL,
+							   __global b3Vector3* fluidPosition, __global b3Vector3* fluidVelEval, 
+							   __global b3Vector3* fluidSphForce, __global b3Scalar* fluidDensity,
+							   __global b3FluidSortingGridFoundCellsGpu* foundCells, __global int* foundCellIndex, int numFluidParticles)
 {
-	btScalar vterm = FG->m_viscosityKernLapCoeff * FL->m_viscosity;
+	b3Scalar vterm = FG->m_viscosityKernLapCoeff * FL->m_viscosity;
 	
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	btScalar density_i = fluidDensity[i];
-	btScalar invDensity_i = 1.0f / density_i;
-	btScalar pressure_i = (density_i - FL->m_restDensity) * FL->m_stiffness;
+	b3Scalar density_i = fluidDensity[i];
+	b3Scalar invDensity_i = 1.0f / density_i;
+	b3Scalar pressure_i = (density_i - FL->m_restDensity) * FL->m_stiffness;
 	
-	btVector3 force = {0.0f, 0.0f, 0.0f, 0.0f};
+	b3Vector3 force = {0.0f, 0.0f, 0.0f, 0.0f};
 	
-	for(int cell = 0; cell < btFluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) 
+	for(int cell = 0; cell < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) 
 	{
-		btFluidGridIterator foundCell = foundCells[ foundCellIndex[i] ].m_iterators[cell];
+		b3FluidGridIterator foundCell = foundCells[ foundCellIndex[i] ].m_iterators[cell];
 		
 		for(int n = foundCell.m_firstIndex; n <= foundCell.m_lastIndex; ++n)
 		{	
-			btVector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
-			btScalar distanceSquared = btVector3_length2(delta);
+			b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+			b3Scalar distanceSquared = b3Vector3_length2(delta);
 			
 			if(FG->m_sphRadiusSquared > distanceSquared && i != n)
 			{
-				btScalar density_n = fluidDensity[n];
-				btScalar invDensity_n = 1.0f / density_n;
-				btScalar pressure_n = (density_n - FL->m_restDensity) * FL->m_stiffness;
+				b3Scalar density_n = fluidDensity[n];
+				b3Scalar invDensity_n = 1.0f / density_n;
+				b3Scalar pressure_n = (density_n - FL->m_restDensity) * FL->m_stiffness;
 			
-				btScalar distance = sqrt(distanceSquared);
-				btScalar c = FG->m_sphSmoothRadius - distance;
-				btScalar pterm = -0.5f * c * FG->m_spikyKernGradCoeff * (pressure_i + pressure_n);
-				pterm /= (distance < SIMD_EPSILON) ? SIMD_EPSILON : distance;
+				b3Scalar distance = sqrt(distanceSquared);
+				b3Scalar c = FG->m_sphSmoothRadius - distance;
+				b3Scalar pterm = -0.5f * c * FG->m_spikyKernGradCoeff * (pressure_i + pressure_n);
+				pterm /= (distance < B3_EPSILON) ? B3_EPSILON : distance;
 				
-				btScalar dterm = c * invDensity_i * invDensity_n;
+				b3Scalar dterm = c * invDensity_i * invDensity_n;
 				
 				force += (delta * pterm + (fluidVelEval[n] - fluidVelEval[i]) * vterm) * dterm;
 			}
@@ -543,5 +543,99 @@ __kernel void sphComputeForce(__constant btFluidSphParametersGlobal* FG, __const
 	}
 	
 	fluidSphForce[i] = force * FL->m_sphParticleMass;
+}
+
+__kernel void applyForces(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+						__global b3Vector3* fluidExternalForce, __global b3Vector3* fluidSphAcceleration,
+						__global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, int numFluidParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numFluidParticles) return;
+	
+	b3Vector3 sphAcceleration = fluidSphAcceleration[i];
+	{
+		b3Scalar speedSquared = b3Vector3_length2(sphAcceleration);
+		
+		b3Scalar speedLimitSquared = FG->m_speedLimit * FG->m_speedLimit;
+		if(speedSquared > speedLimitSquared) sphAcceleration *= FG->m_speedLimit / sqrt(speedSquared);
+	}
+	
+	b3Vector3 acceleration = FL->m_gravity + sphAcceleration + fluidExternalForce[i] / FL->m_particleMass;
+	
+	b3Vector3 vel = fluidVel[i];
+	
+	b3Vector3 vnext = vel + acceleration * FG->m_timeStep;		//v(t+1/2) = v(t-1/2) + a(t) dt	
+	fluidVelEval[i] = (vel + vnext) * 0.5f;						//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
+	fluidVel[i] = vnext;
+	
+	fluidExternalForce[i] = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
+}
+
+inline void resolveAabbCollision_impulse(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+										b3Vector3 velocity, b3Vector3 normal, b3Scalar distance, b3Vector3* out_impulse)
+{
+	if( distance < 0.0f )	//Negative distance indicates penetration
+	{
+		b3Scalar penetratingMagnitude = b3Vector3_dot(velocity, -normal);
+		if( penetratingMagnitude < 0.0f ) penetratingMagnitude = 0.0f;
+		
+		b3Vector3 penetratingVelocity = -normal * penetratingMagnitude;
+		b3Vector3 tangentialVelocity = velocity - penetratingVelocity;
+		
+		penetratingVelocity *= 1.0f + FL->m_boundaryRestitution;
+		
+		b3Scalar positionError = (-distance) * (FG->m_simulationScale/FG->m_timeStep) * FL->m_boundaryErp;
+		
+		*out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FL->m_boundaryFriction );
+	}
+}
+inline void accumulateBoundaryImpulse(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+								b3Scalar simScaleParticleRadius, b3Vector3 pos, b3Vector3 vel, b3Vector3* out_impulse)
+{
+	b3Scalar radius = simScaleParticleRadius;
+	b3Scalar simScale = FG->m_simulationScale;
+	
+	b3Vector3 boundaryMin = FL->m_aabbBoundaryMin;
+	b3Vector3 boundaryMax = FL->m_aabbBoundaryMax;
+	
+	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){ 1.0f, 0.0f, 0.0f, 0.0f}, ( pos.x - boundaryMin.x )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){-1.0f, 0.0f, 0.0f, 0.0f}, ( boundaryMax.x - pos.x )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f,  1.0f, 0.0f, 0.0f}, ( pos.y - boundaryMin.y )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f, -1.0f, 0.0f, 0.0f}, ( boundaryMax.y - pos.y )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f, 0.0f,  1.0f, 0.0f}, ( pos.z - boundaryMin.z )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f, 0.0f, -1.0f, 0.0f}, ( boundaryMax.z - pos.z )*simScale - radius, out_impulse );
+}
+__kernel void collideAabbImpulse(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+								__global b3Vector3* fluidPosition, __global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, 
+								int numFluidParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numFluidParticles) return;
+	
+	b3Vector3 pos = fluidPosition[i];
+	b3Vector3 vel = fluidVel[i];
+	
+	b3Scalar simScaleParticleRadius = FL->m_particleRadius * FG->m_simulationScale;
+	
+	b3Vector3 aabbImpulse = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
+	accumulateBoundaryImpulse(FG, FL, simScaleParticleRadius, pos, vel, &aabbImpulse);
+	
+	//Leapfrog integration
+	b3Vector3 vnext = vel + aabbImpulse;
+	fluidVelEval[i] = (vel + vnext) * 0.5f;
+	fluidVel[i] = vnext;
+}
+
+__kernel void integratePositions(__constant b3FluidSphParametersGlobal* FG, __global b3Vector3* fluidPosition,
+								__global b3Vector3* fluidVel, int numFluidParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numFluidParticles) return;
+	
+	b3Scalar timeStepDivSimScale = FG->m_timeStep / FG->m_simulationScale;
+	
+	//Leapfrog integration
+	//p(t+1) = p(t) + v(t+1/2)*dt
+	fluidPosition[i] += fluidVel[i] * timeStepDivSimScale;
 }
 

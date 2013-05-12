@@ -39,6 +39,10 @@ class b3FluidSphSolverOpenCL : public b3FluidSphSolver
 	cl_kernel m_kernel_sphComputePressure;
 	cl_kernel m_kernel_sphComputeForce;
 
+	cl_kernel m_applyForcesKernel;
+	cl_kernel m_collideAabbImpulseKernel;
+	cl_kernel m_integratePositionKernel;
+	
 	b3OpenCLArray<b3FluidSphParametersGlobal> m_globalFluidParams;
 	
 	b3AlignedObjectArray<b3FluidSphOpenCL*> m_fluidData;

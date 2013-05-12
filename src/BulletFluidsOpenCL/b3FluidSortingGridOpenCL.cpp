@@ -319,8 +319,14 @@ void b3FluidSortingGridOpenCLProgram::insertParticlesIntoGrid(cl_context context
 		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_pos.getBufferCL() );
 		fluidData->m_pos.copyFromOpenCLArray(m_tempBufferCL);
 		
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_vel.getBufferCL() );
+		fluidData->m_vel.copyFromOpenCLArray(m_tempBufferCL);
+		
 		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_vel_eval.getBufferCL() );
 		fluidData->m_vel_eval.copyFromOpenCLArray(m_tempBufferCL);
+		
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_accumulatedForce.getBufferCL() );
+		fluidData->m_accumulatedForce.copyFromOpenCLArray(m_tempBufferCL);
 		
 		clFinish(commandQueue);
 	}
