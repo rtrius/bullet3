@@ -67,8 +67,11 @@ public:
 	~ScreenSpaceFluidRendererGL();
 
 	void render(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius, 
-				float r, float g, float b, float absorptionR, float absorptionG, float absorptionB);
+				float r, float g, float b, float absorptionR, float absorptionG, float absorptionB, bool copyVboFromCpuBuffer);
 	
+	//Use to load the Vertex Buffer Object(VBO) containing particle positions with OpenCL-OpenGL interop
+	//positions are stored as float4, ordered as x,y,z,w
+	GLuint getPositionVertexBuffer() { return m_positionVertexBuffer; }
 	
 	void setWindowResolution(int width, int height)
 	{
@@ -86,10 +89,10 @@ public:
 private:
 	void initializeGlew();
 	
-	void render_stage1_generateDepthTexture(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius);
+	void render_stage1_generateDepthTexture(int numParticles, float sphereRadius);
 	void render_stage2_blurDepthTextureCurvatureFlow();
 	void render_stage2_blurDepthTextureBilateral();
-	void render_stage3_generateThickTexture(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius);
+	void render_stage3_generateThickTexture(int numParticles, float sphereRadius);
 	void render_stage4_blurThickTexture();
 	void render_stage5_generateAbsorptionAndTransparencyTexture(float absorptionR, float absorptionG, float absorptionB);
 	void render_stage6_generateSurfaceTexture();

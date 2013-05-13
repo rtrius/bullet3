@@ -76,6 +76,10 @@ protected:
 	b3FluidSphSolver* m_overrideSolver;
 	b3FluidSphParametersGlobal* m_overrideParameters;
 	
+	//Pointer to a b3FluidSphOpenCL, if an OpenCL solver is being used; 
+	//memory for this object is managed by the OpenCL solver
+	void* m_clObject;
+	
 public:
 	///@param FG Reference returned by b3FluidRigidDynamicsWorld::getGlobalParameters().
 	b3FluidSph(const b3FluidSphParametersGlobal& FG, int maxNumParticles);
@@ -178,6 +182,9 @@ public:
 		// replace later with CO_FLUID_SPH
 		return (colObj->getInternalType() == CO_USER_TYPE) ? (b3FluidSph*)colObj : 0;
 	}
+	
+	void setClObject(void* clObject) { m_clObject = clObject; }
+	const void* getClObject() const { return m_clObject; }
 };
 
 ///@brief Adds particles to a b3FluidSph.

@@ -146,6 +146,8 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 	b3AlignedObjectArray<b3FluidSph*> validFluids;
 	for(int i = 0; i < numFluids; ++i) 
 	{
+		fluids[i]->setClObject(0);
+		
 		if( fluids[i]->numParticles() ) 
 		{
 			validFluids.push_back( fluids[i] );
@@ -225,6 +227,8 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 			
 			if(!UPDATE_GRID_ON_GPU) m_gridData[i]->writeToOpenCL( m_commandQueue, validFluids[i]->internalGetGrid() );
 			m_fluidData[i]->writeToOpenCL( m_commandQueue, FL, validFluids[i]->internalGetParticles() );
+			
+			validFluids[i]->setClObject( static_cast<void*>(m_fluidData[i]) );
 		}
 	}
 	

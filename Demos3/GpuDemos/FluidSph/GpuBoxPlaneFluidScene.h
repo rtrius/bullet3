@@ -11,6 +11,7 @@
 #include "ScreenSpaceFluidRendererGL.h"
 #include "BulletFluids/Sph/b3FluidSph.h"
 #include "BulletFluidsOpenCL/b3FluidSphSolverOpenCL.h"
+#include "BulletFluidsOpenCL/b3FluidSphOpenCL.h"
 class GpuBoxPlaneFluidScene : public GpuBoxPlaneScene
 {
 public:
@@ -87,7 +88,44 @@ public:
 		float absorptionG = 1.0;
 		float absorptionB = 0.5;
 		
-		fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.2f, r, g, b, absorptionR, absorptionG, absorptionB);
+		{
+			B3_PROFILE("render fluid");
+		
+			const bool USE_MAPPED_BUFFER = false;
+			if(USE_MAPPED_BUFFER)
+			{
+				b3Assert( sizeof(b3Vector3) == 16 );
+				
+				int numParticles = m_sphFluid->numParticles();
+				int targetBufferSize = sizeof(b3Vector3) * numParticles;
+				//int currentBufferSize = 0;
+				//glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);
+			
+				//Resize VBO
+				GLuint particlePositionVbo = fluidRenderer->getPositionVertexBuffer();
+				
+				glBindBuffer(GL_ARRAY_BUFFER, particlePositionVbo);
+				//if(currentBufferSize < targetBufferSize) glBufferData(GL_ARRAY_BUFFER, targetBufferSize, 0, GL_DYNAMIC_DRAW);
+				glBufferData(GL_ARRAY_BUFFER, targetBufferSize, 0, GL_DYNAMIC_DRAW);
+				b3Vector3* glBuffer = static_cast<b3Vector3*>( glMapBufferRange(GL_ARRAY_BUFFER, 0, targetBufferSize, GL_MAP_WRITE_BIT) );
+				
+				//Copy particle positions from CL to GL buffer
+				const void* sphOpenClObject = m_sphFluid->getClObject();
+				const b3FluidSphOpenCL* sphDataCL = static_cast<const b3FluidSphOpenCL*>(sphOpenClObject);
+				if(sphDataCL) sphDataCL->m_pos.copyToHostPointer( static_cast<b3Vector3*>(glBuffer), numParticles, 0 );
+				else 
+				{
+					printf("sphDataCL: %d \n", sphDataCL);
+					b3Assert(0);
+				}
+				
+				glUnmapBuffer(GL_ARRAY_BUFFER);
+				glBindBuffer(GL_ARRAY_BUFFER, 0);
+			}
+			
+			
+			fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.2f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
+		}
 	}
 	
 	virtual void clientMoveAndDisplay()

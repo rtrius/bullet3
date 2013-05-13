@@ -440,25 +440,34 @@ ScreenSpaceFluidRendererGL::~ScreenSpaceFluidRendererGL()
 }
 	
 void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius, 
-										float r, float g, float b, float absorptionR, float absorptionG, float absorptionB)
+										float r, float g, float b, float absorptionR, float absorptionG, float absorptionB, bool copyVboFromCpuBuffer)
 {
 	b3Assert( sizeof(b3Vector3) == 16 );
 	
-	if( !particlePositions.size() ) return;
+	int numParticles = particlePositions.size();
+	if(!numParticles) return;
 	
+	//Load particle positions
+	if(copyVboFromCpuBuffer)
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(b3Vector3) * numParticles, &particlePositions[0], GL_DYNAMIC_DRAW);
+	}
+	
+	//
 	glDepthMask(GL_TRUE);
 	glEnable(GL_DEPTH_TEST);
 	
 	bool renderingResolutionDiffers = ( m_windowWidth != m_frameBuffer.getWidth() || m_windowHeight != m_frameBuffer.getHeight() );
 	if(renderingResolutionDiffers) glViewport( 0, 0, m_frameBuffer.getWidth(), m_frameBuffer.getHeight() );
 	
-	render_stage1_generateDepthTexture(particlePositions, sphereRadius);
+	render_stage1_generateDepthTexture(numParticles, sphereRadius);
 	
 	const bool USE_CURVATURE_FLOW = 0;
 	if(USE_CURVATURE_FLOW) render_stage2_blurDepthTextureCurvatureFlow();
 	else render_stage2_blurDepthTextureBilateral();
 	
-	render_stage3_generateThickTexture(particlePositions, sphereRadius);
+	render_stage3_generateThickTexture(numParticles, sphereRadius);
 	
 	render_stage4_blurThickTexture();
 	
@@ -525,7 +534,7 @@ void ScreenSpaceFluidRendererGL::initializeGlew()
 #endif
 }
 
-void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius)
+void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(int numParticles, float sphereRadius)
 {
 	glGetFloatv(GL_PROJECTION_MATRIX, m_depthProjectionMatrix); 	//Used to reconstruct positions from depth values
 
@@ -535,8 +544,6 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(const b3Alig
 	glUseProgram(m_generateDepthShader);
 	
 	{
-		int numParticles = particlePositions.size();
-		
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
 		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
@@ -544,7 +551,6 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(const b3Alig
 		glUniform1f( glGetUniformLocation(m_generateDepthShader, "pointRadius"), sphereRadius );
 
 		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(b3Vector3) * numParticles, &particlePositions[0], GL_DYNAMIC_DRAW);
 		glVertexPointer(4, GL_FLOAT, 0, 0);
 		glEnableClientState(GL_VERTEX_ARRAY);
 		
@@ -638,7 +644,7 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral()
 	glDepthFunc(GL_LESS);
 	glUseProgram(0);
 }
-void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius)
+void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParticles, float sphereRadius)
 {	
 	glEnable(GL_POINT_SPRITE);
 	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
@@ -649,8 +655,6 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(const b3Alig
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE);
 	{
-		int numParticles = particlePositions.size();
-		
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
 		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
@@ -658,7 +662,6 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(const b3Alig
 		glUniform1f( glGetUniformLocation(m_generateDepthShader, "pointRadius"), sphereRadius );
 
 		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(b3Vector3) * numParticles, &particlePositions[0], GL_DYNAMIC_DRAW);
 		glVertexPointer(4, GL_FLOAT, 0, 0);
 		glEnableClientState(GL_VERTEX_ARRAY);
 		
