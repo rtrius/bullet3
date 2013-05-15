@@ -95,7 +95,7 @@ private:
 	void render_stage3_generateThickTexture(int numParticles, float sphereRadius);
 	void render_stage4_blurThickTexture();
 	void render_stage5_generateAbsorptionAndTransparencyTexture(float absorptionR, float absorptionG, float absorptionB);
-	void render_stage6_generateSurfaceTexture();
+	void render_stage6_generateSurfaceTexture(bool useBlurredDepthTexture);
 	
 	void renderFullScreenTexture(GLuint texture2d_0, GLuint texture2d_1, GLuint texture2d_2);
 	

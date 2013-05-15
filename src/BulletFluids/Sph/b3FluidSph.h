@@ -76,9 +76,10 @@ protected:
 	b3FluidSphSolver* m_overrideSolver;
 	b3FluidSphParametersGlobal* m_overrideParameters;
 	
-	//Pointer to a b3FluidSphOpenCL, if an OpenCL solver is being used; 
-	//memory for this object is managed by the OpenCL solver
-	void* m_clObject;
+	
+	//These pointers are assigned and managed by an OpenCL solver, if one is being used 
+	void* m_fluidDataCL;	//b3FluidSphOpenCL
+	void* m_gridDataCL;		//b3FluidSortingGridOpenCL
 	
 public:
 	///@param FG Reference returned by b3FluidRigidDynamicsWorld::getGlobalParameters().
@@ -183,8 +184,10 @@ public:
 		return (colObj->getInternalType() == CO_USER_TYPE) ? (b3FluidSph*)colObj : 0;
 	}
 	
-	void setClObject(void* clObject) { m_clObject = clObject; }
-	const void* getClObject() const { return m_clObject; }
+	void setFluidDataCL(void* sphData) { m_fluidDataCL = sphData; }
+	const void* getFluidDataCL() const { return m_fluidDataCL; }
+	void setGridDataCL(void* gridData) { m_gridDataCL = gridData; }
+	const void* getGridDataCL() const { return m_gridDataCL; }
 };
 
 ///@brief Adds particles to a b3FluidSph.

@@ -220,7 +220,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 // /////////////////////////////////////////////////////////////////////////////
 //class b3FluidSortingGridOpenCLProgram
 // /////////////////////////////////////////////////////////////////////////////
-b3FluidSortingGridOpenCLProgram::b3FluidSortingGridOpenCLProgram(cl_context context, cl_command_queue queue, cl_device_id device)
+b3FluidSortingGridOpenCLProgram::b3FluidSortingGridOpenCLProgram(cl_context context, cl_device_id device, cl_command_queue queue)
 : m_tempBufferCL(context, queue), m_radixSorter(context, device, queue), 
 	m_valueIndexPairs(context, queue), m_generateUniquesProgram(context, device, queue)
 {

@@ -88,7 +88,7 @@ class b3FluidSortingGridOpenCLProgram
 	b3FluidSortingGridOpenCLProgram_GenerateUniques m_generateUniquesProgram;
 	
 public:
-	b3FluidSortingGridOpenCLProgram(cl_context context, cl_command_queue queue, cl_device_id device);
+	b3FluidSortingGridOpenCLProgram(cl_context context, cl_device_id device, cl_command_queue queue);
 	~b3FluidSortingGridOpenCLProgram();
 	
 	void insertParticlesIntoGrid(cl_context context, cl_command_queue commandQueue,

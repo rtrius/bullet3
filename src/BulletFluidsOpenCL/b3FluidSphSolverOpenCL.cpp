@@ -23,8 +23,8 @@ subject to the following restrictions:
 
 #include "fluidSphCL.h"
 
-b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_command_queue queue, cl_device_id device)
-: m_globalFluidParams(context, queue), m_sortingGridProgram(context, queue, device)
+b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id device, cl_command_queue queue)
+: m_globalFluidParams(context, queue), m_sortingGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
 {
 	m_context = context;
 	m_commandQueue = queue;
@@ -134,9 +134,9 @@ void applyAabbImpulsesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidS
 }
 ///BULLET_2_TO_3_PLACEHOLDER
 
-void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids)
+void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData)
 {	
-	B3_PROFILE("b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces()");
+	B3_PROFILE("b3FluidSphSolverOpenCL::stepSimulation()");
 	
 #ifdef B3_USE_DOUBLE_PRECISION
 	b3Assert(0 && "B3_USE_DOUBLE_PRECISION not supported on OpenCL.\n");
@@ -146,7 +146,8 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 	b3AlignedObjectArray<b3FluidSph*> validFluids;
 	for(int i = 0; i < numFluids; ++i) 
 	{
-		fluids[i]->setClObject(0);
+		fluids[i]->setFluidDataCL(0);
+		fluids[i]->setGridDataCL(0);
 		
 		if( fluids[i]->numParticles() ) 
 		{
@@ -228,7 +229,8 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 			if(!UPDATE_GRID_ON_GPU) m_gridData[i]->writeToOpenCL( m_commandQueue, validFluids[i]->internalGetGrid() );
 			m_fluidData[i]->writeToOpenCL( m_commandQueue, FL, validFluids[i]->internalGetParticles() );
 			
-			validFluids[i]->setClObject( static_cast<void*>(m_fluidData[i]) );
+			validFluids[i]->setFluidDataCL( static_cast<void*>(m_fluidData[i]) );
+			validFluids[i]->setGridDataCL( static_cast<void*>(m_gridData[i]) );
 		}
 	}
 	
@@ -255,7 +257,8 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 			clFlush(m_commandQueue);
 			
 			//This branch is executed on CPU, while findNeighborCells() and sphComputePressure/Force() is simultaneously executed on GPU
-			if(0 && UPDATE_GRID_ON_GPU)
+			/*
+			if(UPDATE_GRID_ON_GPU)
 			{
 				B3_PROFILE("simultaneous rearrange/AABB update");
 			
@@ -281,6 +284,7 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 					pointAabbMax = aabbMax;
 				}
 			}
+			*/
 			
 			clFinish(m_commandQueue);
 		}
@@ -295,6 +299,7 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 		{
 			b3FluidSph* fluid = validFluids[i];
 			b3FluidSphOpenCL* fluidData = m_fluidData[i];
+			b3FluidSortingGridOpenCL* gridData = m_gridData[i];
 			int numFluidParticles = fluid->numParticles();
 		
 			{
@@ -331,6 +336,8 @@ void b3FluidSphSolverOpenCL::updateGridAndCalculateSphForces(const b3FluidSphPar
 				
 				launcher.launch1D(numFluidParticles);
 			}
+			
+			m_fluidRigidInteractor.interact(m_globalFluidParams, fluidData, gridData, rbData);
 			
 			{
 				b3BufferInfoCL bufferInfo[] = 

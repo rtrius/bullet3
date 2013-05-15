@@ -61,6 +61,7 @@ class b3GpuSapBroadphase
 	//call writeAabbsToGpu after done making all changes (createProxy etc)
 	void writeAabbsToGpu();
 
+	int getNumAabbWS() const;
 	cl_mem	getAabbBufferWS();
 	int	getNumOverlap();
 	cl_mem	getOverlappingPairBuffer();

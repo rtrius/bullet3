@@ -64,7 +64,18 @@ public:
 	cl_mem	getCollidablesGpu();
 	int		getNumCollidablesGpu() const;
 
-
+	cl_mem getConvexPolyhedraGpu();
+	int getNumConvexPolyhedraGpu() const;
+	
+	cl_mem getFacesGpu();
+	int getNumFacesGpu() const;
+	
+	cl_mem getConvexIndiciesGpu();
+	int getNumConvexIndiciesGpu() const;
+	
+	cl_mem getConvexVerticesGpu();
+	int getNumConvexVerticesGpu() const;
+	
 	const struct b3Contact4* getContactsCPU() const;
 
 	cl_mem	getContactsGpu();

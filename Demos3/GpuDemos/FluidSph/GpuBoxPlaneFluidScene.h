@@ -7,6 +7,7 @@
 #include "OpenGLWindow/ShapeData.h"
 #include "Bullet3Common/b3Quaternion.h"
 #include "../GpuDemoInternalData.h"
+#include "../rigidbody/GpuRigidBodyDemoInternalData.h"
 
 #include "ScreenSpaceFluidRendererGL.h"
 #include "BulletFluids/Sph/b3FluidSph.h"
@@ -22,7 +23,7 @@ public:
 
 	GpuBoxPlaneFluidScene()
 	{
-		m_sphFluid = new b3FluidSph(m_globalParameters, 1048576);
+		m_sphFluid = new b3FluidSph(m_globalParameters, 131072);
 		
 		b3FluidSphParametersLocal FL = m_sphFluid->getLocalParameters();
 		
@@ -54,7 +55,7 @@ public:
 	virtual void setupScene(const ConstructionInfo& ci)
 	{
 		GpuBoxPlaneScene::setupScene(ci);
-		m_solver = new b3FluidSphSolverOpenCL(m_clData->m_clContext, m_clData->m_clQueue, m_clData->m_clDevice);
+		m_solver = new b3FluidSphSolverOpenCL(m_clData->m_clContext, m_clData->m_clDevice, m_clData->m_clQueue);
 	}
 	
 	virtual int	createDynamicsObjects(const ConstructionInfo& ci)
@@ -64,7 +65,7 @@ public:
 		b3Scalar EXTENT(90.0);
 		b3Vector3 MIN(-EXTENT, b3Scalar(0.0), -EXTENT);
 		b3Vector3 MAX(EXTENT, EXTENT, EXTENT);
-		b3FluidEmitter::addVolume( m_sphFluid, MIN, MAX, b3Scalar(1.0) );
+		b3FluidEmitter::addVolume( m_sphFluid, MIN, MAX, b3Scalar(1.3) );
 		
 		return numObjects;
 	}
@@ -84,8 +85,8 @@ public:
 		//Beer's law constants
 		//Controls the darkening of the fluid's color based on its thickness
 		//For a constant k, (k > 1) == darkens faster; (k < 1) == darkens slower; (k == 0) == disable
-		float absorptionR = 2.5;	
-		float absorptionG = 1.0;
+		float absorptionR = 0.5;	
+		float absorptionG = 0.5;
 		float absorptionB = 0.5;
 		
 		{
@@ -110,7 +111,7 @@ public:
 				b3Vector3* glBuffer = static_cast<b3Vector3*>( glMapBufferRange(GL_ARRAY_BUFFER, 0, targetBufferSize, GL_MAP_WRITE_BIT) );
 				
 				//Copy particle positions from CL to GL buffer
-				const void* sphOpenClObject = m_sphFluid->getClObject();
+				const void* sphOpenClObject = m_sphFluid->getFluidDataCL();
 				const b3FluidSphOpenCL* sphDataCL = static_cast<const b3FluidSphOpenCL*>(sphOpenClObject);
 				if(sphDataCL) sphDataCL->m_pos.copyToHostPointer( static_cast<b3Vector3*>(glBuffer), numParticles, 0 );
 				else 
@@ -130,7 +131,10 @@ public:
 	
 	virtual void clientMoveAndDisplay()
 	{
-		m_solver->updateGridAndCalculateSphForces(m_globalParameters, &m_sphFluid, 1);
+		RigidBodyGpuData rbData;
+		rbData.load(m_data->m_bp, m_data->m_np);
+		
+		m_solver->stepSimulation(m_globalParameters, &m_sphFluid, 1, rbData);
 		
 		static int counter = 0;
 		if(++counter >= 100)

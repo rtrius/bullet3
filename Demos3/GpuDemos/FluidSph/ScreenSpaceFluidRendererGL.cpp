@@ -463,9 +463,13 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	
 	render_stage1_generateDepthTexture(numParticles, sphereRadius);
 	
-	const bool USE_CURVATURE_FLOW = 0;
-	if(USE_CURVATURE_FLOW) render_stage2_blurDepthTextureCurvatureFlow();
-	else render_stage2_blurDepthTextureBilateral();
+	const bool BLUR_DEPTH_TEXTURE = false;
+	if(BLUR_DEPTH_TEXTURE)
+	{
+		const bool USE_CURVATURE_FLOW = 1;
+		if(USE_CURVATURE_FLOW) render_stage2_blurDepthTextureCurvatureFlow();
+		else render_stage2_blurDepthTextureBilateral();
+	}
 	
 	render_stage3_generateThickTexture(numParticles, sphereRadius);
 	
@@ -474,7 +478,7 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	render_stage5_generateAbsorptionAndTransparencyTexture(absorptionR, absorptionG, absorptionB);
 	
 	glColor4f(r, g, b, 1.0f);
-	render_stage6_generateSurfaceTexture();
+	render_stage6_generateSurfaceTexture(BLUR_DEPTH_TEXTURE);
 	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	
 	//Blit results to the main/window frame buffer
@@ -726,7 +730,7 @@ void ScreenSpaceFluidRendererGL::render_stage5_generateAbsorptionAndTransparency
 	glUseProgram(0);
 }
 
-void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture()
+void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture(bool useBlurredDepthTexture)
 {
 	float texelSize_x = 1.0f / static_cast<float>( m_frameBuffer.getWidth() );
 	float texelSize_y = 1.0f / static_cast<float>( m_frameBuffer.getHeight() );
@@ -737,9 +741,11 @@ void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture()
 	glUniform1i( glGetUniformLocation(m_generateSurfaceShader, "depthTextureBlurred"), 0 );
 	glUniform1i( glGetUniformLocation(m_generateSurfaceShader, "absorptionAndTransparencyTexture"), 1 );
 	
+	GLuint depthTexture = (useBlurredDepthTexture) ? m_blurredDepthTexturePass2 : m_depthTexture;
+	
 	m_frameBuffer.attachAndSetRenderTargets(m_surfaceColorTexture, m_surfaceDepthTexture);
-		renderFullScreenTexture(m_blurredDepthTexturePass2, m_absorptionAndTransparencyTexture, 0);
-		//renderFullScreenTexture(m_blurredDepthTexturePass2, m_tempColorTexture, 0);		//For display of curvature
+		renderFullScreenTexture(depthTexture, m_absorptionAndTransparencyTexture, 0);
+		//renderFullScreenTexture(depthTexture, m_tempColorTexture, 0);		//For display of curvature
 	m_frameBuffer.detachAndUseDefaultFrameBuffer();
 	
 	glUseProgram(0);

@@ -719,6 +719,42 @@ int	b3GpuNarrowPhase::getNumCollidablesGpu() const
 	return m_data->m_collidablesGPU->size();
 }
 
+cl_mem b3GpuNarrowPhase::getConvexPolyhedraGpu()
+{
+	return m_data->m_convexPolyhedraGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumConvexPolyhedraGpu() const
+{
+	return m_data->m_convexPolyhedraGPU->size();
+}
+
+cl_mem b3GpuNarrowPhase::getFacesGpu()
+{
+	return m_data->m_convexFacesGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumFacesGpu() const
+{
+	return m_data->m_convexFacesGPU->size();
+}
+
+cl_mem b3GpuNarrowPhase::getConvexIndiciesGpu()
+{
+	return m_data->m_convexIndicesGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumConvexIndiciesGpu() const
+{
+	return m_data->m_convexIndicesGPU->size();
+}
+
+cl_mem b3GpuNarrowPhase::getConvexVerticesGpu()
+{
+	return m_data->m_convexVerticesGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumConvexVerticesGpu() const
+{
+	return m_data->m_convexVerticesGPU->size();
+}
+
 
 
 
