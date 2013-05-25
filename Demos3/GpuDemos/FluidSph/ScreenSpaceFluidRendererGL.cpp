@@ -463,10 +463,10 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	
 	render_stage1_generateDepthTexture(numParticles, sphereRadius);
 	
-	const bool BLUR_DEPTH_TEXTURE = false;
+	const bool BLUR_DEPTH_TEXTURE = true;
 	if(BLUR_DEPTH_TEXTURE)
 	{
-		const bool USE_CURVATURE_FLOW = 1;
+		const bool USE_CURVATURE_FLOW = 0;
 		if(USE_CURVATURE_FLOW) render_stage2_blurDepthTextureCurvatureFlow();
 		else render_stage2_blurDepthTextureBilateral();
 	}

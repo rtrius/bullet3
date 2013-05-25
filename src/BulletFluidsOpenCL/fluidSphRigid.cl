@@ -193,7 +193,43 @@ inline int binarySearch(__global b3FluidGridCombinedPos *sortGridValues, int sor
 #define SHAPE_COMPOUND_OF_CONVEX_HULLS 6
 #define SHAPE_SPHERE 7
 
+#define mymake_float4 (float4)
+
 typedef unsigned int u32;
+
+typedef struct
+{
+	float4 m_row[3];
+}Matrix3x3;
+
+__inline
+float dot3F4(float4 a, float4 b);
+
+__inline
+float4 mtMul1(Matrix3x3 a, float4 b)
+{
+	float4 ans;
+	ans.x = dot3F4( a.m_row[0], b );
+	ans.y = dot3F4( a.m_row[1], b );
+	ans.z = dot3F4( a.m_row[2], b );
+	ans.w = 0.f;
+	return ans;
+}
+
+__inline
+float4 mtMul3(float4 a, Matrix3x3 b)
+{
+	float4 colx = mymake_float4(b.m_row[0].x, b.m_row[1].x, b.m_row[2].x, 0);
+	float4 coly = mymake_float4(b.m_row[0].y, b.m_row[1].y, b.m_row[2].y, 0);
+	float4 colz = mymake_float4(b.m_row[0].z, b.m_row[1].z, b.m_row[2].z, 0);
+
+	float4 ans;
+	ans.x = dot3F4( a, colx );
+	ans.y = dot3F4( a, coly );
+	ans.z = dot3F4( a, colz );
+	return ans;
+}
+
 
 ///keep this in sync with btCollidable.h
 typedef struct
@@ -216,8 +252,13 @@ typedef struct
 	float m_invMass;
 	float m_restituitionCoeff;
 	float m_frictionCoeff;
-} BodyData;		//b3RigidBodyCL in C++ (Bullet3Collision/NarrowPhaseCollision/b3RigidBodyCL.h)
+} BodyData;				//b3RigidBodyCL in C++ (Bullet3Collision/NarrowPhaseCollision/b3RigidBodyCL.h)
 
+typedef struct
+{
+	Matrix3x3 m_invInertia;
+	Matrix3x3 m_initInvInertia;
+} InertiaTensor;		//b3InertiaCL in C++ (Bullet3Collision/NarrowPhaseCollision/b3RigidBodyCL.h)
 
 typedef struct  
 {
@@ -535,6 +576,7 @@ bool computeContactSphereConvex
 
 #define MAX_FLUID_RIGID_PAIRS 32
 #define MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE 4
+#define MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID 256
 
 ///Contains the indicies of rigid bodies whose AABB intersects with that of a single fluid particle
 typedef struct
@@ -553,6 +595,21 @@ typedef struct
 	b3Vector3 m_normalsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space normal
 	
 } FluidRigidContacts;
+
+
+
+///Contains indicies of fluid particles that are colliding with dynamic(invMass != 0.0) rigid bodies
+///If the rigid body is static, m_numContacts should be 0; this struct is used to apply fluid-rigid impulses to the rigid bodies
+typedef struct
+{
+	int m_numContacts;
+	
+	//Fluid particle indicies; actual contact data is stored in the FluidRigidContact struct(1 per particle)
+	int m_fluidIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];
+	int m_contactIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];		//range [0, MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE - 1]
+	
+} RigidFluidContacts;
+
 
 __kernel void clearFluidRigidPairsAndContacts(__global FluidRigidPairs* pairs, __global FluidRigidContacts* contacts, int numFluidParticles)
 {
@@ -665,7 +722,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 			out_contact[i].m_rigidIndicies[contactIndex] = rigidIndex;
 			out_contact[i].m_distances[contactIndex] = distance;
 			out_contact[i].m_pointsOnRigid[contactIndex] = pointOnRigid;
-			out_contact[i].m_normalsOnRigid[contactIndex] = -normalOnRigid;		//computeContactSphereConvex() actually returns normal on particle
+			out_contact[i].m_normalsOnRigid[contactIndex] = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
 			
 			++out_contact[i].m_numContacts;
 		}
@@ -675,7 +732,8 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 }
 
 __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
-											__global BodyData* rigidBodies, __global FluidRigidContacts* contacts, 
+											__global BodyData* rigidBodies, __global InertiaTensor* rigidInertias,
+											__global FluidRigidContacts* contacts, 
 											__global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, int numFluidParticles)
 {
 	int i = get_global_id(0);
@@ -694,7 +752,10 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 		b3Vector3 pointOnRigid = contact.m_pointsOnRigid[contactIndex];
 		
 		b3Vector3 rigidPosition = rigidBodies[rigidIndex].m_pos;
+		b3Vector3 rigidLinearVelocity = rigidBodies[rigidIndex].m_linVel;
+		b3Vector3 rigidAngularVelocity = rigidBodies[rigidIndex].m_angVel;
 		b3Scalar rigidInvMass = rigidBodies[rigidIndex].m_invMass;
+		Matrix3x3 rigidInertiaTensor = rigidInertias[rigidIndex].m_invInertia;
 		
 		if( distance < 0.0f )
 		{
@@ -703,7 +764,7 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 			b3Vector3 rigidLocalHitPoint = pointOnRigid - rigidPosition;
 			
 			b3Vector3 rigidVelocity = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
-			//if(isDynamicRigidBody) rigidVelocity = rigidBody->getVelocityInLocalPoint(rigidLocalHitPoint);
+			if(isDynamicRigidBody) rigidVelocity = rigidLinearVelocity + cross3(rigidAngularVelocity, rigidLocalHitPoint);
 			rigidVelocity *= FG->m_simulationScale;
 		
 			b3Vector3 relativeVelocity = fluidVelocity - rigidVelocity;
@@ -722,6 +783,24 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 			
 			b3Vector3 particleImpulse = -(penetratingVelocity + (-normalOnRigid*positionError) + tangentialVelocity*FL->m_boundaryFriction);
 			
+			if(isDynamicRigidBody)
+			{
+				b3Scalar inertiaParticle = 1.0f / FL->m_particleMass;
+				
+				b3Vector3 relPosCrossNormal = cross3(rigidLocalHitPoint, normalOnRigid);
+				b3Scalar inertiaRigid = rigidInvMass + b3Vector3_dot( mtMul3(relPosCrossNormal, rigidInertiaTensor), relPosCrossNormal );
+				
+				particleImpulse *= 1.0f / (inertiaParticle + inertiaRigid);
+				
+				//b3Vector3 worldScaleImpulse = -particleImpulse / FG->m_simulationScale;
+				//worldScaleImpulse /= FG->m_timeStep;		//Impulse is accumulated as force
+				
+				//const b3Vector3& linearFactor = rigidBody->getLinearFactor();
+				//accumulatedRigidForce += worldScaleImpulse * linearFactor;
+				//accumulatedRigidTorque += rigidLocalHitPoint.cross(worldScaleImpulse * linearFactor) * rigidBody->getAngularFactor();
+				
+				particleImpulse *= inertiaParticle;
+			}
 			
 			//Leapfrog integration
 			b3Vector3 velNext = fluidVelocity + particleImpulse;
@@ -729,4 +808,124 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 			fluidVel[i] = velNext;
 		}
 	}
+}
+
+
+__kernel void clearRigidFluidContacts(__global RigidFluidContacts* out_rigidFluidContacts, int numRigidBodies)
+{
+	int rigidIndex = get_global_id(0);
+	if(rigidIndex >= numRigidBodies) return;
+	
+	out_rigidFluidContacts[rigidIndex].m_numContacts = 0;
+}
+
+__kernel void mapRigidFluidContacts(__global FluidRigidContacts* fluidRigidContacts,
+									__global RigidFluidContacts* out_rigidFluidContacts, int numFluidParticles)
+{
+	int particleIndex = get_global_id(0);
+	if(particleIndex >= numFluidParticles) return;
+	
+	FluidRigidContacts contacts = fluidRigidContacts[particleIndex];
+	for(int n = 0; n < contacts.m_numContacts; ++n)
+	{
+		int rigidIndex = contacts.m_rigidIndicies[n];
+		
+		int pairIndex = atomic_inc(&out_rigidFluidContacts[rigidIndex].m_numContacts);
+		if(pairIndex < MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID) 
+		{
+			out_rigidFluidContacts[rigidIndex].m_fluidIndicies[pairIndex] = particleIndex;
+			out_rigidFluidContacts[rigidIndex].m_contactIndicies[pairIndex] = n;
+		}
+	}
+}
+
+__kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
+											__global BodyData* rigidBodies, __global InertiaTensor* rigidInertias,
+											__global FluidRigidContacts* fluidContacts, __global RigidFluidContacts* rigidContacts, 
+											__global b3Vector3* fluidVel, int numRigidBodies)
+{
+	int rigidIndex = get_global_id(0);
+	if(rigidIndex >= numRigidBodies) return;
+	
+	b3Vector3 rigidPosition = rigidBodies[rigidIndex].m_pos;
+	b3Vector3 rigidLinearVelocity = rigidBodies[rigidIndex].m_linVel;
+	b3Vector3 rigidAngularVelocity = rigidBodies[rigidIndex].m_angVel;
+	b3Scalar rigidInvMass = rigidBodies[rigidIndex].m_invMass;
+	Matrix3x3 rigidInertiaTensor = rigidInertias[rigidIndex].m_invInertia;
+	
+	if(rigidInvMass == 0.0f) return;
+	
+	b3Vector3 accumulatedForce = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
+	b3Vector3 accumulatedTorque = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
+	
+	for(int i = 0; i < rigidContacts[rigidIndex].m_numContacts; ++i)
+	{
+		int particleIndex = rigidContacts[rigidIndex].m_fluidIndicies[i];
+		int contactIndex = rigidContacts[rigidIndex].m_contactIndicies[i];
+		
+		b3Vector3 fluidVelocity = fluidVel[particleIndex];
+		
+		b3Scalar distance = fluidContacts[particleIndex].m_distances[contactIndex];
+		b3Vector3 pointOnRigid = fluidContacts[particleIndex].m_pointsOnRigid[contactIndex];
+		b3Vector3 normalOnRigid = fluidContacts[particleIndex].m_normalsOnRigid[contactIndex];
+		
+		if( distance < 0.0f )
+		{
+			bool isDynamicRigidBody = (rigidInvMass != 0.0f);
+			
+			b3Vector3 rigidLocalHitPoint = pointOnRigid - rigidPosition;
+			
+			b3Vector3 rigidVelocity = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
+			if(isDynamicRigidBody) rigidVelocity = rigidLinearVelocity + cross3(rigidAngularVelocity, rigidLocalHitPoint);
+			rigidVelocity *= FG->m_simulationScale;
+		
+			b3Vector3 relativeVelocity = fluidVelocity - rigidVelocity;
+			b3Scalar penetratingMagnitude = b3Vector3_dot(relativeVelocity, -normalOnRigid);
+			if( penetratingMagnitude < 0.0f ) penetratingMagnitude = 0.0f;
+			
+			b3Vector3 penetratingVelocity = -normalOnRigid * penetratingMagnitude;
+			b3Vector3 tangentialVelocity = relativeVelocity - penetratingVelocity;
+			
+			penetratingVelocity *= 1.0f + FL->m_boundaryRestitution;
+			
+			b3Scalar penetration = -distance;
+			penetration = (penetration > FL->m_particleMargin) ? penetration : 0.0f;
+			b3Scalar positionError = penetration * (FG->m_simulationScale/FG->m_timeStep) * FL->m_boundaryErp;
+			//if(iteration != NUM_ITERATIONS - 1 ) positionError = 0;
+			
+			b3Vector3 particleImpulse = -(penetratingVelocity + (-normalOnRigid*positionError) + tangentialVelocity*FL->m_boundaryFriction);
+			
+			if(isDynamicRigidBody)
+			{
+				b3Scalar inertiaParticle = 1.0f / FL->m_particleMass;
+				
+				b3Vector3 relPosCrossNormal = cross3(rigidLocalHitPoint, normalOnRigid);
+				b3Scalar inertiaRigid = rigidInvMass + b3Vector3_dot( mtMul3(relPosCrossNormal, rigidInertiaTensor), relPosCrossNormal );
+				
+				particleImpulse *= 1.0f / (inertiaParticle + inertiaRigid);
+				
+				b3Vector3 worldScaleImpulse = -particleImpulse / FG->m_simulationScale;
+				worldScaleImpulse /= FG->m_timeStep;		//Impulse is accumulated as force
+				
+				accumulatedForce += worldScaleImpulse;
+				accumulatedTorque += cross3(rigidLocalHitPoint, worldScaleImpulse);
+				
+				//particleImpulse *= inertiaParticle;
+			}
+		}	
+	}
+	
+	//Apply accumulated forces
+	b3Scalar timeStep = FG->m_timeStep;
+		
+	rigidLinearVelocity += accumulatedForce * (rigidInvMass * timeStep);
+	rigidAngularVelocity += mtMul1(rigidInertiaTensor, accumulatedTorque) * timeStep;
+	
+	//Limit angular velocity
+	float BT_GPU_ANGULAR_MOTION_THRESHOLD = (0.25f * 3.14159254f);
+	b3Scalar angVel = sqrt( b3Vector3_dot(rigidAngularVelocity, rigidAngularVelocity) );
+	if(angVel*timeStep > BT_GPU_ANGULAR_MOTION_THRESHOLD) rigidAngularVelocity *= (BT_GPU_ANGULAR_MOTION_THRESHOLD/timeStep) / angVel;
+	
+	rigidBodies[rigidIndex].m_linVel = rigidLinearVelocity;
+	rigidBodies[rigidIndex].m_angVel = rigidAngularVelocity;
 }

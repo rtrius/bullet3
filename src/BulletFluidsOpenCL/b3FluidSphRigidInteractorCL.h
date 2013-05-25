@@ -11,7 +11,6 @@
 #include "Bullet3OpenCL/ParallelPrimitives/b3OpenCLArray.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 
-//#include "Bullet3OpenCL/ParallelPrimitives/b3FillCL.h"
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
 
@@ -86,6 +85,7 @@ struct RigidBodyGpuData
 
 #define MAX_FLUID_RIGID_PAIRS 32
 #define MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE 4
+#define MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID 256
 
 ///Contains the indicies of rigid bodies whose AABB intersects with that of a single fluid particle
 struct FluidRigidPairs
@@ -103,6 +103,13 @@ struct FluidRigidContacts
 	b3Vector3 m_normalsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
 };
 
+struct RigidFluidContacts
+{
+	int m_numContacts;
+	int m_fluidIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];
+	int m_contactIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];
+};
+
 ///Handles collision detection and response between SPH particles and (GPU) rigid bodies
 class b3FluidSphRigidInteractorCL
 {
@@ -110,7 +117,9 @@ class b3FluidSphRigidInteractorCL
 	cl_command_queue m_commandQueue;
 	
 	b3OpenCLArray<FluidRigidPairs> m_pairs;
-	b3OpenCLArray<FluidRigidContacts> m_contacts;
+	b3OpenCLArray<FluidRigidContacts> m_fluidRigidContacts;
+	b3OpenCLArray<RigidFluidContacts> m_rigidFluidContacts;
+	b3OpenCLArray<b3Vector3> m_fluidVelocities;
 	
 	cl_program m_fluidRigidProgram;
 	
@@ -119,11 +128,13 @@ class b3FluidSphRigidInteractorCL
 	cl_kernel m_fluidRigidNarrowphaseKernel;
 	cl_kernel m_resolveFluidRigidCollisionsKernel;
 	
-	//b3FillCL m_filler;
+	cl_kernel m_clearRigidFluidContactsKernel;
+	cl_kernel m_mapRigidFluidContactsKernel;
+	cl_kernel m_resolveRigidFluidCollisionsKernel;
 	
 public:
 	b3FluidSphRigidInteractorCL(cl_context context, cl_device_id device, cl_command_queue queue) 
-	: m_pairs(context, queue), m_contacts(context, queue) //, m_filler(context, device, queue)
+	: m_pairs(context, queue), m_fluidRigidContacts(context, queue), m_rigidFluidContacts(context, queue), m_fluidVelocities(context, queue)
 	{
 		m_context = context;
 		m_commandQueue = queue;
@@ -144,6 +155,13 @@ public:
 		b3Assert(m_fluidRigidNarrowphaseKernel);
 		m_resolveFluidRigidCollisionsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resolveFluidRigidCollisions", &error, m_fluidRigidProgram, additionalMacros );
 		b3Assert(m_resolveFluidRigidCollisionsKernel);
+		
+		m_clearRigidFluidContactsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "clearRigidFluidContacts", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_clearRigidFluidContactsKernel);
+		m_mapRigidFluidContactsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "mapRigidFluidContacts", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_mapRigidFluidContactsKernel);
+		m_resolveRigidFluidCollisionsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resolveRigidFluidCollisions", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_resolveRigidFluidCollisionsKernel);
 	}
 	
 	virtual ~b3FluidSphRigidInteractorCL()
@@ -152,6 +170,11 @@ public:
 		clReleaseKernel(m_fluidRigidBroadphaseKernel);
 		clReleaseKernel(m_fluidRigidNarrowphaseKernel);
 		clReleaseKernel(m_resolveFluidRigidCollisionsKernel);
+		
+		clReleaseKernel(m_clearRigidFluidContactsKernel);
+		clReleaseKernel(m_mapRigidFluidContactsKernel);
+		clReleaseKernel(m_resolveRigidFluidCollisionsKernel);
+		
 		clReleaseProgram(m_fluidRigidProgram);
 	}
 	
@@ -171,14 +194,15 @@ public:
 		
 		
 		if(m_pairs.size() < numFluidParticles) m_pairs.resize(numFluidParticles);
-		if(m_contacts.size() < numFluidParticles) m_contacts.resize(numFluidParticles);
+		if(m_fluidRigidContacts.size() < numFluidParticles) m_fluidRigidContacts.resize(numFluidParticles);
+		if(m_rigidFluidContacts.size() < numRigidBodies) m_rigidFluidContacts.resize(numRigidBodies);
 		
 		//Clear broadphase pairs and contacts
 		{
 			b3BufferInfoCL bufferInfo[] = 
 			{ 
 				b3BufferInfoCL( m_pairs.getBufferCL() ),
-				b3BufferInfoCL( m_contacts.getBufferCL() )
+				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_clearFluidRigidPairsAndContactsKernel);
@@ -235,7 +259,7 @@ public:
 				b3BufferInfoCL( rigidBodyData.m_convexIndices ),
 				b3BufferInfoCL( rigidBodyData.m_convexVertices ),
 				
-				b3BufferInfoCL( m_contacts.getBufferCL() )
+				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_fluidRigidNarrowphaseKernel);
@@ -245,17 +269,20 @@ public:
 			launcher.launch1D(numFluidParticles);
 		}
 		
-		//Resolve Collisions
+		//m_resolveFluidRigidCollisionsKernel, executed below, overwrites fluid particle velocities(m_vel);
+		//the pre-collision particle velocities are needed to calculate impulses for the dynamic rigid bodies
+		m_fluidVelocities.copyFromOpenCLArray(fluidData->m_vel);
+		
+		//Resolve Collisions - apply impulses to fluid particles
 		{
-			//Apply impulses to fluid particles (add two way interaction later)
-			
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
 				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
 				
 				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
-				b3BufferInfoCL( m_contacts.getBufferCL() ),
+				b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
+				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
 				
 				b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
 				b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
@@ -266,6 +293,61 @@ public:
 			launcher.setConst(numFluidParticles);
 			
 			launcher.launch1D(numFluidParticles);
+		}
+		
+		
+		//Map fluid contacts to rigid bodies
+		{
+			//Clear rigid side contacts
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{ 
+					b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_clearRigidFluidContactsKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(numRigidBodies);
+				
+				launcher.launch1D(numRigidBodies);
+			}
+			
+			//Map fluid to rigid
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{ 
+					b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
+					b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_mapRigidFluidContactsKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(numFluidParticles);
+				
+				launcher.launch1D(numFluidParticles);
+			}
+		}
+		
+		//Resolve Collisions - apply impulses to rigid bodies
+		{
+			b3BufferInfoCL bufferInfo[] = 
+			{ 
+				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				
+				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
+				b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
+				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
+				b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() ),
+				
+				b3BufferInfoCL( m_fluidVelocities.getBufferCL() )
+			};
+			
+			b3LauncherCL launcher(m_commandQueue, m_resolveRigidFluidCollisionsKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst(numRigidBodies);
+			
+			launcher.launch1D(numRigidBodies);
 		}
 		
 		clFinish(m_commandQueue);

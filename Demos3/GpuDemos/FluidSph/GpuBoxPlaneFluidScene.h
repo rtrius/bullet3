@@ -32,6 +32,8 @@ public:
 		FL.m_aabbBoundaryMax = b3Vector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
 		
+		FL.m_particleMass = b3Scalar(0.01);
+		
 		m_sphFluid->setLocalParameters(FL);
 		
 		m_solver = 0;
