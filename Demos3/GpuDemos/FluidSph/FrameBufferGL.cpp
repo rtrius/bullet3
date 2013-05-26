@@ -30,9 +30,12 @@ void FrameBufferGL::initialize(int width, int height)
 }
 void FrameBufferGL::deactivate()
 {
-	//Detach textures
+	//Detach textures from m_frameBuffer
+	glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, MIPMAP_LEVEL);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, MIPMAP_LEVEL);
+	
+	glBindFramebuffer(GL_FRAMEBUFFER, DEFAULT_FRAMEBUFFER);
 	
 	//
 	glDeleteFramebuffers(1, &m_frameBuffer);

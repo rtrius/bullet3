@@ -19,8 +19,10 @@ public:
 
 	b3FluidSphSolverOpenCL* m_solver;
 	b3FluidSphParametersGlobal m_globalParameters;
-	b3FluidSph *m_sphFluid;
+	b3FluidSph* m_sphFluid;
 
+	ScreenSpaceFluidRendererGL* m_fluidRenderer;
+	
 	GpuBoxPlaneFluidScene()
 	{
 		m_sphFluid = new b3FluidSph(m_globalParameters, 131072);
@@ -37,11 +39,14 @@ public:
 		m_sphFluid->setLocalParameters(FL);
 		
 		m_solver = 0;
+		m_fluidRenderer = 0;
 	}
 	virtual ~GpuBoxPlaneFluidScene()
 	{ 
 		delete m_sphFluid; 
+		
 		if(m_solver) delete m_solver;
+		if(m_fluidRenderer) delete m_fluidRenderer;
 	}
 	virtual const char* getName()
 	{
@@ -56,6 +61,11 @@ public:
 	
 	virtual void setupScene(const ConstructionInfo& ci)
 	{
+		b3Assert(m_window);
+		int width, height;
+		m_window->getRenderingResolution(width, height);
+		m_fluidRenderer = new ScreenSpaceFluidRendererGL(width, height);
+	
 		GpuBoxPlaneScene::setupScene(ci);
 		m_solver = new b3FluidSphSolverOpenCL(m_clData->m_clContext, m_clData->m_clDevice, m_clData->m_clQueue);
 	}
@@ -75,10 +85,6 @@ public:
 	virtual void renderScene()
 	{
 		GpuBoxPlaneScene::renderScene();
-		
-		static ScreenSpaceFluidRendererGL* fluidRenderer = 0;
-		if(!fluidRenderer) fluidRenderer = new ScreenSpaceFluidRendererGL(1024, 768);
-		//fluidRenderer->setRenderingResolution(512, 384);
 		
 		float r = 0.5f;
 		float g = 0.8f;
@@ -105,7 +111,7 @@ public:
 				//glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);
 			
 				//Resize VBO
-				GLuint particlePositionVbo = fluidRenderer->getPositionVertexBuffer();
+				GLuint particlePositionVbo = m_fluidRenderer->getPositionVertexBuffer();
 				
 				glBindBuffer(GL_ARRAY_BUFFER, particlePositionVbo);
 				//if(currentBufferSize < targetBufferSize) glBufferData(GL_ARRAY_BUFFER, targetBufferSize, 0, GL_DYNAMIC_DRAW);
@@ -127,7 +133,7 @@ public:
 			}
 			
 			
-			fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.2f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
+			m_fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.2f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
 		}
 	}
 	
@@ -143,10 +149,19 @@ public:
 		{
 			counter = 0;
 			printf("m_sphFluid->numParticles(): %d \n", m_sphFluid->numParticles());
-			//printf("m_sphFluid->getGrid().getNumGridCells(): %d \n", m_sphFluid->getGrid().getNumGridCells());
 		}
 		
 		GpuBoxPlaneScene::clientMoveAndDisplay();
+	}
+	
+	virtual void resize(int width, int height)
+	{
+		if(m_fluidRenderer)
+		{
+			m_fluidRenderer->setWindowResolution(width, height);
+			m_fluidRenderer->setRenderingResolution(width, height);
+			//m_fluidRenderer->setRenderingResolution(width/2, height/2);
+		}
 	}
 
 };

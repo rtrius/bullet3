@@ -595,6 +595,12 @@ void Win32Window::getMouseCoordinates(int& x, int& y)
 
 }
 
+void Win32Window::getRenderingResolution(int& width, int& height) const
+{	
+	width = m_data->m_openglViewportWidth;
+	height = m_data->m_openglViewportHeight;
+}
+
 void Win32Window::runMainLoop()
 {
 

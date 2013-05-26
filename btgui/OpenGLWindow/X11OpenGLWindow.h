@@ -46,6 +46,7 @@ public:
         virtual bool    requestedExit() const;
         virtual void    setRequestExit() ;
 
+        virtual void getRenderingResolution(int& width, int& height) const;
 
         virtual void setMouseMoveCallback(b3MouseMoveCallback   mouseCallback);
         virtual void setMouseButtonCallback(b3MouseButtonCallback       mouseCallback);

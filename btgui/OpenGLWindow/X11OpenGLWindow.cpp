@@ -387,6 +387,11 @@ void X11OpenGLWindow::setWindowTitle(const char* title)
     XStoreName(m_data->m_dpy, m_data->m_win, title);
 }
 
+void X11OpenGLWindow::getRenderingResolution(int& width, int& height) const
+{
+	width = m_data->m_gwa.width;
+	height = m_data->m_gwa.height;
+}
 
 void X11OpenGLWindow::setWheelCallback(b3WheelCallback wheelCallback)
 {

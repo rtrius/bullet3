@@ -32,17 +32,17 @@ class ScreenSpaceFluidRendererGL
 	int m_windowHeight;
 
 	GLuint m_positionVertexBuffer;
-	GLfloat m_depthProjectionMatrix[16];	//Projection matrix when m_generateDepthShader is run
+	GLfloat m_depthProjectionMatrix[16];	//Projection matrix when m_generateDepthProgram is run
 	
-	GLuint m_generateDepthShader;
-	GLuint m_blurDepthShader;
-	GLuint m_curvatureFlowShader;
+	GLuint m_generateDepthProgram;
+	GLuint m_blurDepthProgram;
+	GLuint m_curvatureFlowProgram;
 	
-	GLuint m_blurThickShader;
-	GLuint m_absorptionAndTransparencyShader;
+	GLuint m_blurThickProgram;
+	GLuint m_absorptionAndTransparencyProgram;
 	
-	GLuint m_generateSurfaceShader;
-	GLuint m_blitShader;
+	GLuint m_generateSurfaceProgram;
+	GLuint m_blitProgram;
 	
 	FrameBufferGL m_frameBuffer;
 	
@@ -84,6 +84,12 @@ public:
 	{
 		if(width <= 0 || height <= 0) return;	//ScreenSpaceFluidRendererGL::render() crashes if dimension is 0
 		m_frameBuffer.resizeTextures(width, height);
+	}
+	
+	void getWindowResolution(int& out_width, int& out_height)
+	{
+		out_width = m_windowWidth;
+		out_height = m_windowHeight;
 	}
 	
 private:

@@ -390,15 +390,15 @@ ScreenSpaceFluidRendererGL::ScreenSpaceFluidRendererGL(int screenWidth, int scre
 	m_windowHeight = screenHeight;
 	
 	//
-	m_generateDepthShader = compileProgram(generateDepthVertexShader, generateDepthFragmentShader);
-	m_blurDepthShader = compileProgram(fullScreenTextureVertexShader, bilateralFilter1dFragmentShader_depth);
-	m_curvatureFlowShader = compileProgram(fullScreenTextureVertexShader, curvatureFlowShader);
+	m_generateDepthProgram = compileProgram(generateDepthVertexShader, generateDepthFragmentShader);
+	m_blurDepthProgram = compileProgram(fullScreenTextureVertexShader, bilateralFilter1dFragmentShader_depth);
+	m_curvatureFlowProgram = compileProgram(fullScreenTextureVertexShader, curvatureFlowShader);
 	
-	m_blurThickShader = compileProgram(fullScreenTextureVertexShader, bilateralFilter1dFragmentShader_alpha);
-	m_absorptionAndTransparencyShader = compileProgram(fullScreenTextureVertexShader, absorptionAndTransparencyFragmentShader);
+	m_blurThickProgram = compileProgram(fullScreenTextureVertexShader, bilateralFilter1dFragmentShader_alpha);
+	m_absorptionAndTransparencyProgram = compileProgram(fullScreenTextureVertexShader, absorptionAndTransparencyFragmentShader);
 	
-	m_generateSurfaceShader = compileProgram(fullScreenTextureVertexShader, generateSurfaceFragmentShader);
-	m_blitShader = compileProgram(fullScreenTextureVertexShader, blitFragmentShader);
+	m_generateSurfaceProgram = compileProgram(fullScreenTextureVertexShader, generateSurfaceFragmentShader);
+	m_blitProgram = compileProgram(fullScreenTextureVertexShader, blitFragmentShader);
 	
 	//
 	glGenBuffers(1, &m_positionVertexBuffer);
@@ -423,14 +423,16 @@ ScreenSpaceFluidRendererGL::ScreenSpaceFluidRendererGL(int screenWidth, int scre
 }
 ScreenSpaceFluidRendererGL::~ScreenSpaceFluidRendererGL()
 {
-	glDeleteShader(m_generateDepthShader);
-	glDeleteShader(m_blurDepthShader);
+	glDeleteProgram(m_generateDepthProgram);
 	
-	glDeleteShader(m_blurThickShader);
-	glDeleteShader(m_absorptionAndTransparencyShader);
+	glDeleteProgram(m_blurDepthProgram);
+	glDeleteProgram(m_curvatureFlowProgram);
 	
-	glDeleteShader(m_generateSurfaceShader);
-	glDeleteShader(m_blitShader);
+	glDeleteProgram(m_blurThickProgram);
+	glDeleteProgram(m_absorptionAndTransparencyProgram);
+	
+	glDeleteProgram(m_generateSurfaceProgram);
+	glDeleteProgram(m_blitProgram);
 	
 	//
 	glDeleteBuffers(1, &m_positionVertexBuffer);
@@ -485,9 +487,9 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	if(renderingResolutionDiffers) glViewport(0, 0, m_windowWidth, m_windowHeight);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glUseProgram(m_blitShader);
-	glUniform1i( glGetUniformLocation(m_blitShader, "rgbaTexture"), 0 );
-	glUniform1i( glGetUniformLocation(m_blitShader, "depthTexture"), 1 );
+	glUseProgram(m_blitProgram);
+	glUniform1i( glGetUniformLocation(m_blitProgram, "rgbaTexture"), 0 );
+	glUniform1i( glGetUniformLocation(m_blitProgram, "depthTexture"), 1 );
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		renderFullScreenTexture(m_surfaceColorTexture, m_surfaceDepthTexture, 0);
 	glDisable(GL_BLEND);
@@ -545,14 +547,14 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(int numParti
 	glEnable(GL_POINT_SPRITE);
 	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
 	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
-	glUseProgram(m_generateDepthShader);
+	glUseProgram(m_generateDepthProgram);
 	
 	{
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
 		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
-		glUniform1f( glGetUniformLocation(m_generateDepthShader, "pointScale"), lesserDistance );
-		glUniform1f( glGetUniformLocation(m_generateDepthShader, "pointRadius"), sphereRadius );
+		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointScale"), lesserDistance );
+		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointRadius"), sphereRadius );
 
 		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
 		glVertexPointer(4, GL_FLOAT, 0, 0);
@@ -573,7 +575,7 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(int numParti
 void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
 {
 	glDepthFunc(GL_ALWAYS);
-	glUseProgram(m_curvatureFlowShader);
+	glUseProgram(m_curvatureFlowProgram);
 	
 	const float HORIZONTAL_FOV_RADIANS = B3_RADS_PER_DEG * 90.0f;
 	const float VERTICAL_FOV_RADIANS = B3_RADS_PER_DEG * 75.0f;
@@ -591,10 +593,10 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
 	float texelSizeX = 1.0f / static_cast<float>( m_frameBuffer.getWidth() );
 	float texelSizeY = 1.0f / static_cast<float>( m_frameBuffer.getHeight() );
 	
-	glUniform2f( glGetUniformLocation(m_curvatureFlowShader, "focalLength"), FOCAL_LENGTH_X, FOCAL_LENGTH_Y );
-	glUniform2f( glGetUniformLocation(m_curvatureFlowShader, "texelSize"), texelSizeX, texelSizeY );
-	glUniform1f( glGetUniformLocation(m_curvatureFlowShader, "timeStep"), 0.001f );
-	glUniform1i( glGetUniformLocation(m_curvatureFlowShader, "depthTexture"), 0 );
+	glUniform2f( glGetUniformLocation(m_curvatureFlowProgram, "focalLength"), FOCAL_LENGTH_X, FOCAL_LENGTH_Y );
+	glUniform2f( glGetUniformLocation(m_curvatureFlowProgram, "texelSize"), texelSizeX, texelSizeY );
+	glUniform1f( glGetUniformLocation(m_curvatureFlowProgram, "timeStep"), 0.001f );
+	glUniform1i( glGetUniformLocation(m_curvatureFlowProgram, "depthTexture"), 0 );
 
 	GLuint depthTextures[2] = { m_blurredDepthTexturePass2, m_depthTexture };
 	
@@ -619,27 +621,27 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
 void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral()
 {
 	glDepthFunc(GL_ALWAYS);
-	glUseProgram(m_blurDepthShader);
+	glUseProgram(m_blurDepthProgram);
 	
 	//First pass blurs along the x-axis
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "filterRadiusPixels"), 32.0f );
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "blurScale"), 0.17f );
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "blurDepthFalloff"), 24.0f );
-	glUniform2f( glGetUniformLocation(m_blurDepthShader, "blurDirection"), 1.0f, 0.0f );
-	glUniform1i( glGetUniformLocation(m_blurDepthShader, "depthTexture"), 0 );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 32.0f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurScale"), 0.17f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurDepthFalloff"), 24.0f );
+	glUniform2f( glGetUniformLocation(m_blurDepthProgram, "blurDirection"), 1.0f, 0.0f );
+	glUniform1i( glGetUniformLocation(m_blurDepthProgram, "depthTexture"), 0 );
 	
 	m_frameBuffer.attachAndSetRenderTargets(m_tempColorTexture, m_blurredDepthTexturePass1);
 		renderFullScreenTexture(m_depthTexture, 0, 0);		
 	m_frameBuffer.detachAndUseDefaultFrameBuffer();
 	
 	//Second pass blurs along the y-axis
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getHeight() ) );
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "filterRadiusPixels"), 32.0f );
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "blurScale"), 0.17f );
-	glUniform1f( glGetUniformLocation(m_blurDepthShader, "blurDepthFalloff"), 24.0f );
-	glUniform2f( glGetUniformLocation(m_blurDepthShader, "blurDirection"), 0.0f, 1.0f );
-	glUniform1i( glGetUniformLocation(m_blurDepthShader, "depthTexture"), 0 );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getHeight() ) );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 32.0f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurScale"), 0.17f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurDepthFalloff"), 24.0f );
+	glUniform2f( glGetUniformLocation(m_blurDepthProgram, "blurDirection"), 0.0f, 1.0f );
+	glUniform1i( glGetUniformLocation(m_blurDepthProgram, "depthTexture"), 0 );
 	
 	m_frameBuffer.attachAndSetRenderTargets(m_tempColorTexture, m_blurredDepthTexturePass2);
 		renderFullScreenTexture(m_blurredDepthTexturePass1, 0, 0);
@@ -653,7 +655,7 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParti
 	glEnable(GL_POINT_SPRITE);
 	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
 	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
-	glUseProgram(m_generateDepthShader);
+	glUseProgram(m_generateDepthProgram);
 
 	glDepthFunc(GL_ALWAYS);
 	glEnable(GL_BLEND);
@@ -662,8 +664,8 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParti
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
 		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
-		glUniform1f( glGetUniformLocation(m_generateDepthShader, "pointScale"), lesserDistance );
-		glUniform1f( glGetUniformLocation(m_generateDepthShader, "pointRadius"), sphereRadius );
+		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointScale"), lesserDistance );
+		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointRadius"), sphereRadius );
 
 		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
 		glVertexPointer(4, GL_FLOAT, 0, 0);
@@ -685,27 +687,27 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParti
 void ScreenSpaceFluidRendererGL::render_stage4_blurThickTexture()
 {	
 	glDepthFunc(GL_ALWAYS);
-	glUseProgram(m_blurThickShader);
+	glUseProgram(m_blurThickProgram);
 	
 	//First pass blurs along the x-axis
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "filterRadiusPixels"), 32.0f );
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "blurScale"), 0.1f );
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "blurDepthFalloff"), 6.0f );
-	glUniform2f( glGetUniformLocation(m_blurThickShader, "blurDirection"), 1.0f, 0.0f );
-	glUniform1i( glGetUniformLocation(m_blurThickShader, "alphaTexture"), 0 );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "filterRadiusPixels"), 32.0f );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "blurScale"), 0.1f );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "blurDepthFalloff"), 6.0f );
+	glUniform2f( glGetUniformLocation(m_blurThickProgram, "blurDirection"), 1.0f, 0.0f );
+	glUniform1i( glGetUniformLocation(m_blurThickProgram, "alphaTexture"), 0 );
 	
 	m_frameBuffer.attachAndSetRenderTargets(m_blurredThickTexturePass1, m_tempDepthTexture);
 		renderFullScreenTexture(m_thickTexture, 0, 0);		
 	m_frameBuffer.detachAndUseDefaultFrameBuffer();
 	
 	//Second pass blurs along the y-axis
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getHeight() ) );
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "filterRadiusPixels"), 32.0f );
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "blurScale"), 0.1f );
-	glUniform1f( glGetUniformLocation(m_blurThickShader, "blurDepthFalloff"), 6.0f );
-	glUniform2f( glGetUniformLocation(m_blurThickShader, "blurDirection"), 0.0f, 1.0f );
-	glUniform1i( glGetUniformLocation(m_blurThickShader, "alphaTexture"), 0 );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getHeight() ) );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "filterRadiusPixels"), 32.0f );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "blurScale"), 0.1f );
+	glUniform1f( glGetUniformLocation(m_blurThickProgram, "blurDepthFalloff"), 6.0f );
+	glUniform2f( glGetUniformLocation(m_blurThickProgram, "blurDirection"), 0.0f, 1.0f );
+	glUniform1i( glGetUniformLocation(m_blurThickProgram, "alphaTexture"), 0 );
 	
 	m_frameBuffer.attachAndSetRenderTargets(m_blurredThickTexturePass2, m_tempDepthTexture);
 		renderFullScreenTexture(m_blurredThickTexturePass1, 0, 0);
@@ -717,10 +719,10 @@ void ScreenSpaceFluidRendererGL::render_stage4_blurThickTexture()
 void ScreenSpaceFluidRendererGL::render_stage5_generateAbsorptionAndTransparencyTexture(float absorptionR, float absorptionG, float absorptionB)
 {
 	glDepthFunc(GL_ALWAYS);
-	glUseProgram(m_absorptionAndTransparencyShader);
+	glUseProgram(m_absorptionAndTransparencyProgram);
 	
-	glUniform3f( glGetUniformLocation(m_absorptionAndTransparencyShader, "absorption"), absorptionR, absorptionG, absorptionB);
-	glUniform1i( glGetUniformLocation(m_absorptionAndTransparencyShader, "thicknessTexture"), 0 );
+	glUniform3f( glGetUniformLocation(m_absorptionAndTransparencyProgram, "absorption"), absorptionR, absorptionG, absorptionB);
+	glUniform1i( glGetUniformLocation(m_absorptionAndTransparencyProgram, "thicknessTexture"), 0 );
 	
 	m_frameBuffer.attachAndSetRenderTargets(m_absorptionAndTransparencyTexture, m_tempDepthTexture);
 		renderFullScreenTexture(m_blurredThickTexturePass2, 0, 0);
@@ -735,11 +737,11 @@ void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture(bool useBl
 	float texelSize_x = 1.0f / static_cast<float>( m_frameBuffer.getWidth() );
 	float texelSize_y = 1.0f / static_cast<float>( m_frameBuffer.getHeight() );
 
-	glUseProgram(m_generateSurfaceShader);
-	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceShader, "depthProjectionMatrix"), 1, false, m_depthProjectionMatrix );
-	glUniform2f( glGetUniformLocation(m_generateSurfaceShader, "texelSize"), texelSize_x, texelSize_y );
-	glUniform1i( glGetUniformLocation(m_generateSurfaceShader, "depthTextureBlurred"), 0 );
-	glUniform1i( glGetUniformLocation(m_generateSurfaceShader, "absorptionAndTransparencyTexture"), 1 );
+	glUseProgram(m_generateSurfaceProgram);
+	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceProgram, "depthProjectionMatrix"), 1, false, m_depthProjectionMatrix );
+	glUniform2f( glGetUniformLocation(m_generateSurfaceProgram, "texelSize"), texelSize_x, texelSize_y );
+	glUniform1i( glGetUniformLocation(m_generateSurfaceProgram, "depthTextureBlurred"), 0 );
+	glUniform1i( glGetUniformLocation(m_generateSurfaceProgram, "absorptionAndTransparencyTexture"), 1 );
 	
 	GLuint depthTexture = (useBlurredDepthTexture) ? m_blurredDepthTexturePass2 : m_depthTexture;
 	

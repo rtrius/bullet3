@@ -63,7 +63,8 @@ public:
 	virtual	void	setRequestExit();
 
 	virtual void getMouseCoordinates(int& x, int& y);
-
+	virtual void getRenderingResolution(int& width, int& height) const;
+	
 	virtual	void setMouseMoveCallback(b3MouseMoveCallback	mouseCallback);
 	virtual	void setMouseButtonCallback(b3MouseButtonCallback	mouseCallback);
 	virtual	void setResizeCallback(b3ResizeCallback	resizeCallback);

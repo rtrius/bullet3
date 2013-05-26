@@ -89,7 +89,8 @@ class b3gWindowInterface
 		virtual	void	startRendering()=0;
 
 		virtual	void	endRendering()=0;
-
+		
+		virtual void getRenderingResolution(int& width, int& height) const = 0;		//Returns the resolution of the OpenGL viewport
 		
 		virtual void setMouseMoveCallback(b3MouseMoveCallback	mouseCallback)=0;
 		virtual void setMouseButtonCallback(b3MouseButtonCallback	mouseCallback)=0;
@@ -101,9 +102,8 @@ class b3gWindowInterface
 		virtual void setRenderCallback( b3RenderCallback renderCallback) = 0;
 	
 		virtual void setWindowTitle(const char* title)=0;
-
+		
 		virtual	float	getRetinaScale() const =0;
-
 };
 
 #endif //B3G_WINDOW_INTERFACE_H

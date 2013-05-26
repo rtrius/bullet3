@@ -40,11 +40,6 @@ int g_OpenGLHeight = 768;
 bool dump_timings = false;
 extern char OpenSansData[];
 
-static void MyResizeCallback( float width, float height)
-{
-	g_OpenGLWidth = width;
-	g_OpenGLHeight = height;
-}
 
 b3gWindowInterface* window=0;
 GwenUserInterface* gui  = 0;
@@ -65,6 +60,7 @@ enum
 
 b3AlignedObjectArray<const char*> demoNames;
 int selectedDemo = 0;
+GpuDemo* g_currentDemo = 0;
 GpuDemo::CreateFunc* allDemos[]=
 {
 //		ConcaveCompound2Scene::MyCreateFunc,
@@ -112,6 +108,13 @@ GpuDemo::CreateFunc* allDemos[]=
 	//GpuCompoundDemo::CreateFunc,
 	//EmptyDemo::CreateFunc,
 };
+
+static void MyResizeCallback( float width, float height)
+{
+	g_OpenGLWidth = width;
+	g_OpenGLHeight = height;
+	if(g_currentDemo) g_currentDemo->resize(width, height);
+}
 
 
 void	MyComboBoxCallback(int comboId, const char* item)
@@ -589,6 +592,7 @@ int main(int argc, char* argv[])
 
 	{
 		GpuDemo* demo = allDemos[selectedDemo]();
+		g_currentDemo = demo;
 //		demo->myinit();
 		bool useGpu = false;
 
@@ -720,6 +724,7 @@ int main(int argc, char* argv[])
 		demo->exitPhysics();
 		b3ProfileManager::CleanupMemory();
 		delete demo;
+		g_currentDemo = 0;
 		if (f)
 			fclose(f);
 	}

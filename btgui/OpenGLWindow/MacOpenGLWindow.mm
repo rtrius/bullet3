@@ -970,6 +970,12 @@ void MacOpenGLWindow::getMouseCoordinates(int& x, int& y)
     
 }
 
+void MacOpenGLWindow::getRenderingResolution(int& width, int& height) const
+{
+	width = m_internalData->m_width;
+	height = m_internalData->m_height;
+}
+
 void MacOpenGLWindow::setResizeCallback(b3ResizeCallback resizeCallback)
 {
     [m_internalData->m_myview setResizeCallback:resizeCallback];
