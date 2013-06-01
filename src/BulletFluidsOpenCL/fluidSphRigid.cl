@@ -184,9 +184,9 @@ inline int binarySearch(__global b3FluidGridCombinedPos *sortGridValues, int sor
 	return sortGridValuesSize;
 }
 
-///-----------------------------------------------------------------------------
-///Bullet3
-///-----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Bullet3
+// -----------------------------------------------------------------------------
 #define SHAPE_CONVEX_HULL 3
 #define SHAPE_PLANE 4
 #define SHAPE_CONCAVE_TRIMESH 5
@@ -235,7 +235,7 @@ float4 mtMul3(float4 a, Matrix3x3 b)
 typedef struct
 {
 	int m_numChildShapes;
-	int blaat2;
+	float m_radius;
 	int m_shapeType;
 	int m_shapeIndex;
 	
@@ -575,9 +575,11 @@ bool computeContactSphereConvex
 	
 	return false;
 }
-///-----------------------------------------------------------------------------
-///Bullet3
-///-----------------------------------------------------------------------------
+
+
+// -----------------------------------------------------------------------------
+// Bullet3
+// -----------------------------------------------------------------------------
 
 bool computeContactSpherePlane(float4 spherePos, float sphereRadius,
 								float4 rigidPos, float4 rigidOrn, float4 rigidPlaneEquation,
@@ -608,6 +610,26 @@ bool computeContactSpherePlane(float4 spherePos, float sphereRadius,
 	return false;
 }
 
+#define B3_EPSILON FLT_EPSILON
+bool computeContactSphereSphere(float4 particlePos, float particleRadius,
+								float4 rigidPos, float rigidRadius,
+								float* out_distance, float4* out_normalOnRigidWorld, float4* out_pointOnRigidWorld)
+{
+	float4 rigidToParticle = particlePos - rigidPos;
+	float distanceBetweenCenters = length(rigidToParticle);
+	float distance = distanceBetweenCenters - (particleRadius + rigidRadius);
+	
+	if(distance < 0.f)
+	{
+		*out_distance = distance;
+		*out_normalOnRigidWorld = (distanceBetweenCenters > B3_EPSILON) ? rigidToParticle / distanceBetweenCenters : (float4)(0.f, 1.f, 0.f, 0.f);
+		*out_pointOnRigidWorld = rigidPos + *out_normalOnRigidWorld*rigidRadius;
+		
+		return true;
+	}
+	
+	return false;
+}
 
 
 #define MAX_FLUID_RIGID_PAIRS 32
@@ -803,29 +825,47 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 		BodyData rigidBody = rigidBodies[rigidIndex];
 		
 		int collidableIndex = rigidBody.m_collidableIdx;
-		if(collidables[collidableIndex].m_shapeType != SHAPE_CONVEX_HULL 
-		&& collidables[collidableIndex].m_shapeType != SHAPE_PLANE) continue;
 		
 		bool isColliding = false;
 		float distance;
 		float4 normalOnRigid;
 		float4 pointOnRigid;
 		
-		if(collidables[collidableIndex].m_shapeType == SHAPE_CONVEX_HULL)
+		switch(collidables[collidableIndex].m_shapeType)
 		{
-			isColliding = computeContactSphereConvex( collidableIndex, collidables, convexShapes, convexVertices, convexIndices, faces,
-													fluidPosition[i], FL->m_particleRadius, rigidBody.m_pos, rigidBody.m_quat,
-													&distance, &normalOnRigid, &pointOnRigid );
-			normalOnRigid = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
-		}
-		else if(collidables[collidableIndex].m_shapeType == SHAPE_PLANE)
-		{
-			float4 rigidPlaneEquation = faces[ collidables[collidableIndex].m_shapeIndex ].m_plane;
+			case SHAPE_CONVEX_HULL:
+			{
+				isColliding = computeContactSphereConvex( collidableIndex, collidables, convexShapes, convexVertices, convexIndices, faces,
+														fluidPosition[i], FL->m_particleRadius, rigidBody.m_pos, rigidBody.m_quat,
+														&distance, &normalOnRigid, &pointOnRigid );
+				normalOnRigid = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
+			}
+				break;
+				
+			case SHAPE_PLANE:
+			{
+				float4 rigidPlaneEquation = faces[ collidables[collidableIndex].m_shapeIndex ].m_plane;
 		
-			isColliding = computeContactSpherePlane(fluidPosition[i], FL->m_particleRadius, 
-													rigidBody.m_pos, rigidBody.m_quat, rigidPlaneEquation,
-													&distance, &normalOnRigid, &pointOnRigid );
+				isColliding = computeContactSpherePlane(fluidPosition[i], FL->m_particleRadius, 
+														rigidBody.m_pos, rigidBody.m_quat, rigidPlaneEquation,
+														&distance, &normalOnRigid, &pointOnRigid );
+			}
+				break;
+			
+			case SHAPE_SPHERE:
+			{
+				float rigidSphereRadius = collidables[collidableIndex].m_radius;
+			
+				isColliding = computeContactSphereSphere(fluidPosition[i], FL->m_particleRadius,
+														rigidBody.m_pos, rigidSphereRadius,
+														&distance, &normalOnRigid, &pointOnRigid);
+			}
+				break;
+			
+			default:
+				continue;
 		}
+		
 		
 		if(isColliding)
 		{
