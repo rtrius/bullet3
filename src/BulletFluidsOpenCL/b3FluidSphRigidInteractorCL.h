@@ -113,6 +113,9 @@ struct RigidFluidContacts
 ///Handles collision detection and response between SPH particles and (GPU) rigid bodies
 class b3FluidSphRigidInteractorCL
 {
+	///Maximum number of rigid bodies with large AABBs(AABBs larger than the fluid's grid) that are considered for collision
+	static const int MAX_LARGE_AABB_RIGIDS = 32;	
+	
 	cl_context m_context;
 	cl_command_queue m_commandQueue;
 	
@@ -121,10 +124,17 @@ class b3FluidSphRigidInteractorCL
 	b3OpenCLArray<RigidFluidContacts> m_rigidFluidContacts;
 	b3OpenCLArray<b3Vector3> m_fluidVelocities;
 	
+	//Large AABB is defined here as exceeding the extent of the fluid's grid;
+	//it is not related to the b3GpuSapBroadphase
+	b3OpenCLArray<int> m_numLargeAabbRigid;
+	b3OpenCLArray<int> m_largeAabbRigidIndicies;
+	
 	cl_program m_fluidRigidProgram;
 	
 	cl_kernel m_clearFluidRigidPairsAndContactsKernel;
-	cl_kernel m_fluidRigidBroadphaseKernel;
+	cl_kernel m_detectLargeAabbRigidsKernel;
+	cl_kernel m_fluidLargeRigidBroadphaseKernel;
+	cl_kernel m_fluidSmallRigidBroadphaseKernel;
 	cl_kernel m_fluidRigidNarrowphaseKernel;
 	cl_kernel m_resolveFluidRigidCollisionsKernel;
 	
@@ -134,11 +144,18 @@ class b3FluidSphRigidInteractorCL
 	
 public:
 	b3FluidSphRigidInteractorCL(cl_context context, cl_device_id device, cl_command_queue queue) 
-	: m_pairs(context, queue), m_fluidRigidContacts(context, queue), m_rigidFluidContacts(context, queue), m_fluidVelocities(context, queue)
+	:	m_pairs(context, queue), m_fluidRigidContacts(context, queue), 
+		m_rigidFluidContacts(context, queue), m_fluidVelocities(context, queue),
+		m_numLargeAabbRigid(context, queue), m_largeAabbRigidIndicies(context, queue)
 	{
 		m_context = context;
 		m_commandQueue = queue;
 	
+		//
+		m_numLargeAabbRigid.resize(1);
+		m_largeAabbRigidIndicies.resize(MAX_LARGE_AABB_RIGIDS);
+	
+		//
 		const char CL_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSphRigid.cl";
 		
 		const char* kernelSource = fluidSphRigidCL;	//fluidSphRigidCL.h
@@ -149,8 +166,12 @@ public:
 		
 		m_clearFluidRigidPairsAndContactsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "clearFluidRigidPairsAndContacts", &error, m_fluidRigidProgram, additionalMacros );
 		b3Assert(m_clearFluidRigidPairsAndContactsKernel);
-		m_fluidRigidBroadphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidRigidBroadphase", &error, m_fluidRigidProgram, additionalMacros );
-		b3Assert(m_fluidRigidBroadphaseKernel);
+		m_detectLargeAabbRigidsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "detectLargeAabbRigids", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_detectLargeAabbRigidsKernel);
+		m_fluidLargeRigidBroadphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidLargeRigidBroadphase", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_fluidLargeRigidBroadphaseKernel);
+		m_fluidSmallRigidBroadphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidSmallRigidBroadphase", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_fluidSmallRigidBroadphaseKernel);
 		m_fluidRigidNarrowphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidRigidNarrowphase", &error, m_fluidRigidProgram, additionalMacros );
 		b3Assert(m_fluidRigidNarrowphaseKernel);
 		m_resolveFluidRigidCollisionsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resolveFluidRigidCollisions", &error, m_fluidRigidProgram, additionalMacros );
@@ -167,7 +188,9 @@ public:
 	virtual ~b3FluidSphRigidInteractorCL()
 	{
 		clReleaseKernel(m_clearFluidRigidPairsAndContactsKernel);
-		clReleaseKernel(m_fluidRigidBroadphaseKernel);
+		clReleaseKernel(m_detectLargeAabbRigidsKernel);
+		clReleaseKernel(m_fluidLargeRigidBroadphaseKernel);
+		clReleaseKernel(m_fluidSmallRigidBroadphaseKernel);
 		clReleaseKernel(m_fluidRigidNarrowphaseKernel);
 		clReleaseKernel(m_resolveFluidRigidCollisionsKernel);
 		
@@ -212,7 +235,57 @@ public:
 			launcher.launch1D(numFluidParticles);
 		}
 	
-		//Broadphase
+		//Broadphase - large AABB rigids
+		{
+			const int reset = 0;
+			m_numLargeAabbRigid.copyFromHostPointer(&reset, 1);
+			
+			//Detect rigids with large AABBs
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{
+					b3BufferInfoCL( globalFluidParams.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					
+					b3BufferInfoCL( rigidBodyData.m_worldSpaceAabbs ),
+					
+					m_numLargeAabbRigid.getBufferCL(),
+					m_largeAabbRigidIndicies.getBufferCL()
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_detectLargeAabbRigidsKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(MAX_LARGE_AABB_RIGIDS);
+				launcher.setConst(numRigidBodies);
+				
+				launcher.launch1D(numRigidBodies);
+			}
+			
+			//Intersection test with fluid AABBs
+			{
+				b3BufferInfoCL bufferInfo[] = 
+				{
+					b3BufferInfoCL( globalFluidParams.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+				
+					b3BufferInfoCL( rigidBodyData.m_worldSpaceAabbs ),
+					
+					m_numLargeAabbRigid.getBufferCL(),
+					m_largeAabbRigidIndicies.getBufferCL(),
+					
+					b3BufferInfoCL( m_pairs.getBufferCL() )
+				};
+				
+				b3LauncherCL launcher(m_commandQueue, m_fluidLargeRigidBroadphaseKernel);
+				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+				launcher.setConst(numFluidParticles);
+				
+				launcher.launch1D(numFluidParticles);
+			}
+		}
+	
+		//Broadphase - small AABB rigids
 		{
 			//Quantize the rigid AABB into fluid grid coordinates,
 			//then test each particle in each intersecting grid cell;
@@ -233,7 +306,7 @@ public:
 				b3BufferInfoCL( m_pairs.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_fluidRigidBroadphaseKernel);
+			b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numGridCells);
 			launcher.setConst(numRigidBodies);
@@ -297,6 +370,9 @@ public:
 		
 		
 		//Map fluid contacts to rigid bodies
+		//Since applying impulses simultaneously(in 1 kernel) to both fluid and rigid body would require
+		//syncronization between threads, we instead run 2 kernels - the first iterates through all contacts with
+		//1 thread per fluid particle, and the second does the same with 1 thread per rigid body.
 		{
 			//Clear rigid side contacts
 			{

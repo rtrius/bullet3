@@ -30,7 +30,7 @@ public:
 		b3FluidSphParametersLocal FL = m_sphFluid->getLocalParameters();
 		
 		b3Scalar EXTENT(105.0);
-		FL.m_aabbBoundaryMin = b3Vector3(-EXTENT, 0, -EXTENT);
+		FL.m_aabbBoundaryMin = b3Vector3(-EXTENT, -EXTENT, -EXTENT);
 		FL.m_aabbBoundaryMax = b3Vector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
 		
