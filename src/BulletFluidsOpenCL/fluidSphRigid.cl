@@ -184,6 +184,48 @@ inline int binarySearch(__global b3FluidGridCombinedPos *sortGridValues, int sor
 	return sortGridValuesSize;
 }
 
+
+#define B3_EPSILON FLT_EPSILON
+
+//Syncronize with defines b3FluidSphRigidInteractorCL.h
+#define MAX_FLUID_RIGID_PAIRS 32
+#define MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE 16
+#define MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID 256
+
+///Contains the indicies of rigid bodies whose AABB intersects with that of a single fluid particle
+typedef struct
+{
+	int m_numIndicies;
+	int m_rigidIndicies[MAX_FLUID_RIGID_PAIRS];
+	int m_rigidSubIndicies[MAX_FLUID_RIGID_PAIRS];	//Only used if the rigid has triangle mesh or compound shape
+	
+} FluidRigidPairs;
+
+typedef struct
+{
+	int m_numContacts;
+	int m_rigidIndicies[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
+	b3Scalar m_distances[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
+	b3Vector3 m_pointsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space point
+	b3Vector3 m_normalsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space normal
+	
+} FluidRigidContacts;
+
+
+
+///Contains indicies of fluid particles that are colliding with dynamic(invMass != 0.0) rigid bodies
+///If the rigid body is static, m_numContacts should be 0; this struct is used to apply fluid-rigid impulses to the rigid bodies
+typedef struct
+{
+	int m_numContacts;
+	
+	//Fluid particle indicies; actual contact data is stored in the FluidRigidContact struct(1 per particle)
+	int m_fluidIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];
+	int m_contactIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];		//range [0, MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE - 1]
+	
+} RigidFluidContacts;
+
+
 // -----------------------------------------------------------------------------
 // Bullet3
 // -----------------------------------------------------------------------------
@@ -576,9 +618,387 @@ bool computeContactSphereConvex
 	return false;
 }
 
+bool pointInTriangle(const float4* vertices, const float4* normal, float4 *p )
+{
 
+	const float4* p1 = &vertices[0];
+	const float4* p2 = &vertices[1];
+	const float4* p3 = &vertices[2];
+
+	float4 edge1;	edge1 = (*p2 - *p1);
+	float4 edge2;	edge2 = ( *p3 - *p2 );
+	float4 edge3;	edge3 = ( *p1 - *p3 );
+
+	
+	float4 p1_to_p; p1_to_p = ( *p - *p1 );
+	float4 p2_to_p; p2_to_p = ( *p - *p2 );
+	float4 p3_to_p; p3_to_p = ( *p - *p3 );
+
+	float4 edge1_normal; edge1_normal = ( cross(edge1,*normal));
+	float4 edge2_normal; edge2_normal = ( cross(edge2,*normal));
+	float4 edge3_normal; edge3_normal = ( cross(edge3,*normal));
+
+	
+	
+	float r1, r2, r3;
+	r1 = dot(edge1_normal,p1_to_p );
+	r2 = dot(edge2_normal,p2_to_p );
+	r3 = dot(edge3_normal,p3_to_p );
+	
+	if ( r1 > 0 && r2 > 0 && r3 > 0 )
+		return true;
+    if ( r1 <= 0 && r2 <= 0 && r3 <= 0 ) 
+		return true;
+	return false;
+
+}
+
+
+float segmentSqrDistance(float4 from, float4 to,float4 p, float4* nearest) 
+{
+	float4 diff = p - from;
+	float4 v = to - from;
+	float t = dot(v,diff);
+	
+	if (t > 0) 
+	{
+		float dotVV = dot(v,v);
+		if (t < dotVV) 
+		{
+			t /= dotVV;
+			diff -= t*v;
+		} else 
+		{
+			t = 1;
+			diff -= v;
+		}
+	} else
+	{
+		t = 0;
+	}
+	*nearest = from + t*v;
+	return dot(diff,diff);	
+}
+
+//Modified computeContactSphereTriangle() from primitiveContacts.cl
+bool computeContactSphereTriangle(const float4* triangleVertices, 
+								float4 spherePos2, 
+								float radius, 
+								float4 rigidPos, 
+								float4 rigidOrn,
+									
+								float* out_distance,
+								float4* out_normalOnRigidWorld,
+								float4* out_pointOnRigidWorld)
+{
+
+	float4 invPos;
+	float4 invOrn;
+
+	trInverse(rigidPos,rigidOrn, &invPos,&invOrn);
+	float4 spherePos = transform(&spherePos2,&invPos,&invOrn);
+	float4 closestPnt = (float4)(0, 0, 0, 0);
+	float4 hitNormalWorld = (float4)(0, 0, 0, 0);
+	float minDist = -1000000.f;
+	bool bCollide = true;
+
+	
+	//////////////////////////////////////
+
+	float4 sphereCenter;
+	sphereCenter = spherePos;
+
+	const float4* vertices = triangleVertices;
+	float contactBreakingThreshold = 0.f;//todo?
+	float radiusWithThreshold = radius + contactBreakingThreshold;
+	float4 edge10;
+	edge10 = vertices[1]-vertices[0];
+	edge10.w = 0.f;//is this needed?
+	float4 edge20;
+	edge20 = vertices[2]-vertices[0];
+	edge20.w = 0.f;//is this needed?
+	float4 normal = cross3(edge10,edge20);
+	normal = normalize(normal);
+	float4 p1ToCenter;
+	p1ToCenter = sphereCenter - vertices[0];
+	
+	float distanceFromPlane = dot(p1ToCenter,normal);
+
+	if (distanceFromPlane < 0.f)
+	{
+		//triangle facing the other way
+		distanceFromPlane *= -1.f;
+		normal *= -1.f;
+	}
+	hitNormalWorld = normal;
+
+	bool isInsideContactPlane = distanceFromPlane < radiusWithThreshold;
+	
+	// Check for contact / intersection
+	bool hasContact = false;
+	float4 contactPoint;
+	if (isInsideContactPlane) 
+	{
+	
+		if (pointInTriangle(vertices,&normal, &sphereCenter)) 
+		{
+			// Inside the contact wedge - touches a point on the shell plane
+			hasContact = true;
+			contactPoint = sphereCenter - normal*distanceFromPlane;
+			
+		} else {
+			// Could be inside one of the contact capsules
+			float contactCapsuleRadiusSqr = radiusWithThreshold*radiusWithThreshold;
+			float4 nearestOnEdge;
+			int numEdges = 3;
+			for (int i = 0; i < numEdges; i++) 
+			{
+				float4 pa =vertices[i];
+				float4 pb = vertices[(i+1)%3];
+
+				float distanceSqr = segmentSqrDistance(pa,pb,sphereCenter, &nearestOnEdge);
+				if (distanceSqr < contactCapsuleRadiusSqr) 
+				{
+					// Yep, we're inside a capsule
+					hasContact = true;
+					contactPoint = nearestOnEdge;
+					
+				}
+				
+			}
+		}
+	}
+
+	if (hasContact) 
+	{
+
+		closestPnt = contactPoint;
+		float4 contactToCenter = sphereCenter - contactPoint;
+		minDist = length(contactToCenter);
+		if (minDist>0.f)
+		{
+			hitNormalWorld = normalize(contactToCenter);//*(1./minDist);
+		}
+		bCollide  = true;
+	}
+
+
+	/////////////////////////////////////
+
+	if (bCollide && minDist > -10000)
+	{
+		
+		float4 normalOnSurfaceB1 = qtRotate(rigidOrn,-hitNormalWorld);
+		float4 pOnB1 = transform(&closestPnt,&rigidPos,&rigidOrn);
+		float actualDepth = minDist-radius;
+
+		
+		if (actualDepth<=0.f)
+		{
+			*out_distance = actualDepth;
+			*out_normalOnRigidWorld = normalOnSurfaceB1;
+			*out_pointOnRigidWorld = pOnB1;
+		}
+	}
+
+	return hasContact;
+}
 // -----------------------------------------------------------------------------
 // Bullet3
+// -----------------------------------------------------------------------------
+
+
+// -----------------------------------------------------------------------------
+// Bullet3 - bvhTraversal.cl
+// -----------------------------------------------------------------------------
+#define MAX_NUM_PARTS_IN_BITS 10
+
+///btQuantizedBvhNode is a compressed aabb node, 16 bytes.
+///Node can be used for leafnode or internal node. Leafnodes can point to 32-bit triangle index (non-negative range).
+typedef struct
+{
+	//12 bytes
+	unsigned short int	m_quantizedAabbMin[3];
+	unsigned short int	m_quantizedAabbMax[3];
+	//4 bytes
+	int	m_escapeIndexOrTriangleIndex;
+} btQuantizedBvhNode;
+
+typedef struct
+{
+	float4		m_aabbMin;
+	float4		m_aabbMax;
+	float4		m_quantization;
+	int			m_numNodes;
+	int			m_numSubTrees;
+	int			m_nodeOffset;
+	int			m_subTreeOffset;
+
+} b3BvhInfo;
+
+
+int	getTriangleIndex(const btQuantizedBvhNode* rootNode)
+{
+	unsigned int x=0;
+	unsigned int y = (~(x&0))<<(31-MAX_NUM_PARTS_IN_BITS);
+	// Get only the lower bits where the triangle index is stored
+	return (rootNode->m_escapeIndexOrTriangleIndex&~(y));
+}
+
+int isLeaf(const btQuantizedBvhNode* rootNode)
+{
+	//skipindex is negative (internal node), triangleindex >=0 (leafnode)
+	return (rootNode->m_escapeIndexOrTriangleIndex >= 0)? 1 : 0;
+}
+	
+int getEscapeIndex(const btQuantizedBvhNode* rootNode)
+{
+	return -rootNode->m_escapeIndexOrTriangleIndex;
+}
+
+typedef struct
+{
+	//12 bytes
+	unsigned short int	m_quantizedAabbMin[3];
+	unsigned short int	m_quantizedAabbMax[3];
+	//4 bytes, points to the root of the subtree
+	int			m_rootNodeIndex;
+	//4 bytes
+	int			m_subtreeSize;
+	int			m_padding[3];
+} btBvhSubtreeInfo;
+
+
+int testQuantizedAabbAgainstQuantizedAabb(
+								const unsigned short int* aabbMin1,
+								const unsigned short int* aabbMax1,
+								const unsigned short int* aabbMin2,
+								const unsigned short int* aabbMax2)
+{
+	//int overlap = 1;
+	if (aabbMin1[0] > aabbMax2[0])
+		return 0;
+	if (aabbMax1[0] < aabbMin2[0])
+		return 0;
+	if (aabbMin1[1] > aabbMax2[1])
+		return 0;
+	if (aabbMax1[1] < aabbMin2[1])
+		return 0;
+	if (aabbMin1[2] > aabbMax2[2])
+		return 0;
+	if (aabbMax1[2] < aabbMin2[2])
+		return 0;
+	return 1;
+	//overlap = ((aabbMin1[0] > aabbMax2[0]) || (aabbMax1[0] < aabbMin2[0])) ? 0 : overlap;
+	//overlap = ((aabbMin1[2] > aabbMax2[2]) || (aabbMax1[2] < aabbMin2[2])) ? 0 : overlap;
+	//overlap = ((aabbMin1[1] > aabbMax2[1]) || (aabbMax1[1] < aabbMin2[1])) ? 0 : overlap;
+	//return overlap;
+}
+
+
+void quantizeWithClamp(unsigned short* out, float4 point2,int isMax, float4 bvhAabbMin, float4 bvhAabbMax, float4 bvhQuantization)
+{
+	float4 clampedPoint = max(point2,bvhAabbMin);
+	clampedPoint = min (clampedPoint, bvhAabbMax);
+
+	float4 v = (clampedPoint - bvhAabbMin) * bvhQuantization;
+	if (isMax)
+	{
+		out[0] = (unsigned short) (((unsigned short)(v.x+1.f) | 1));
+		out[1] = (unsigned short) (((unsigned short)(v.y+1.f) | 1));
+		out[2] = (unsigned short) (((unsigned short)(v.z+1.f) | 1));
+	} else
+	{
+		out[0] = (unsigned short) (((unsigned short)(v.x) & 0xfffe));
+		out[1] = (unsigned short) (((unsigned short)(v.y) & 0xfffe));
+		out[2] = (unsigned short) (((unsigned short)(v.z) & 0xfffe));
+	}
+
+}
+
+//Modified bvhTraversalKernel() from bvhTraversal.cl
+void getIntersectingBvhLeaves(__global const btCollidableGpu* collidables,
+							__global const btBvhSubtreeInfo* subtreeHeadersRoot,
+							__global const btQuantizedBvhNode* quantizedNodesRoot,
+							__global const b3BvhInfo* bvhInfos,
+						
+							int rigidBodyIndex, 
+							int trimeshCollidableIndex,
+							int particleIndex, 
+							b3Vector3 particleAabbMin, 
+							b3Vector3 particleAabbMax,
+							
+							__global FluidRigidPairs* out_pairs)
+{
+	btCollidableGpu trimeshCollidable = collidables[trimeshCollidableIndex];
+	if(trimeshCollidable.m_shapeType != SHAPE_CONCAVE_TRIMESH) return;
+
+
+	b3BvhInfo bvhInfo = bvhInfos[trimeshCollidable.m_numChildShapes];
+
+	float4 bvhAabbMin = bvhInfo.m_aabbMin;
+	float4 bvhAabbMax = bvhInfo.m_aabbMax;
+	float4 bvhQuantization = bvhInfo.m_quantization;
+	int numSubtreeHeaders = bvhInfo.m_numSubTrees;
+	__global const btBvhSubtreeInfo* subtreeHeaders = &subtreeHeadersRoot[bvhInfo.m_subTreeOffset];
+	__global const btQuantizedBvhNode* quantizedNodes = &quantizedNodesRoot[bvhInfo.m_nodeOffset];
+	
+
+	unsigned short int quantizedQueryAabbMin[3];
+	unsigned short int quantizedQueryAabbMax[3];
+	quantizeWithClamp(quantizedQueryAabbMin,particleAabbMin,false,bvhAabbMin, bvhAabbMax,bvhQuantization);
+	quantizeWithClamp(quantizedQueryAabbMax,particleAabbMax,true ,bvhAabbMin, bvhAabbMax,bvhQuantization);
+	
+	for (int i=0;i<numSubtreeHeaders;i++)
+	{
+		btBvhSubtreeInfo subtree = subtreeHeaders[i];
+				
+		int overlap = testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,subtree.m_quantizedAabbMin,subtree.m_quantizedAabbMax);
+		if (overlap != 0)
+		{
+			int startNodeIndex = subtree.m_rootNodeIndex;
+			int endNodeIndex = subtree.m_rootNodeIndex+subtree.m_subtreeSize;
+			int curIndex = startNodeIndex;
+			int escapeIndex;
+			int isLeafNode;
+			int aabbOverlap;
+			while (curIndex < endNodeIndex)
+			{
+				btQuantizedBvhNode rootNode = quantizedNodes[curIndex];
+				aabbOverlap = testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,rootNode.m_quantizedAabbMin,rootNode.m_quantizedAabbMax);
+				isLeafNode = isLeaf(&rootNode);
+				if (aabbOverlap)
+				{
+					if (isLeafNode)
+					{
+						int triangleIndex = getTriangleIndex(&rootNode);
+						
+						int pairIndex = atomic_inc(&out_pairs[particleIndex].m_numIndicies);
+						if(pairIndex < MAX_FLUID_RIGID_PAIRS) 
+						{
+							out_pairs[particleIndex].m_rigidIndicies[pairIndex] = rigidBodyIndex;
+							out_pairs[particleIndex].m_rigidSubIndicies[pairIndex] = triangleIndex;
+						}
+					} 
+					curIndex++;
+				} else
+				{
+					if (isLeafNode)
+					{
+						curIndex++;
+					} else
+					{
+						escapeIndex = getEscapeIndex(&rootNode);
+						curIndex += escapeIndex;
+					}
+				}
+			}
+		}
+	}
+
+}
+// -----------------------------------------------------------------------------
+// Bullet3 - bvhTraversal.cl
 // -----------------------------------------------------------------------------
 
 bool computeContactSpherePlane(float4 spherePos, float sphereRadius,
@@ -610,7 +1030,6 @@ bool computeContactSpherePlane(float4 spherePos, float sphereRadius,
 	return false;
 }
 
-#define B3_EPSILON FLT_EPSILON
 bool computeContactSphereSphere(float4 particlePos, float particleRadius,
 								float4 rigidPos, float rigidRadius,
 								float* out_distance, float4* out_normalOnRigidWorld, float4* out_pointOnRigidWorld)
@@ -632,54 +1051,20 @@ bool computeContactSphereSphere(float4 particlePos, float particleRadius,
 }
 
 
-#define MAX_FLUID_RIGID_PAIRS 32
-#define MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE 4
-#define MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID 256
-
-///Contains the indicies of rigid bodies whose AABB intersects with that of a single fluid particle
-typedef struct
-{
-	int m_numIndicies;
-	int m_rigidIndicies[MAX_FLUID_RIGID_PAIRS];
-	
-} FluidRigidPairs;
-
-typedef struct
-{
-	int m_numContacts;
-	int m_rigidIndicies[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
-	b3Scalar m_distances[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
-	b3Vector3 m_pointsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space point
-	b3Vector3 m_normalsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space normal
-	
-} FluidRigidContacts;
-
-
-
-///Contains indicies of fluid particles that are colliding with dynamic(invMass != 0.0) rigid bodies
-///If the rigid body is static, m_numContacts should be 0; this struct is used to apply fluid-rigid impulses to the rigid bodies
-typedef struct
-{
-	int m_numContacts;
-	
-	//Fluid particle indicies; actual contact data is stored in the FluidRigidContact struct(1 per particle)
-	int m_fluidIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];
-	int m_contactIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];		//range [0, MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE - 1]
-	
-} RigidFluidContacts;
-
-
-__kernel void clearFluidRigidPairsAndContacts(__global FluidRigidPairs* pairs, __global FluidRigidContacts* contacts, int numFluidParticles)
+__kernel void clearFluidRigidPairsAndContacts(__global FluidRigidPairs* pairs, __global FluidRigidPairs* midphasePairs,
+											__global FluidRigidContacts* contacts, int numFluidParticles)
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
 	pairs[i].m_numIndicies = 0;
+	midphasePairs[i].m_numIndicies = 0;
 	contacts[i].m_numContacts = 0;
 }
 
 __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL,  
 									__global btAabbCL* rigidBodyWorldAabbs,
+									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 									__global int* out_numLargeAabbRigids, __global int* out_largeAabbRigidIndicies, 
 									int maxLargeRigidAabbs, int numRigidBodies)
 {
@@ -695,13 +1080,17 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  
 	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
 	
+	BodyData rigidBody = rigidBodies[i];
+	int collidableIndex = rigidBody.m_collidableIdx;
+	
 	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;
 	if( fabs(expandedRigidAabbMin.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMin.y) > maxAabbExtent
 	 || fabs(expandedRigidAabbMin.z) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.y) > maxAabbExtent
-	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent )
+	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent
+	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH )
 	{
 		int largeRigidIndex = atomic_inc(out_numLargeAabbRigids);	//out_numLargeAabbRigids is assumed to be 0 before the kernel is executed
 		if(largeRigidIndex < maxLargeRigidAabbs) out_largeAabbRigidIndicies[largeRigidIndex] = i;
@@ -709,8 +1098,10 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  
 }
 __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
 										__global b3Vector3* fluidPosition, __global btAabbCL* rigidBodyWorldAabbs,
+										__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 										__global int* numLargeAabbRigids, __global int* largeAabbRigidIndicies,
-										__global FluidRigidPairs* out_pairs, int numFluidParticles)
+										__global FluidRigidPairs* out_pairs, __global FluidRigidPairs* out_midphasePairs, 
+										int maxLargeRigidAabbs, int numFluidParticles)
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
@@ -721,10 +1112,19 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	
 	b3Vector3 particlePos = fluidPosition[i];
 	
-	for(int n = 0; n < *numLargeAabbRigids; ++n)
+	int numValidLargeAabbRigids = min(*numLargeAabbRigids, maxLargeRigidAabbs);
+	for(int n = 0; n < numValidLargeAabbRigids; ++n)
 	{
 		int rigidIndex = largeAabbRigidIndicies[n];
-		
+	
+		BodyData rigidBody = rigidBodies[rigidIndex];
+		int collidableIndex = rigidBody.m_collidableIdx;
+	
+		bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
+							|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
+						
+		__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
+	
 		btAabbCL rigidAabb = rigidBodyWorldAabbs[rigidIndex];
 		b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 		b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
@@ -733,8 +1133,9 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 		 && expandedRigidAabbMin.y <= particlePos.y && particlePos.y <= expandedRigidAabbMax.y
 		 && expandedRigidAabbMin.z <= particlePos.z && particlePos.z <= expandedRigidAabbMax.z )
 		{
-			int pairIndex = out_pairs[i].m_numIndicies++;
-			if(pairIndex < MAX_FLUID_RIGID_PAIRS) out_pairs[i].m_rigidIndicies[pairIndex] = rigidIndex;
+			int pairIndex = output[i].m_numIndicies++;
+			if(pairIndex < MAX_FLUID_RIGID_PAIRS) output[i].m_rigidIndicies[pairIndex] = rigidIndex;
+			else return;
 		}
 	}
 }
@@ -742,11 +1143,11 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
 									__global b3Vector3* fluidPosition, __global b3FluidGridCombinedPos* cellValues, 
 									__global b3FluidGridIterator* cellContents, __global btAabbCL* rigidBodyWorldAabbs,
-									__global FluidRigidPairs* out_pairs, 			
+									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
+									__global FluidRigidPairs* out_pairs, __global FluidRigidPairs* out_midphasePairs,			
 									int numGridCells, int numRigidBodies)
 {
 	int i = get_global_id(0);
-	
 	if(i >= numRigidBodies) return;
 	
 	b3Scalar gridCellSize = FG->m_sphSmoothRadius / FG->m_simulationScale;
@@ -760,15 +1161,23 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
 	
+	BodyData rigidBody = rigidBodies[i];
+	int collidableIndex = rigidBody.m_collidableIdx;
+	
+	bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
+						|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
+						
+	__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
+	
 	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;
 	if( fabs(expandedRigidAabbMin.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMin.y) > maxAabbExtent
 	 || fabs(expandedRigidAabbMin.z) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.y) > maxAabbExtent
-	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent ) return;
-	
-	
+	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent 
+	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH ) return;
+						
 	b3FluidGridPosition quantizedAabbMin = getDiscretePosition( gridCellSize, expandedRigidAabbMin );
 	b3FluidGridPosition quantizedAabbMax = getDiscretePosition( gridCellSize, expandedRigidAabbMax );
 	
@@ -796,14 +1205,52 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 						 && expandedRigidAabbMin.y <= particlePos.y && particlePos.y <= expandedRigidAabbMax.y
 						 && expandedRigidAabbMin.z <= particlePos.z && particlePos.z <= expandedRigidAabbMax.z )
 						{
-							int pairIndex = atomic_inc(&out_pairs[particleIndex].m_numIndicies);
-							if(pairIndex < MAX_FLUID_RIGID_PAIRS) out_pairs[particleIndex].m_rigidIndicies[pairIndex] = i;
+							int pairIndex = atomic_inc(&output[particleIndex].m_numIndicies);
+							if(pairIndex < MAX_FLUID_RIGID_PAIRS) output[particleIndex].m_rigidIndicies[pairIndex] = i;
 						}
 					}
 				}
 				
 			}
 	
+}
+
+__kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __global b3Vector3* fluidPosition, 
+								__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
+								__global b3BvhInfo* bvhInfos, __global btBvhSubtreeInfo* bvhSubtreeInfo, __global btQuantizedBvhNode* bvhNodes,
+								__global FluidRigidPairs* midphasePairs, __global FluidRigidPairs* out_pairs, int numFluidParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numFluidParticles) return;
+	
+	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
+	
+	b3Vector3 fluidAabbMin = fluidPosition[i] - radiusAabbExtent;
+	b3Vector3 fluidAabbmax = fluidPosition[i] + radiusAabbExtent;
+	
+	//Convert each entry in midphasePairs into several entries in out_pairs
+	int numIndicies = min(midphasePairs[i].m_numIndicies, MAX_FLUID_RIGID_PAIRS);
+	for(int n = 0; n < numIndicies; ++n)
+	{
+		int rigidIndex = midphasePairs[i].m_rigidIndicies[n];
+		BodyData rigidBody = rigidBodies[rigidIndex];
+		int collidableIndex = rigidBody.m_collidableIdx;
+		
+		if(collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH)
+		{
+			//Traverse the triangle mesh BVH with particle AABB, adding 1 element to out_pairs
+			//for each leaf(triangle) that intersects with the particle AABB
+			 getIntersectingBvhLeaves(collidables, bvhSubtreeInfo, bvhNodes, bvhInfos, 
+										rigidIndex, collidableIndex,
+										i, fluidAabbMin, fluidAabbmax, out_pairs);
+		}
+		else if(collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
+		{
+			//test each sub-shape AABB against the particle's AABB
+			//...
+		}
+	}
 }
 
 __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
@@ -818,9 +1265,11 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 	if(i >= numFluidParticles) return;
 	
 	FluidRigidPairs currentPairs = pairs[i];
-	for(int numRigids = 0; numRigids < currentPairs.m_numIndicies; ++numRigids)
+	
+	int numFluidRigidPairs = min(currentPairs.m_numIndicies, MAX_FLUID_RIGID_PAIRS);
+	for(int pair = 0; pair < numFluidRigidPairs; ++pair)
 	{
-		int rigidIndex = currentPairs.m_rigidIndicies[numRigids];
+		int rigidIndex = currentPairs.m_rigidIndicies[pair];
 	
 		BodyData rigidBody = rigidBodies[rigidIndex];
 		
@@ -831,7 +1280,15 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 		float4 normalOnRigid;
 		float4 pointOnRigid;
 		
-		switch(collidables[collidableIndex].m_shapeType)
+		int shape = collidables[collidableIndex].m_shapeType;
+		int shapeIndex = collidables[collidableIndex].m_shapeIndex;
+		
+		if(shape == SHAPE_COMPOUND_OF_CONVEX_HULLS)
+		{
+			//...
+		}
+		
+		switch(shape)
 		{
 			case SHAPE_CONVEX_HULL:
 			{
@@ -844,7 +1301,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 				
 			case SHAPE_PLANE:
 			{
-				float4 rigidPlaneEquation = faces[ collidables[collidableIndex].m_shapeIndex ].m_plane;
+				float4 rigidPlaneEquation = faces[shapeIndex].m_plane;
 		
 				isColliding = computeContactSpherePlane(fluidPosition[i], FL->m_particleRadius, 
 														rigidBody.m_pos, rigidBody.m_quat, rigidPlaneEquation,
@@ -859,6 +1316,28 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 				isColliding = computeContactSphereSphere(fluidPosition[i], FL->m_particleRadius,
 														rigidBody.m_pos, rigidSphereRadius,
 														&distance, &normalOnRigid, &pointOnRigid);
+			}
+				break;
+				
+			case SHAPE_CONCAVE_TRIMESH:
+			{
+				int rigidSubIndex = currentPairs.m_rigidSubIndicies[pair];
+			
+				float4 triangleVertices[3];
+				
+				btGpuFace face = faces[ convexShapes[shapeIndex].m_faceOffset + rigidSubIndex ];
+		
+				for (int j=0;j<3;j++)
+				{
+					int index = convexIndices[face.m_indexOffset + j];
+					float4 vertex = convexVertices[ convexShapes[shapeIndex].m_vertexOffset + index];
+					triangleVertices[j] = vertex;
+				}
+				
+				isColliding = computeContactSphereTriangle(triangleVertices, fluidPosition[i], FL->m_particleRadius,
+															rigidBody.m_pos, rigidBody.m_quat,
+															&distance, &normalOnRigid, &pointOnRigid);									
+				normalOnRigid = -normalOnRigid;
 			}
 				break;
 			
@@ -890,7 +1369,7 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
-
+	
 	for(int contactIndex = 0; contactIndex < contacts[i].m_numContacts; ++contactIndex)
 	{
 		b3Vector3 fluidVelocity = fluidVel[i];
@@ -1007,7 +1486,8 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal*
 	b3Vector3 accumulatedForce = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 	b3Vector3 accumulatedTorque = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 	
-	for(int i = 0; i < rigidContacts[rigidIndex].m_numContacts; ++i)
+	int numContacts = min(rigidContacts[rigidIndex].m_numContacts, MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID);
+	for(int i = 0; i < numContacts; ++i)
 	{
 		int particleIndex = rigidContacts[rigidIndex].m_fluidIndicies[i];
 		int contactIndex = rigidContacts[rigidIndex].m_contactIndicies[i];

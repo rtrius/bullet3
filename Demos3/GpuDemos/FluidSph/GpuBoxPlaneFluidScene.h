@@ -13,7 +13,10 @@
 #include "BulletFluids/Sph/b3FluidSph.h"
 #include "BulletFluidsOpenCL/b3FluidSphSolverOpenCL.h"
 #include "BulletFluidsOpenCL/b3FluidSphOpenCL.h"
-class GpuBoxPlaneFluidScene : public GpuBoxPlaneScene
+
+
+#include "../rigidbody/ConcaveScene.h"
+class GpuBoxPlaneFluidScene : public ConcaveScene //public GpuBoxPlaneScene
 {
 public:
 
@@ -29,12 +32,14 @@ public:
 		
 		b3FluidSphParametersLocal FL = m_sphFluid->getLocalParameters();
 		
-		b3Scalar EXTENT(105.0);
+		b3Scalar EXTENT(400.0);
 		FL.m_aabbBoundaryMin = b3Vector3(-EXTENT, -EXTENT, -EXTENT);
 		FL.m_aabbBoundaryMax = b3Vector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
 		
 		FL.m_particleMass = b3Scalar(0.01);
+		//FL.m_boundaryErp = b3Scalar(0.9);
+		FL.m_particleRadius = b3Scalar(4.0);
 		
 		m_sphFluid->setLocalParameters(FL);
 		
@@ -66,36 +71,50 @@ public:
 		m_window->getRenderingResolution(width, height);
 		m_fluidRenderer = new ScreenSpaceFluidRendererGL(width, height);
 	
-		GpuBoxPlaneScene::setupScene(ci);
+		//GpuBoxPlaneScene::setupScene(ci);
+		ConcaveScene::setupScene(ci);
 		m_solver = new b3FluidSphSolverOpenCL(m_clData->m_clContext, m_clData->m_clDevice, m_clData->m_clQueue);
 	}
 	
-	virtual int	createDynamicsObjects(const ConstructionInfo& ci)
+	//virtual int	createDynamicsObjects(const ConstructionInfo& ci)
+	virtual void	createDynamicObjects(const ConstructionInfo& ci)
 	{
-		int numObjects = GpuBoxPlaneScene::createDynamicsObjects(ci);
+		//int numObjects = GpuBoxPlaneScene::createDynamicsObjects(ci);
+		ConcaveScene::createDynamicObjects(ci);
 		
-		b3Scalar EXTENT(90.0);
+		b3Vector3 OFFSET(125, 0, 0);
+		b3Scalar EXTENT(45.0);
 		b3Vector3 MIN(-EXTENT, b3Scalar(0.0), -EXTENT);
 		b3Vector3 MAX(EXTENT, EXTENT, EXTENT);
-		b3FluidEmitter::addVolume( m_sphFluid, MIN, MAX, b3Scalar(1.3) );
+		b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3) );
 		
-		return numObjects;
+		//return numObjects;
 	}
 	
 	virtual void renderScene()
 	{
-		GpuBoxPlaneScene::renderScene();
-		
+		//GpuBoxPlaneScene::renderScene();
+		ConcaveScene::renderScene();
+		/*
 		float r = 0.5f;
 		float g = 0.8f;
 		float b = 1.0f;
+		*/
+		float r = 0.7f;
+		float g = 0.7f;
+		float b = 0.7f;
 				
 		//Beer's law constants
 		//Controls the darkening of the fluid's color based on its thickness
 		//For a constant k, (k > 1) == darkens faster; (k < 1) == darkens slower; (k == 0) == disable
+		/*
 		float absorptionR = 0.5;	
 		float absorptionG = 0.5;
 		float absorptionB = 0.5;
+		*/
+		float absorptionR = 0;	
+		float absorptionG = 0;
+		float absorptionB = 0;
 		
 		{
 			B3_PROFILE("render fluid");
@@ -133,6 +152,7 @@ public:
 			}
 			
 			
+			//m_fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.75f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
 			m_fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.2f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
 		}
 	}
@@ -151,7 +171,8 @@ public:
 			printf("m_sphFluid->numParticles(): %d \n", m_sphFluid->numParticles());
 		}
 		
-		GpuBoxPlaneScene::clientMoveAndDisplay();
+		//GpuBoxPlaneScene::clientMoveAndDisplay();
+		ConcaveScene::clientMoveAndDisplay();
 	}
 	
 	virtual void resize(int width, int height)

@@ -755,6 +755,30 @@ int b3GpuNarrowPhase::getNumConvexVerticesGpu() const
 	return m_data->m_convexVerticesGPU->size();
 }
 
+cl_mem b3GpuNarrowPhase::getBvhInfoGpu()
+{
+	return m_data->m_bvhInfoGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumBvhInfoGpu() const
+{
+	return m_data->m_bvhInfoGPU->size();
+}
+cl_mem b3GpuNarrowPhase::getBvhNodesGpu()
+{
+	return m_data->m_treeNodesGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumBvhNodesGpu() const
+{
+	return m_data->m_treeNodesGPU->size();
+}
+cl_mem b3GpuNarrowPhase::getBvhSubtreeInfoGpu()
+{
+	return m_data->m_subTreesGPU->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumBvhSubtreeInfoGpu() const
+{
+	return m_data->m_subTreesGPU->size();
+}
 
 
 

@@ -81,29 +81,29 @@ b3FluidSortingGridOpenCLProgram_GenerateUniques::b3FluidSortingGridOpenCLProgram
 	const char* kernelSource = fluidSphCL;	//fluidSphCL.h
 	cl_int error;
 	char* additionalMacros = 0;
-	sortingGrid_program = b3OpenCLUtils::compileCLProgramFromString(context, device, kernelSource, &error, 
+	m_sortingGridProgram = b3OpenCLUtils::compileCLProgramFromString(context, device, kernelSource, &error, 
 																	additionalMacros, CL_SORTING_GRID_PROGRAM_PATH);
-	b3Assert(sortingGrid_program);
+	b3Assert(m_sortingGridProgram);
 	
-	kernel_markUniques = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "markUniques", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_markUniques);
-	kernel_storeUniques = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "storeUniques", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_storeUniques);
-	kernel_setZero = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "setZero", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_setZero);
-	kernel_countUniques = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "countUniques", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_countUniques);
-	kernel_generateIndexRanges = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateIndexRanges", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_generateIndexRanges);
+	m_markUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "markUniques", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_markUniquesKernel);
+	m_storeUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "storeUniques", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_storeUniquesKernel);
+	m_setZeroKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "setZero", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_setZeroKernel);
+	m_countUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "countUniques", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_countUniquesKernel);
+	m_generateIndexRangesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateIndexRanges", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_generateIndexRangesKernel);
 }
 b3FluidSortingGridOpenCLProgram_GenerateUniques::~b3FluidSortingGridOpenCLProgram_GenerateUniques()
 {
-	clReleaseKernel(kernel_markUniques);
-	clReleaseKernel(kernel_storeUniques);
-	clReleaseKernel(kernel_setZero);
-	clReleaseKernel(kernel_countUniques);
-	clReleaseKernel(kernel_generateIndexRanges);
-	clReleaseProgram(sortingGrid_program);
+	clReleaseKernel(m_markUniquesKernel);
+	clReleaseKernel(m_storeUniquesKernel);
+	clReleaseKernel(m_setZeroKernel);
+	clReleaseKernel(m_countUniquesKernel);
+	clReleaseKernel(m_generateIndexRangesKernel);
+	clReleaseProgram(m_sortingGridProgram);
 }
 
 void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command_queue commandQueue,
@@ -129,7 +129,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 				b3BufferInfoCL( m_tempInts.getBufferCL() )
 			};
 	
-			b3LauncherCL launcher(commandQueue, kernel_markUniques);
+			b3LauncherCL launcher(commandQueue, m_markUniquesKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
@@ -158,7 +158,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 				b3BufferInfoCL( out_sortGridValues.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(commandQueue, kernel_storeUniques);
+			b3LauncherCL launcher(commandQueue, m_storeUniquesKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
@@ -172,7 +172,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 		{
 			b3BufferInfoCL bufferInfo[] = { b3BufferInfoCL( m_tempInts.getBufferCL() ) };
 		
-			b3LauncherCL launcher(commandQueue, kernel_setZero);
+			b3LauncherCL launcher(commandQueue, m_setZeroKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numUniques);
 			
@@ -188,7 +188,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 				b3BufferInfoCL( m_tempInts.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(commandQueue, kernel_countUniques);
+			b3LauncherCL launcher(commandQueue, m_countUniquesKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numUniques);
 			launcher.setConst(numFluidParticles);
@@ -207,7 +207,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 				b3BufferInfoCL( out_iterators.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(commandQueue, kernel_generateIndexRanges);
+			b3LauncherCL launcher(commandQueue, m_generateIndexRangesKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst( static_cast<int>(numUniques) );
 			launcher.setConst(numFluidParticles);
@@ -229,23 +229,23 @@ b3FluidSortingGridOpenCLProgram::b3FluidSortingGridOpenCLProgram(cl_context cont
 	const char* kernelSource = fluidSphCL;	//fluidSphCL.h
 	cl_int error;
 	char* additionalMacros = 0;
-	sortingGrid_program = b3OpenCLUtils::compileCLProgramFromString(context, device, kernelSource, &error, 
+	m_sortingGridProgram = b3OpenCLUtils::compileCLProgramFromString(context, device, kernelSource, &error, 
 																	additionalMacros, CL_SORTING_GRID_PROGRAM_PATH);
-	b3Assert(sortingGrid_program);
+	b3Assert(m_sortingGridProgram);
 
-	kernel_generateValueIndexPairs = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateValueIndexPairs", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_generateValueIndexPairs);
-	kernel_rearrangeParticleArrays = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "rearrangeParticleArrays", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_rearrangeParticleArrays);
-	kernel_generateUniques = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateUniques", &error, sortingGrid_program, additionalMacros );
-	b3Assert(kernel_generateUniques);
+	m_generateValueIndexPairsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateValueIndexPairs", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_generateValueIndexPairsKernel);
+	m_rearrangeParticleArraysKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "rearrangeParticleArrays", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_rearrangeParticleArraysKernel);
+	m_generateUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateUniques", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_generateUniquesKernel);
 }
 b3FluidSortingGridOpenCLProgram::~b3FluidSortingGridOpenCLProgram()
 {
-	clReleaseKernel(kernel_generateValueIndexPairs);
-	clReleaseKernel(kernel_rearrangeParticleArrays);
-	clReleaseKernel(kernel_generateUniques);
-	clReleaseProgram(sortingGrid_program);
+	clReleaseKernel(m_generateValueIndexPairsKernel);
+	clReleaseKernel(m_rearrangeParticleArraysKernel);
+	clReleaseKernel(m_generateUniquesKernel);
+	clReleaseProgram(m_sortingGridProgram);
 }
 
 template<typename T>
@@ -379,7 +379,7 @@ void b3FluidSortingGridOpenCLProgram::generateValueIndexPairs(cl_command_queue c
 		b3BufferInfoCL( m_valueIndexPairs.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, kernel_generateValueIndexPairs);
+	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);
@@ -395,7 +395,7 @@ void b3FluidSortingGridOpenCLProgram::rearrangeParticleArrays(cl_command_queue c
 		b3BufferInfoCL( m_tempBufferCL.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, kernel_rearrangeParticleArrays);
+	b3LauncherCL launcher(commandQueue, m_rearrangeParticleArraysKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	
@@ -412,7 +412,7 @@ void b3FluidSortingGridOpenCLProgram::generateUniques_serial(cl_command_queue co
 		b3BufferInfoCL( gridData->m_numActiveCells.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, kernel_generateUniques);
+	b3LauncherCL launcher(commandQueue, m_generateUniquesKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	

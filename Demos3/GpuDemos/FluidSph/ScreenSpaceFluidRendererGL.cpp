@@ -465,7 +465,7 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	
 	render_stage1_generateDepthTexture(numParticles, sphereRadius);
 	
-	const bool BLUR_DEPTH_TEXTURE = true;
+	const bool BLUR_DEPTH_TEXTURE = 0;
 	if(BLUR_DEPTH_TEXTURE)
 	{
 		const bool USE_CURVATURE_FLOW = 0;
@@ -577,11 +577,11 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
 	glDepthFunc(GL_ALWAYS);
 	glUseProgram(m_curvatureFlowProgram);
 	
-	const float HORIZONTAL_FOV_RADIANS = B3_RADS_PER_DEG * 90.0f;
-	const float VERTICAL_FOV_RADIANS = B3_RADS_PER_DEG * 75.0f;
+	//const float HORIZONTAL_FOV_RADIANS = B3_RADS_PER_DEG * 90.0f;
+	//const float VERTICAL_FOV_RADIANS = B3_RADS_PER_DEG * 75.0f;
 
-	const float SCREEN_WIDTH = 1.0f;
-	const float SCREEN_HEIGHT = 0.75f;
+	//const float SCREEN_WIDTH = 1.0f;
+	//const float SCREEN_HEIGHT = 0.75f;
 	
 	//	focal length probably incorrect
 	//const float FOCAL_LENGTH_X = (SCREEN_WIDTH * 0.5f) / b3Tan(HORIZONTAL_FOV_RADIANS * 0.5f);

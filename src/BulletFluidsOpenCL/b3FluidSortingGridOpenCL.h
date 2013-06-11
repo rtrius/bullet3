@@ -47,12 +47,12 @@ public:
 ///Parallelized implementation of b3FluidSortingGridOpenCLProgram::generateUniques_serial() for OpenCL.
 class b3FluidSortingGridOpenCLProgram_GenerateUniques
 {
-	cl_program sortingGrid_program;
-	cl_kernel kernel_markUniques;
-	cl_kernel kernel_storeUniques;
-	cl_kernel kernel_setZero;
-	cl_kernel kernel_countUniques;
-	cl_kernel kernel_generateIndexRanges;
+	cl_program m_sortingGridProgram;
+	cl_kernel m_markUniquesKernel;
+	cl_kernel m_storeUniquesKernel;
+	cl_kernel m_setZeroKernel;
+	cl_kernel m_countUniquesKernel;
+	cl_kernel m_generateIndexRangesKernel;
 	
 	b3PrefixScanCL m_prefixScanner;
 	
@@ -72,10 +72,10 @@ public:
 ///#define B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT is not supported.
 class b3FluidSortingGridOpenCLProgram
 {
-	cl_program sortingGrid_program;
-	cl_kernel kernel_generateValueIndexPairs;
-	cl_kernel kernel_rearrangeParticleArrays;
-	cl_kernel kernel_generateUniques;
+	cl_program m_sortingGridProgram;
+	cl_kernel m_generateValueIndexPairsKernel;
+	cl_kernel m_rearrangeParticleArraysKernel;
+	cl_kernel m_generateUniquesKernel;
 
 	b3OpenCLArray<b3Vector3> m_tempBufferCL;		//Used to rearrange fluid particle arrays(position, velocity, etc.)
 	b3AlignedObjectArray<b3Vector3> m_tempBufferVector;

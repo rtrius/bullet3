@@ -39,14 +39,14 @@ b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id 
 																	additionalMacros, CL_PROGRAM_PATH);
 	b3Assert(m_fluidsProgram);
 	
-	m_kernel_findNeighborCellsPerCell = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "findNeighborCellsPerCell", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_kernel_findNeighborCellsPerCell);
-	m_kernel_findGridCellIndexPerParticle = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "findGridCellIndexPerParticle", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_kernel_findGridCellIndexPerParticle);
-	m_kernel_sphComputePressure = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputePressure", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_kernel_sphComputePressure);
-	m_kernel_sphComputeForce = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputeForce", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_kernel_sphComputeForce);
+	m_findNeighborCellsPerCellKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "findNeighborCellsPerCell", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_findNeighborCellsPerCellKernel);
+	m_findGridCellIndexPerParticleKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "findGridCellIndexPerParticle", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_findGridCellIndexPerParticleKernel);
+	m_sphComputePressureKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputePressure", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_sphComputePressureKernel);
+	m_sphComputeForceKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputeForce", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_sphComputeForceKernel);
 	m_applyForcesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "applyForces", &error, m_fluidsProgram, additionalMacros );
 	b3Assert(m_applyForcesKernel);
 	m_collideAabbImpulseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "collideAabbImpulse", &error, m_fluidsProgram, additionalMacros );
@@ -57,10 +57,10 @@ b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id 
 
 b3FluidSphSolverOpenCL::~b3FluidSphSolverOpenCL()
 {
-	clReleaseKernel(m_kernel_findNeighborCellsPerCell);
-	clReleaseKernel(m_kernel_findGridCellIndexPerParticle);
-	clReleaseKernel(m_kernel_sphComputePressure);
-	clReleaseKernel(m_kernel_sphComputeForce);
+	clReleaseKernel(m_findNeighborCellsPerCellKernel);
+	clReleaseKernel(m_findGridCellIndexPerParticleKernel);
+	clReleaseKernel(m_sphComputePressureKernel);
+	clReleaseKernel(m_sphComputeForceKernel);
 	clReleaseKernel(m_applyForcesKernel);
 	clReleaseKernel(m_collideAabbImpulseKernel);
 	clReleaseKernel(m_integratePositionKernel);
@@ -399,14 +399,14 @@ void b3FluidSphSolverOpenCL::findNeighborCells(int numActiveGridCells, int numFl
 			b3BufferInfoCL( gridData->m_foundCells.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_kernel_findNeighborCellsPerCell);
+		b3LauncherCL launcher(m_commandQueue, m_findNeighborCellsPerCellKernel);
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		
 		launcher.launch1D(numActiveGridCells);
 	}
 	
 	//For each particle, locate the grid cell that they are contained in so that 
-	//they can use the results from m_kernel_findNeighborCellsPerCell, executed above
+	//they can use the results from m_findNeighborCellsPerCellKernel, executed above
 	{
 		b3BufferInfoCL bufferInfo[] = 
 		{
@@ -415,7 +415,7 @@ void b3FluidSphSolverOpenCL::findNeighborCells(int numActiveGridCells, int numFl
 			b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_kernel_findGridCellIndexPerParticle);
+		b3LauncherCL launcher(m_commandQueue, m_findGridCellIndexPerParticleKernel);
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		
 		launcher.launch1D(numActiveGridCells);
@@ -437,7 +437,7 @@ void b3FluidSphSolverOpenCL::sphComputePressure(int numFluidParticles, b3FluidSo
 		b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_kernel_sphComputePressure);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	
@@ -460,7 +460,7 @@ void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSorti
 		b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_kernel_sphComputeForce);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	

@@ -36,10 +36,10 @@ class b3FluidSphSolverOpenCL : public b3FluidSphSolver
 	cl_command_queue m_commandQueue;
 	
 	cl_program m_fluidsProgram;
-	cl_kernel m_kernel_findNeighborCellsPerCell;
-	cl_kernel m_kernel_findGridCellIndexPerParticle;
-	cl_kernel m_kernel_sphComputePressure;
-	cl_kernel m_kernel_sphComputeForce;
+	cl_kernel m_findNeighborCellsPerCellKernel;
+	cl_kernel m_findGridCellIndexPerParticleKernel;
+	cl_kernel m_sphComputePressureKernel;
+	cl_kernel m_sphComputeForceKernel;
 
 	cl_kernel m_applyForcesKernel;
 	cl_kernel m_collideAabbImpulseKernel;

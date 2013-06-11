@@ -76,6 +76,13 @@ public:
 	cl_mem getConvexVerticesGpu();
 	int getNumConvexVerticesGpu() const;
 	
+	cl_mem getBvhInfoGpu();
+	int getNumBvhInfoGpu() const;
+	cl_mem getBvhNodesGpu();
+	int getNumBvhNodesGpu() const;
+	cl_mem getBvhSubtreeInfoGpu();
+	int getNumBvhSubtreeInfoGpu() const;
+	
 	const struct b3Contact4* getContactsCPU() const;
 
 	cl_mem	getContactsGpu();
