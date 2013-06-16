@@ -31,7 +31,8 @@ public:
 	virtual void updateGridAndCalculateSphForces(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids) = 0;
 	
 	static void applyForcesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid);
-	static void integratePositionsSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidParticles& particles);
+	static void integratePositionsSingleFluid(const b3FluidSphParametersGlobal& FG, const b3FluidSphParametersLocal& FL, 
+												b3FluidParticles& particles);
 	
 	
 protected:
@@ -40,15 +41,14 @@ protected:
 		B3_PROFILE("applySphForce()");
 		
 		const b3FluidSphParametersLocal& FL = fluid->getLocalParameters();
-		b3Scalar speedLimitSquared = FG.m_speedLimit*FG.m_speedLimit;
+		b3Scalar simulationScaleAccelLimit = FL.m_sphAccelLimit * FG.m_simulationScale;
 		for(int n = 0; n < fluid->numParticles(); ++n) 
 		{
 			b3Vector3 acceleration = sphForce[n];
-					
-			//Limit speed
-			b3Scalar speedSquared = acceleration.length2();
-			if(speedSquared > speedLimitSquared) acceleration *= FG.m_speedLimit / b3Sqrt(speedSquared);
-					
+			
+			b3Scalar accelMagnitude = acceleration.length();
+			if(accelMagnitude > simulationScaleAccelLimit) acceleration *= simulationScaleAccelLimit / accelMagnitude;
+			
 			fluid->applyForce(n, acceleration * FL.m_particleMass);
 		}
 	}

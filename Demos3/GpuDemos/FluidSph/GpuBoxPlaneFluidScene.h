@@ -21,6 +21,8 @@
 //#define BASE_DEMO_CLASS ConcaveScene
 //#define BASE_DEMO_CLASS GpuBoxPlaneScene
 #define BASE_DEMO_CLASS GpuCompoundPlaneScene
+const bool CONCAVE_SCENE = false;
+
 class GpuBoxPlaneFluidScene : public BASE_DEMO_CLASS
 {
 public:
@@ -38,14 +40,19 @@ public:
 		b3FluidSphParametersLocal FL = m_sphFluid->getLocalParameters();
 		
 		b3Scalar EXTENT(100.0);
-		//b3Scalar EXTENT(400.0);
+		if(CONCAVE_SCENE) EXTENT = b3Scalar(400.0);
+		
 		FL.m_aabbBoundaryMin = b3Vector3(-EXTENT, -EXTENT, -EXTENT);
 		FL.m_aabbBoundaryMax = b3Vector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
 		
 		FL.m_particleMass = b3Scalar(0.005);
-		//FL.m_boundaryErp = b3Scalar(0.9);
-		//FL.m_particleRadius = b3Scalar(4.0);
+		
+		if(CONCAVE_SCENE) 
+		{
+			FL.m_boundaryErp = b3Scalar(0.05);
+			FL.m_particleRadius = b3Scalar(4.0);
+		}
 		
 		m_sphFluid->setLocalParameters(FL);
 		
@@ -81,10 +88,15 @@ public:
 		m_solver = new b3FluidSphSolverOpenCL(m_clData->m_clContext, m_clData->m_clDevice, m_clData->m_clQueue);
 		
 		{
-			//b3Vector3 OFFSET(125, 0, 0);
 			b3Vector3 OFFSET(0, 0, 0);
-			//b3Scalar EXTENT(45.0);
 			b3Scalar EXTENT(90.0);
+			
+			if(CONCAVE_SCENE)
+			{
+				OFFSET = b3Vector3(125, 0, 0);
+				EXTENT = b3Scalar(45.0);
+			}
+			
 			b3Vector3 MIN(-EXTENT, b3Scalar(0.0), -EXTENT);
 			b3Vector3 MAX(EXTENT, EXTENT, EXTENT);
 			b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3) );

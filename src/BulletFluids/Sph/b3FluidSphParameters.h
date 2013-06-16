@@ -33,7 +33,6 @@ struct b3FluidSphParametersGlobal
 	///@remarks Note that the grid cell size is dependent on the simulation scale, 
 	///so b3FluidSph::setGridCellSize() should also be called after changing this.
 	b3Scalar m_simulationScale;
-	b3Scalar m_speedLimit;				///<Acceleration/force limit; simulation scale; meters/second.
 	b3Scalar m_sphSmoothRadius;			///<SPH particle interaction radius; use setSphInteractionRadius() to set this; simulation scale; meters.
 	
 	///@name Kernel function coefficients; dependent on m_sphSmoothRadius; use setSphInteractionRadius() to set these.
@@ -51,7 +50,6 @@ struct b3FluidSphParametersGlobal
 		m_timeStep = b3Scalar(0.003);
 		
 		m_simulationScale 	 = b3Scalar(0.004);
-		m_speedLimit 		 = b3Scalar(200.0);	
 		
 		setSphInteractionRadius( b3Scalar(0.01) );
 	}
@@ -86,6 +84,8 @@ struct b3FluidSphParametersLocal
 	int m_enableAabbBoundary;			///<If nonzero, the particles are confined to m_aabbBoundaryMin and m_aabbBoundaryMax.
 	
 	b3Vector3 m_gravity;				///<Simulation scale; meters / seconds^2.
+	b3Scalar m_sphAccelLimit;			///<Acceleration caused by SPH forces is clamped to this value; world scale; meters / second.
+	b3Scalar m_speedLimit;				///<If nonzero, particle speeds are clamped to this value; world scale; meters / second.
 	
 	b3Scalar m_viscosity;				///<Higher values increase the fluid's resistance to flow; force calculation; pascal*seconds(Pa*s).
 	b3Scalar m_restDensity;				///<Used for pressure calculation; kilograms/meters^3
@@ -111,7 +111,9 @@ struct b3FluidSphParametersLocal
 		m_enableAabbBoundary = 0;
 	
 		m_gravity.setValue(0, b3Scalar(-9.8), 0);
-	
+		m_sphAccelLimit = b3Scalar(50000.0);	
+		m_speedLimit 	= b3Scalar(0.0);	
+		
 		m_viscosity 	= b3Scalar(0.2);
 		m_restDensity 	= b3Scalar(600.0);
 		m_sphParticleMass  = b3Scalar(0.00020543);

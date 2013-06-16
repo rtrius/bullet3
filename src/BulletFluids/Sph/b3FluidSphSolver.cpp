@@ -42,13 +42,34 @@ void b3FluidSphSolver::applyForcesSingleFluid(const b3FluidSphParametersGlobal& 
 	
 	for(int i = 0; i < particles.size(); ++i) particles.m_accumulatedForce[i].setValue(0, 0, 0);
 }
-void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidParticles& particles)
+void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParametersGlobal& FG, const b3FluidSphParametersLocal& FL, 
+														b3FluidParticles& particles)
 {
 	B3_PROFILE("b3FluidSphSolver::integratePositionsSingleFluid()");
-	
+		
 	//Velocity is at simulation scale; divide by simulation scale to convert to world scale
 	b3Scalar timeStepDivSimScale = FG.m_timeStep / FG.m_simulationScale;
 	
+	b3Scalar simulationScaleSpeedLimit = FL.m_speedLimit * FG.m_simulationScale;
+	
+	if( simulationScaleSpeedLimit != b3Scalar(0.0) )
+	{
+		for(int i = 0; i < particles.size(); ++i)
+		{
+			b3Vector3 vel = particles.m_vel[i];
+			b3Vector3 vnext = particles.m_vel[i];
+			
+			b3Scalar speed = vel.length();
+			if(speed > simulationScaleSpeedLimit) 
+			{
+				vnext *= simulationScaleSpeedLimit / speed;
+					
+				particles.m_vel_eval[i] = (vel + vnext) * b3Scalar(0.5);
+				particles.m_vel[i] = vnext;
+			}
+		}	
+	}
+		
 	//Leapfrog integration
 	//p(t+1) = p(t) + v(t+1/2)*dt
 	for(int i = 0; i < particles.size(); ++i) particles.m_pos[i] += particles.m_vel[i] * timeStepDivSimScale;

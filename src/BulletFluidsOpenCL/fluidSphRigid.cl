@@ -29,7 +29,6 @@ typedef struct
 {
 	b3Scalar m_timeStep;
 	b3Scalar m_simulationScale;
-	b3Scalar m_speedLimit;
 	b3Scalar m_sphSmoothRadius;
 	b3Scalar m_sphRadiusSquared;
 	b3Scalar m_poly6KernCoeff;
@@ -45,6 +44,8 @@ typedef struct
 	b3Vector3 m_aabbBoundaryMax;
 	int m_enableAabbBoundary;
 	b3Vector3 m_gravity;
+	b3Scalar m_sphAccelLimit;
+	b3Scalar m_speedLimit;
 	b3Scalar m_viscosity;
 	b3Scalar m_restDensity;
 	b3Scalar m_sphParticleMass;
@@ -1123,6 +1124,8 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	b3Vector3 particlePos = fluidPosition[i];
 	
 	int numValidLargeAabbRigids = min(*numLargeAabbRigids, maxLargeRigidAabbs);
+	if( get_global_id(0) == 0 ) *numLargeAabbRigids = numValidLargeAabbRigids;
+	
 	for(int n = 0; n < numValidLargeAabbRigids; ++n)
 	{
 		int rigidIndex = largeAabbRigidIndicies[n];
@@ -1241,6 +1244,8 @@ __kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __glo
 	
 	//Convert each entry in midphasePairs into several entries in out_pairs
 	int numIndicies = min(midphasePairs[i].m_numIndicies, MAX_FLUID_RIGID_PAIRS);
+	midphasePairs[i].m_numIndicies = numIndicies;
+	
 	for(int n = 0; n < numIndicies; ++n)
 	{
 		int rigidIndex = midphasePairs[i].m_rigidIndicies[n];
@@ -1283,9 +1288,10 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	FluidRigidPairs currentPairs = pairs[i];
+	int numFluidRigidPairs = min(pairs[i].m_numIndicies, MAX_FLUID_RIGID_PAIRS);
+	pairs[i].m_numIndicies = numFluidRigidPairs;
 	
-	int numFluidRigidPairs = min(currentPairs.m_numIndicies, MAX_FLUID_RIGID_PAIRS);
+	FluidRigidPairs currentPairs = pairs[i];
 	for(int pair = 0; pair < numFluidRigidPairs; ++pair)
 	{
 		int rigidIndex = currentPairs.m_rigidIndicies[pair];
@@ -1517,6 +1523,8 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal*
 	b3Vector3 accumulatedTorque = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 	
 	int numContacts = min(rigidContacts[rigidIndex].m_numContacts, MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID);
+	rigidContacts[rigidIndex].m_numContacts = numContacts;
+	
 	for(int i = 0; i < numContacts; ++i)
 	{
 		int particleIndex = rigidContacts[rigidIndex].m_fluidIndicies[i];

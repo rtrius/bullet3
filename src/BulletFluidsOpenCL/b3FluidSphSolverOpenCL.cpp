@@ -322,7 +322,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			
 			{
 				b3BufferInfoCL bufferInfo[] = 
-				{ 
+				{
 					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
 					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
@@ -341,10 +341,12 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			
 			{
 				b3BufferInfoCL bufferInfo[] = 
-				{ 
-					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ),
+				{
+					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
+					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel.getBufferCL() )
+					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
 				};
 				
 				b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel);
@@ -375,7 +377,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 				b3FluidSphSolver::applyForcesSingleFluid(FG, validFluids[i]);
 				applyAabbImpulsesSingleFluid(FG, validFluids[i]);
 				
-				b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->internalGetParticles() );
+				b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->getLocalParameters(), validFluids[i]->internalGetParticles() );
 			}
 		}
 	}
