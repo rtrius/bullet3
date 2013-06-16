@@ -52,6 +52,10 @@ struct RigidBodyGpuData
 	cl_mem m_bvhSubtreeInfo;		//b3BvhSubtreeInfo
 	cl_mem m_bvhNodes;				//b3QuantizedBvhNode
 	
+	//Compound shape data
+	int m_numGpuChildShapes;
+	cl_mem m_gpuChildShapes; 		//b3GpuChildShape
+	
 	void load(b3GpuSapBroadphase* broadphase, b3GpuNarrowPhase* narrowPhase)
 	{
 		m_numRigidBodies = narrowPhase->getNumBodiesGpu();
@@ -81,6 +85,9 @@ struct RigidBodyGpuData
 		m_bvhInfo = narrowPhase->getBvhInfoGpu();
 		m_bvhSubtreeInfo = narrowPhase->getBvhSubtreeInfoGpu();
 		m_bvhNodes = narrowPhase->getBvhNodesGpu();
+		
+		m_numGpuChildShapes = narrowPhase->getNumGpuChildShapesGpu();
+		m_gpuChildShapes = narrowPhase->getGpuChildShapesGpu();
 	
 		if(0)
 		{
@@ -406,6 +413,7 @@ public:
 				b3BufferInfoCL( rigidBodyData.m_faces ),
 				b3BufferInfoCL( rigidBodyData.m_convexIndices ),
 				b3BufferInfoCL( rigidBodyData.m_convexVertices ),
+				b3BufferInfoCL( rigidBodyData.m_gpuChildShapes ),
 				
 				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() )
 			};

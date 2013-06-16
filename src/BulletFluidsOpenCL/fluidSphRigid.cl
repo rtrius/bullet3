@@ -285,6 +285,16 @@ typedef struct
 
 typedef struct
 {
+	float4	m_childPosition;
+	float4	m_childOrientation;
+	int m_shapeIndex;
+	int m_unused0;
+	int m_unused1;
+	int m_unused2;
+} btGpuChildShape;
+
+typedef struct
+{
 	float4 m_pos;
 	float4 m_quat;
 	float4 m_linVel;
@@ -1247,8 +1257,17 @@ __kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __glo
 		}
 		else if(collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
 		{
-			//test each sub-shape AABB against the particle's AABB
-			//...
+			for(int childShape = 0; childShape < collidables[collidableIndex].m_numChildShapes; ++childShape)
+			{
+				int childShapeIndex = collidables[collidableIndex].m_shapeIndex + childShape;
+				
+				int pairIndex = atomic_inc(&out_pairs[i].m_numIndicies);
+				if(pairIndex < MAX_FLUID_RIGID_PAIRS) 
+				{
+					out_pairs[i].m_rigidIndicies[pairIndex] = rigidIndex;
+					out_pairs[i].m_rigidSubIndicies[pairIndex] = childShapeIndex;
+				}
+			}
 		}
 	}
 }
@@ -1258,7 +1277,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 									__global ConvexPolyhedronCL* convexShapes, __global btGpuFace* faces,
 									__global int* convexIndices, __global float4* convexVertices, 
-									__global FluidRigidContacts* out_contact,
+									__global btGpuChildShape* gpuChildShapes, __global FluidRigidContacts* out_contact,
 									int numFluidParticles)
 {
 	int i = get_global_id(0);
@@ -1280,20 +1299,31 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 		float4 normalOnRigid;
 		float4 pointOnRigid;
 		
-		int shape = collidables[collidableIndex].m_shapeType;
+		int shapeType = collidables[collidableIndex].m_shapeType;
 		int shapeIndex = collidables[collidableIndex].m_shapeIndex;
+		float4 rigidPosition = rigidBody.m_pos;
+		float4 rigidOrientation = rigidBody.m_quat;
 		
-		if(shape == SHAPE_COMPOUND_OF_CONVEX_HULLS)
+		if(shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
 		{
-			//...
+			int childShapeIndex = currentPairs.m_rigidSubIndicies[pair];
+			int childShapeCollidableIndex = gpuChildShapes[childShapeIndex].m_shapeIndex;
+			float4 childWorldPosition = qtRotate(rigidOrientation, gpuChildShapes[childShapeIndex].m_childPosition) + rigidPosition;
+			float4 childWorldOrientation = qtMul(rigidOrientation, gpuChildShapes[childShapeIndex].m_childOrientation);
+			
+			//Replace shape, position, orientation with that of the child shape
+			shapeType = collidables[childShapeCollidableIndex].m_shapeType;
+			shapeIndex = collidables[childShapeCollidableIndex].m_shapeIndex;
+			rigidPosition = childWorldPosition;
+			rigidOrientation = childWorldOrientation;
 		}
 		
-		switch(shape)
+		switch(shapeType)
 		{
 			case SHAPE_CONVEX_HULL:
 			{
 				isColliding = computeContactSphereConvex( collidableIndex, collidables, convexShapes, convexVertices, convexIndices, faces,
-														fluidPosition[i], FL->m_particleRadius, rigidBody.m_pos, rigidBody.m_quat,
+														fluidPosition[i], FL->m_particleRadius, rigidPosition, rigidOrientation,
 														&distance, &normalOnRigid, &pointOnRigid );
 				normalOnRigid = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
 			}
@@ -1304,7 +1334,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 				float4 rigidPlaneEquation = faces[shapeIndex].m_plane;
 		
 				isColliding = computeContactSpherePlane(fluidPosition[i], FL->m_particleRadius, 
-														rigidBody.m_pos, rigidBody.m_quat, rigidPlaneEquation,
+														rigidPosition, rigidOrientation, rigidPlaneEquation,
 														&distance, &normalOnRigid, &pointOnRigid );
 			}
 				break;
@@ -1314,7 +1344,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 				float rigidSphereRadius = collidables[collidableIndex].m_radius;
 			
 				isColliding = computeContactSphereSphere(fluidPosition[i], FL->m_particleRadius,
-														rigidBody.m_pos, rigidSphereRadius,
+														rigidPosition, rigidSphereRadius,
 														&distance, &normalOnRigid, &pointOnRigid);
 			}
 				break;
@@ -1335,7 +1365,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 				}
 				
 				isColliding = computeContactSphereTriangle(triangleVertices, fluidPosition[i], FL->m_particleRadius,
-															rigidBody.m_pos, rigidBody.m_quat,
+															rigidPosition, rigidOrientation,
 															&distance, &normalOnRigid, &pointOnRigid);									
 				normalOnRigid = -normalOnRigid;
 			}

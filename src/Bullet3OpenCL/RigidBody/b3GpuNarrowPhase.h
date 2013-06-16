@@ -83,6 +83,9 @@ public:
 	cl_mem getBvhSubtreeInfoGpu();
 	int getNumBvhSubtreeInfoGpu() const;
 	
+	cl_mem getGpuChildShapesGpu();
+	int getNumGpuChildShapesGpu() const;
+	
 	const struct b3Contact4* getContactsCPU() const;
 
 	cl_mem	getContactsGpu();

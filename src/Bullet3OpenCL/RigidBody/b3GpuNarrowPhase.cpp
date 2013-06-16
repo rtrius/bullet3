@@ -780,6 +780,15 @@ int b3GpuNarrowPhase::getNumBvhSubtreeInfoGpu() const
 	return m_data->m_subTreesGPU->size();
 }
 
+cl_mem b3GpuNarrowPhase::getGpuChildShapesGpu()
+{
+	return m_data->m_gpuChildShapes->getBufferCL();
+}
+int b3GpuNarrowPhase::getNumGpuChildShapesGpu() const
+{
+	return m_data->m_gpuChildShapes->size();
+}
+
 
 
 
