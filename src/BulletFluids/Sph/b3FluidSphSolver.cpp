@@ -30,13 +30,11 @@ void b3FluidSphSolver::applyForcesSingleFluid(const b3FluidSphParametersGlobal& 
 	for(int i = 0; i < particles.size(); ++i)
 	{
 		b3Vector3& vel = particles.m_vel[i];
-		b3Vector3& vel_eval = particles.m_vel_eval[i];
 	
 		b3Vector3 acceleration = FL.m_gravity + (particles.m_accumulatedForce[i] * invParticleMass);
 
 		//Leapfrog integration
-		b3Vector3 vnext = vel + acceleration * FG.m_timeStep;	//v(t+1/2) = v(t-1/2) + a(t) dt	
-		vel_eval = (vel + vnext) * b3Scalar(0.5);				//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
+		b3Vector3 vnext = vel + acceleration * FG.m_timeStep;	//v(t+1/2) = v(t-1/2) + a(t) dt
 		vel = vnext;
 	}
 	
@@ -56,16 +54,16 @@ void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParametersG
 	{
 		for(int i = 0; i < particles.size(); ++i)
 		{
-			b3Vector3 vel = particles.m_vel[i];
-			b3Vector3 vnext = particles.m_vel[i];
+			b3Vector3 prevVelocity = particles.m_vel_eval[i];	//Velocity at (t-1/2)
+			b3Vector3 nextVelocity = particles.m_vel[i];		//Velccity at (t+1/2)
 			
-			b3Scalar speed = vel.length();
+			b3Scalar speed = nextVelocity.length();
 			if(speed > simulationScaleSpeedLimit) 
 			{
-				vnext *= simulationScaleSpeedLimit / speed;
+				nextVelocity *= simulationScaleSpeedLimit / speed;
 					
-				particles.m_vel_eval[i] = (vel + vnext) * b3Scalar(0.5);
-				particles.m_vel[i] = vnext;
+				particles.m_vel_eval[i] = (prevVelocity + nextVelocity) * b3Scalar(0.5);	//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
+				particles.m_vel[i] = nextVelocity;
 			}
 		}	
 	}

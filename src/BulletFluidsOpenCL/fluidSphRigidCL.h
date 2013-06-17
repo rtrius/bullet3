@@ -1470,7 +1470,6 @@ static const char* fluidSphRigidCL= \
 "			\n"
 "			//Leapfrog integration\n"
 "			b3Vector3 velNext = fluidVelocity + particleImpulse;\n"
-"			fluidVelEval[i] = (fluidVelocity + velNext) * 0.5f;\n"
 "			fluidVel[i] = velNext;\n"
 "		}\n"
 "	}\n"

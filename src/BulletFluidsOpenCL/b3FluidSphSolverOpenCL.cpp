@@ -254,6 +254,11 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			sphComputePressure( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
 			sphComputeForce( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
 			
+			//The previous vel(velocity at t-1/2) is needed to update vel_eval for leapfrog integration
+			//Since vel_eval(velocity at t) is used only for SPH force computation,
+			//it is possible to store the previous velocity in m_vel_eval
+			fluidData->m_vel_eval.copyFromOpenCLArray(fluidData->m_vel);
+			
 			clFlush(m_commandQueue);
 			
 			//This branch is executed on CPU, while findNeighborCells() and sphComputePressure/Force() is simultaneously executed on GPU
@@ -372,12 +377,15 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			
 			if(!GPU_INTEGRATE)
 			{
+				b3FluidParticles& particles = validFluids[i]->internalGetParticles();
+				particles.m_vel_eval = particles.m_vel;
+			
 				applySphForce(FG, validFluids[i], m_tempSphForce);
 				
 				b3FluidSphSolver::applyForcesSingleFluid(FG, validFluids[i]);
 				applyAabbImpulsesSingleFluid(FG, validFluids[i]);
 				
-				b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->getLocalParameters(), validFluids[i]->internalGetParticles() );
+				b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->getLocalParameters(), particles );
 			}
 		}
 	}

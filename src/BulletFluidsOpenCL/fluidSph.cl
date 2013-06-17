@@ -566,7 +566,6 @@ __kernel void applyForces(__constant b3FluidSphParametersGlobal* FG,  __constant
 	b3Vector3 vel = fluidVel[i];
 	
 	b3Vector3 vnext = vel + acceleration * FG->m_timeStep;		//v(t+1/2) = v(t-1/2) + a(t) dt	
-	fluidVelEval[i] = (vel + vnext) * 0.5f;						//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
 	fluidVel[i] = vnext;
 	
 	fluidExternalForce[i] = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
@@ -623,7 +622,6 @@ __kernel void collideAabbImpulse(__constant b3FluidSphParametersGlobal* FG,  __c
 	
 	//Leapfrog integration
 	b3Vector3 vnext = vel + aabbImpulse;
-	fluidVelEval[i] = (vel + vnext) * 0.5f;
 	fluidVel[i] = vnext;
 }
 
@@ -636,25 +634,25 @@ __kernel void integratePositions(__constant b3FluidSphParametersGlobal* FG, __co
 	
 	b3Scalar timeStepDivSimScale = FG->m_timeStep / FG->m_simulationScale;
 	
-	b3Vector3 vel = fluidVel[i];
-	b3Vector3 vnext = fluidVel[i];
+	b3Vector3 prevVelocity = fluidVelEval[i];	//Velocity at (t-1/2)
+	b3Vector3 nextVelocity = fluidVel[i];		//Velocity at (t+1/2)
 	
 	if(FL->m_speedLimit != 0.0f)
 	{
 		b3Scalar simulationScaleSpeedLimit = FL->m_speedLimit * FG->m_simulationScale;
 	
-		b3Scalar speed = sqrt( b3Vector3_length2(vnext) );
+		b3Scalar speed = sqrt( b3Vector3_length2(nextVelocity) );
 		if(speed > simulationScaleSpeedLimit) 
 		{
-			vnext *= simulationScaleSpeedLimit / speed;
+			nextVelocity *= simulationScaleSpeedLimit / speed;
 			
-			fluidVelEval[i] = (vel + vnext) * 0.5f;
-			fluidVel[i] = vnext;
+			fluidVelEval[i] = (prevVelocity + nextVelocity) * 0.5f;		//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
+			fluidVel[i] = nextVelocity;
 		}
 	}
 	
 	//Leapfrog integration
 	//p(t+1) = p(t) + v(t+1/2)*dt
-	fluidPosition[i] += vnext * timeStepDivSimScale;
+	fluidPosition[i] += nextVelocity * timeStepDivSimScale;
 }
 

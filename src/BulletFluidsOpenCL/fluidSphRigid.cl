@@ -1468,7 +1468,6 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 			
 			//Leapfrog integration
 			b3Vector3 velNext = fluidVelocity + particleImpulse;
-			fluidVelEval[i] = (fluidVelocity + velNext) * 0.5f;
 			fluidVel[i] = velNext;
 		}
 	}
