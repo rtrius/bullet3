@@ -36,6 +36,15 @@ public:
 	b3OpenCLArray<b3FluidGridIterator> m_cellContents;
 	b3OpenCLArray<b3FluidSortingGrid::FoundCellsGpu> m_foundCells;
 	
+	//Size == m_numActiveCells
+		//b3SortData.m_key == grid cell value(value to sort by), converted to y/z-axis orientation
+		//b3SortData.m_value == x-axis oriented grid cell index
+		b3OpenCLArray<b3SortData> m_yOrientedPairs;
+		b3OpenCLArray<b3SortData> m_zOrientedPairs;
+		
+		b3OpenCLArray<int> m_yIndex;	//Parallel array to m_activeCells
+		b3OpenCLArray<int> m_zIndex;	//Parallel array to m_activeCells
+	
 	b3FluidSortingGridOpenCL(cl_context context, cl_command_queue queue);
 		
 	void writeToOpenCL(cl_command_queue queue, b3FluidSortingGrid& sortingGrid);
@@ -49,10 +58,10 @@ class b3FluidSortingGridOpenCLProgram_GenerateUniques
 {
 	cl_program m_sortingGridProgram;
 	cl_kernel m_markUniquesKernel;
-	cl_kernel m_storeUniquesKernel;
-	cl_kernel m_setZeroKernel;
-	cl_kernel m_countUniquesKernel;
-	cl_kernel m_generateIndexRangesKernel;
+	cl_kernel m_storeUniquesAndIndexRangesKernel;
+	
+	cl_kernel m_convertCellValuesAndLoadCellIndexKernel;
+	cl_kernel m_writebackReorientedCellIndiciesKernel;
 	
 	b3PrefixScanCL m_prefixScanner;
 	
@@ -64,7 +73,7 @@ public:
 	~b3FluidSortingGridOpenCLProgram_GenerateUniques();
 	
 	void generateUniques(cl_command_queue commandQueue, const b3OpenCLArray<b3SortData>& valueIndexPairs,
-							b3FluidSortingGridOpenCL* gridData, int numFluidParticles);
+							b3FluidSortingGridOpenCL* gridData, int numFluidParticles, b3RadixSort32CL& radixSorter);
 };
 
 ///Implements b3FluidSortingGrid::insertParticles() for OpenCL.
@@ -96,7 +105,7 @@ public:
 	
 	//This can only be called after insertParticlesIntoGrid() is for the current fluid
 	//and before insertParticlesIntoGrid() is called for the next fluid
-	void rearrangeParticlesOnHost(b3FluidSph* fluid);
+	//void rearrangeParticlesOnHost(b3FluidSph* fluid);
 	
 private:
 	void generateValueIndexPairs(cl_command_queue commandQueue, int numFluidParticles, b3Scalar cellSize, cl_mem fluidPositionsBuffer);

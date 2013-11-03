@@ -32,7 +32,13 @@ subject to the following restrictions:
 //class b3FluidSortingGridOpenCL
 // /////////////////////////////////////////////////////////////////////////////
 b3FluidSortingGridOpenCL::b3FluidSortingGridOpenCL(cl_context context, cl_command_queue queue) 
-: m_numActiveCells(context, queue), m_activeCells(context, queue), m_foundCells(context, queue), m_cellContents(context, queue) 
+: m_numActiveCells(context, queue), m_activeCells(context, queue), m_foundCells(context, queue), m_cellContents(context, queue),
+
+	m_yIndex(context, queue),
+	m_zIndex(context, queue),
+		
+	m_yOrientedPairs(context, queue),
+	m_zOrientedPairs(context, queue)
 {
 	m_numActiveCells.resize(1);
 }
@@ -87,28 +93,28 @@ b3FluidSortingGridOpenCLProgram_GenerateUniques::b3FluidSortingGridOpenCLProgram
 	
 	m_markUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "markUniques", &error, m_sortingGridProgram, additionalMacros );
 	b3Assert(m_markUniquesKernel);
-	m_storeUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "storeUniques", &error, m_sortingGridProgram, additionalMacros );
-	b3Assert(m_storeUniquesKernel);
-	m_setZeroKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "setZero", &error, m_sortingGridProgram, additionalMacros );
-	b3Assert(m_setZeroKernel);
-	m_countUniquesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "countUniques", &error, m_sortingGridProgram, additionalMacros );
-	b3Assert(m_countUniquesKernel);
-	m_generateIndexRangesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateIndexRanges", &error, m_sortingGridProgram, additionalMacros );
-	b3Assert(m_generateIndexRangesKernel);
+	m_storeUniquesAndIndexRangesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "storeUniquesAndIndexRanges", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_storeUniquesAndIndexRangesKernel);
+	
+	m_convertCellValuesAndLoadCellIndexKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "convertCellValuesAndLoadCellIndex", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_convertCellValuesAndLoadCellIndexKernel);
+	m_writebackReorientedCellIndiciesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "writebackReorientedCellIndicies", &error, m_sortingGridProgram, additionalMacros );
+	b3Assert(m_writebackReorientedCellIndiciesKernel);
 }
 b3FluidSortingGridOpenCLProgram_GenerateUniques::~b3FluidSortingGridOpenCLProgram_GenerateUniques()
 {
 	clReleaseKernel(m_markUniquesKernel);
-	clReleaseKernel(m_storeUniquesKernel);
-	clReleaseKernel(m_setZeroKernel);
-	clReleaseKernel(m_countUniquesKernel);
-	clReleaseKernel(m_generateIndexRangesKernel);
+	clReleaseKernel(m_storeUniquesAndIndexRangesKernel);
+	
+	clReleaseKernel(m_convertCellValuesAndLoadCellIndexKernel);
+	clReleaseKernel(m_writebackReorientedCellIndiciesKernel);
+	
 	clReleaseProgram(m_sortingGridProgram);
 }
 
 void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command_queue commandQueue,
 																	const b3OpenCLArray<b3SortData>& valueIndexPairs,
-																	b3FluidSortingGridOpenCL* gridData, int numFluidParticles)
+																	b3FluidSortingGridOpenCL* gridData, int numFluidParticles, b3RadixSort32CL& radixSorter)
 {
 	if( m_tempInts.size() < numFluidParticles ) m_tempInts.resize(numFluidParticles, false);
 	if( m_scanResults.size() < numFluidParticles ) m_scanResults.resize(numFluidParticles, false);
@@ -119,10 +125,14 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 	
 	unsigned int numUniques = 0;
 	
+	clFinish(commandQueue);
+			
 	//Detect unique values
 	{
 		//If the element to the right is different(or out of bounds), set 1; set 0 otherwise
 		{
+			B3_PROFILE("Mark 1/0");
+		
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( valueIndexPairs.getBufferCL() ),
@@ -134,10 +144,14 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 			launcher.setConst(numFluidParticles);
 			
 			launcher.launch1D(numFluidParticles);
+			
+			clFinish(commandQueue);
 		}
 		
 		//
 		{
+			B3_PROFILE("Prefix sum and resize");
+			
 			m_prefixScanner.execute(m_tempInts, m_scanResults, numFluidParticles, &numUniques);		//Exclusive scan
 			++numUniques;	//Prefix scanner returns last index if the array is filled with 1 and 0; add 1 to get size
 			
@@ -146,74 +160,113 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 			
 			out_sortGridValues.resize(numActiveCells, false);
 			out_iterators.resize(numActiveCells, false);
+			
+			clFinish(commandQueue);
 		}
 		
-		//Use scan results to store unique b3FluidGridCombinedPos
+		//Use scan results to store unique b3FluidGridCombinedPos, and perform a linear search for the index ranges for each cell
 		{
+			B3_PROFILE("Store Uniques");
+		
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( valueIndexPairs.getBufferCL() ),
 				b3BufferInfoCL( m_tempInts.getBufferCL() ),
 				b3BufferInfoCL( m_scanResults.getBufferCL() ),
-				b3BufferInfoCL( out_sortGridValues.getBufferCL() )
-			};
-			
-			b3LauncherCL launcher(commandQueue, m_storeUniquesKernel);
-			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst(numFluidParticles);
-			
-			launcher.launch1D(numFluidParticles);
-		}
-	}
-	
-	//Count number of each unique value and use count to generate index ranges
-	{
-		//Set m_tempInts to 0; it will store the number of particles corresponding to each b3FluidGridCombinedPos(num particles in each cell)
-		{
-			b3BufferInfoCL bufferInfo[] = { b3BufferInfoCL( m_tempInts.getBufferCL() ) };
-		
-			b3LauncherCL launcher(commandQueue, m_setZeroKernel);
-			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst(numUniques);
-			
-			launcher.launch1D(numUniques);
-		}
-		
-		//Use binary search and atomic increment to count the number of particles in each cell
-		{
-			b3BufferInfoCL bufferInfo[] = 
-			{
-				b3BufferInfoCL( valueIndexPairs.getBufferCL() ),
 				b3BufferInfoCL( out_sortGridValues.getBufferCL() ),
-				b3BufferInfoCL( m_tempInts.getBufferCL() )
-			};
-			
-			b3LauncherCL launcher(commandQueue, m_countUniquesKernel);
-			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst(numUniques);
-			launcher.setConst(numFluidParticles);
-			
-			launcher.launch1D(numFluidParticles);
-		}
-		
-		//Exclusive scan
-		m_prefixScanner.execute(m_tempInts, m_scanResults, numUniques, 0);	
-		
-		//Use scan results to generate index ranges(check element to the right)
-		{
-			b3BufferInfoCL bufferInfo[] = 
-			{
-				b3BufferInfoCL( m_scanResults.getBufferCL() ),
 				b3BufferInfoCL( out_iterators.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(commandQueue, m_generateIndexRangesKernel);
+			b3LauncherCL launcher(commandQueue, m_storeUniquesAndIndexRangesKernel);
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst( static_cast<int>(numUniques) );
 			launcher.setConst(numFluidParticles);
 			
-			launcher.launch1D(numUniques);
+			launcher.launch1D(numFluidParticles);
+			
+			clFinish(commandQueue);
 		}
+	}
+	
+	
+	clFinish(commandQueue);
+	const bool GENERATE_YZ_ORIENTED_ARRAYS = false;
+	if(GENERATE_YZ_ORIENTED_ARRAYS)
+	{
+		B3_PROFILE("Generate yz oriented arrays");
+	
+		gridData->m_yIndex.resize(numUniques, false);
+		gridData->m_zIndex.resize(numUniques, false);
+			
+		gridData->m_yOrientedPairs.resize(numUniques, false);
+		gridData->m_zOrientedPairs.resize(numUniques, false);
+		
+		//Each grid cell has a position specified by 3 integers: x, y, z
+		//these 3 coordinates are combined into a single value for sorting
+		//By default the value assigned to a grid cell is: x + y * CELLS_PER_LINE + z * CELLS_PER_LINE^2
+		//This 'hash function' has the feature that adjacent cells along the x-axis may be accessed
+		//by incrementing or decrementing the value instead of performing a binary search.
+		//
+		//In order to replicate this feature along the y and z axes,
+		//Convert the values in m_yOrientedPairs to: x * CELLS_PER_LINE + y + z * CELLS_PER_LINE^2
+		//Convert the values in m_zOrientedPairs to: x * CELLS_PER_LINE + y * CELLS_PER_LINE^2 + z
+		//
+		//Also load y/z oriented arrays with the x-axis oriented index to make it possible to
+		//access the grid cell contents
+		{
+			B3_PROFILE("convertCellValuesAndLoadCellIndex");
+			
+			b3BufferInfoCL bufferInfo[] = 
+			{
+				b3BufferInfoCL( gridData->m_activeCells.getBufferCL() ),
+				b3BufferInfoCL( gridData->m_yOrientedPairs.getBufferCL() ),
+				b3BufferInfoCL( gridData->m_zOrientedPairs.getBufferCL() )
+			};
+				
+			b3LauncherCL launcher(commandQueue, m_convertCellValuesAndLoadCellIndexKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst( static_cast<int>(numUniques) );
+			
+			launcher.launch1D(numUniques);
+			clFinish(commandQueue);
+		}
+		
+		//Sort
+		{
+			B3_PROFILE("Sort Reoriented Pairs");
+			
+			//Note that b3RadixSort32CL uses b3SortData, while b3FluidSortingGrid uses b3FluidGridValueIndexPair.
+			//b3SortData is used in the C++ code, while b3FluidGridValueIndexPair is used in the OpenCL kernels
+			//b3SortData.m_key == b3FluidGridValueIndexPair.m_value (value to sort by)
+			//b3SortData.m_value == b3FluidGridValueIndexPair.m_index (grid cell index)
+			
+			radixSorter.execute(gridData->m_yOrientedPairs, 32);
+			radixSorter.execute(gridData->m_zOrientedPairs, 32);
+			clFinish(commandQueue);
+		}
+		
+		//Writeback the y/z oriented cell indicies so that we can use the x oriented index 
+		//to access the cells in y/z order
+		{
+			B3_PROFILE("writebackReorientedCellIndicies");
+			
+			b3BufferInfoCL bufferInfo[] = 
+			{
+				b3BufferInfoCL( gridData->m_yOrientedPairs.getBufferCL() ),
+				b3BufferInfoCL( gridData->m_zOrientedPairs.getBufferCL() ),
+				
+				b3BufferInfoCL( gridData->m_yIndex.getBufferCL() ),
+				b3BufferInfoCL( gridData->m_zIndex.getBufferCL() )
+			};
+				
+			b3LauncherCL launcher(commandQueue, m_writebackReorientedCellIndiciesKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst( static_cast<int>(numUniques) );
+			
+			launcher.launch1D(numUniques);
+			clFinish(commandQueue);
+		}
+		
+		clFinish(commandQueue);
 	}
 }
 	
@@ -287,12 +340,6 @@ void b3FluidSortingGridOpenCLProgram::insertParticlesIntoGrid(cl_context context
 	m_tempBufferCL.resize(numFluidParticles);
 	m_valueIndexPairs.resize(numFluidParticles);
 	
-	//Cannot check number of nonempty grid cells before generateUniques();
-	//temporarily resize m_activeCells and m_cellContents
-	//to handle the case where each particle occupies a different grid cell.
-	gridData->m_activeCells.resize(numFluidParticles);
-	gridData->m_cellContents.resize(numFluidParticles);
-	
 	//
 	{
 		B3_PROFILE("generateValueIndexPairs()");
@@ -337,12 +384,19 @@ void b3FluidSortingGridOpenCLProgram::insertParticlesIntoGrid(cl_context context
 	{
 		B3_PROFILE("generateUniques_parallel()");
 		
-		m_generateUniquesProgram.generateUniques(commandQueue, m_valueIndexPairs, gridData, numFluidParticles);
+		m_generateUniquesProgram.generateUniques(commandQueue, m_valueIndexPairs, gridData, numFluidParticles, m_radixSorter);
 		clFinish(commandQueue);
 	}
 	else
 	{
 		B3_PROFILE("generateUniques_serial()");
+		
+		//Cannot check number of nonempty grid cells when using generateUniques_serial();
+		//temporarily resize m_activeCells and m_cellContents
+		//to handle the case where each particle occupies a different grid cell.
+		gridData->m_activeCells.resize(numFluidParticles);
+		gridData->m_cellContents.resize(numFluidParticles);
+	
 		generateUniques_serial(commandQueue, numFluidParticles, gridData);
 		
 		int numActiveCells = gridData->getNumActiveCells();
@@ -351,13 +405,16 @@ void b3FluidSortingGridOpenCLProgram::insertParticlesIntoGrid(cl_context context
 		clFinish(commandQueue);
 	}
 	
+	/*
 	{
 		B3_PROFILE("copy valueIndexPairs to host");
 		m_valueIndexPairs.copyToHost(m_valueIndexPairsHost, true);
 	}
+	*/
 	
 	clFinish(commandQueue);
 }
+/*
 void b3FluidSortingGridOpenCLProgram::rearrangeParticlesOnHost(b3FluidSph* fluid)
 {
 	B3_PROFILE("rearrange host");
@@ -369,6 +426,7 @@ void b3FluidSortingGridOpenCLProgram::rearrangeParticlesOnHost(b3FluidSph* fluid
 	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_accumulatedForce);
 	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVoid, particles.m_userPointer);
 }
+*/
 
 void b3FluidSortingGridOpenCLProgram::generateValueIndexPairs(cl_command_queue commandQueue, int numFluidParticles, 
 															  b3Scalar cellSize, cl_mem fluidPositionsBuffer)

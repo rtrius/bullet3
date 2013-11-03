@@ -219,76 +219,84 @@ __kernel void markUniques(__global b3FluidGridValueIndexPair* valueIndexPairs, _
 	
 	out_retainValueAtThisIndex[index] = isRetained;
 }
-__kernel void storeUniques(__global b3FluidGridValueIndexPair* valueIndexPairs, __global int* retainValue, __global int* scanResults, 
-							__global b3FluidGridCombinedPos* out_sortGridValues, int numFluidParticles)
+
+__kernel void storeUniquesAndIndexRanges(__global b3FluidGridValueIndexPair* valueIndexPairs, __global int* retainValue, __global int* scanResults, 
+							__global b3FluidGridCombinedPos* out_sortGridValues, __global b3FluidGridIterator* out_iterators, int numFluidParticles)
 {
 	int index = get_global_id(0);
 	if(index >= numFluidParticles) return;
 	
 	if(retainValue[index])
 	{
-		int scannedIndex = scanResults[index];
+		int gridCellIndex = scanResults[index];
+		b3FluidGridCombinedPos gridCellValue = valueIndexPairs[index].m_value;
 		
-		out_sortGridValues[scannedIndex] = valueIndexPairs[index].m_value;
+		out_sortGridValues[gridCellIndex] = gridCellValue;
+		
+		//Perform a linear search for the lower range of this grid cell.
+		//When r, the SPH interaction radius, is equivalent to the grid cell size, 
+		//the average number of particles per cell is frequently 4 to 7.
+		int lowerParticleIndex = index;
+		int upperParticleIndex = index;
+		while( lowerParticleIndex > 0 && valueIndexPairs[lowerParticleIndex - 1].m_value == gridCellValue ) --lowerParticleIndex;
+		
+		out_iterators[gridCellIndex] = (b3FluidGridIterator){ lowerParticleIndex, upperParticleIndex };
 	}
 }
-__kernel void setZero(__global int* array, int numUniques)
-{
-	int index = get_global_id(0);
-	if(index >= numUniques) return;
-	
-	array[index] = 0;
-}
-inline int binarySearch(__global b3FluidGridCombinedPos *sortGridValues, int sortGridValuesSize, b3FluidGridCombinedPos value)
-{
-	//From b3AlignedObjectArray::findBinarySearch()
-	//Assumes sortGridValues[] is sorted
-	
-	int first = 0;
-	int last = sortGridValuesSize - 1;
-	
-	while(first <= last) 
-	{
-		int mid = (first + last) / 2;
-		if(value > sortGridValues[mid]) first = mid + 1;
-		else if(value < sortGridValues[mid]) last = mid - 1;
-		else return mid;
-	}
 
-	return sortGridValuesSize;
-}
-__kernel void countUniques(__global b3FluidGridValueIndexPair* valueIndexPairs, __global b3FluidGridCombinedPos* sortGridValues, 
-							__global int* out_valuesCount, int numUniqueValues, int numFluidParticles)
+b3FluidGridCombinedPos getCombinedPosition_yAxisOriented(b3FluidGridPosition quantizedPosition)
 {
-	int index = get_global_id(0);
-	if(index >= numFluidParticles) return;
+	b3FluidGridCoordinate signedX = quantizedPosition.x + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedY = quantizedPosition.y + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedZ = quantizedPosition.z + B3_FLUID_GRID_COORD_RANGE_HALVED;
 	
-	b3FluidGridCombinedPos particleValue = valueIndexPairs[index].m_value;
+	b3FluidGridCombinedPos unsignedX = (b3FluidGridCombinedPos)signedX * B3_FLUID_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedY = (b3FluidGridCombinedPos)signedY;
+	b3FluidGridCombinedPos unsignedZ = (b3FluidGridCombinedPos)signedZ * B3_FLUID_GRID_COORD_RANGE * B3_FLUID_GRID_COORD_RANGE;
 	
-	int countArrayIndex = binarySearch(sortGridValues, numUniqueValues, particleValue);
-	
-	//particleValue should exist in sortGridValues; this check is not necessary
-	if(countArrayIndex != numUniqueValues) 
-		atomic_inc( &out_valuesCount[countArrayIndex] );
+	return unsignedX + unsignedY + unsignedZ;
 }
-__kernel void generateIndexRanges(__global int* scanResults, __global b3FluidGridIterator* out_iterators, int numActiveCells, int numParticles)
+b3FluidGridCombinedPos getCombinedPosition_zAxisOriented(b3FluidGridPosition quantizedPosition)
+{
+	b3FluidGridCoordinate signedX = quantizedPosition.x + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedY = quantizedPosition.y + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	b3FluidGridCoordinate signedZ = quantizedPosition.z + B3_FLUID_GRID_COORD_RANGE_HALVED;
+	
+	b3FluidGridCombinedPos unsignedX = (b3FluidGridCombinedPos)signedX * B3_FLUID_GRID_COORD_RANGE * B3_FLUID_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedY = (b3FluidGridCombinedPos)signedY * B3_FLUID_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedZ = (b3FluidGridCombinedPos)signedZ;
+	
+	return unsignedX + unsignedY + unsignedZ;
+}
+__kernel void convertCellValuesAndLoadCellIndex(__global b3FluidGridCombinedPos* activeCells, __global b3FluidGridValueIndexPair* yOrientedPairs, 
+								__global b3FluidGridValueIndexPair* zOrientedPairs, int numActiveCells)
 {
 	int index = get_global_id(0);
 	if(index >= numActiveCells) return;
 	
-	int lowerIndex, upperIndex;
-	if(index < numActiveCells-1)
-	{
-		lowerIndex = scanResults[index];
-		upperIndex = scanResults[index+1] - 1;
-	}
-	else
-	{
-		lowerIndex = scanResults[index];
-		upperIndex = numParticles - 1;
-	}
+	b3FluidGridCombinedPos xAxisOrientedValue = activeCells[index];
 	
-	out_iterators[index] = (b3FluidGridIterator){ lowerIndex, upperIndex };
+	b3FluidGridPosition splitPosition;
+	splitCombinedPosition(B3_FLUID_GRID_COORD_RANGE, B3_FLUID_GRID_COORD_RANGE, xAxisOrientedValue, 
+							&splitPosition.x, &splitPosition.y, &splitPosition.z);
+	splitPosition.x -= B3_FLUID_GRID_COORD_RANGE_HALVED;
+	splitPosition.y -= B3_FLUID_GRID_COORD_RANGE_HALVED;
+	splitPosition.z -= B3_FLUID_GRID_COORD_RANGE_HALVED;
+	
+	yOrientedPairs[index].m_value = getCombinedPosition_yAxisOriented(splitPosition);
+	yOrientedPairs[index].m_index = index;
+	
+	zOrientedPairs[index].m_value = getCombinedPosition_zAxisOriented(splitPosition);
+	zOrientedPairs[index].m_index = index;
+}
+__kernel void writebackReorientedCellIndicies(__global b3FluidGridValueIndexPair* yOrientedPairs, __global b3FluidGridValueIndexPair* zOrientedPairs,
+											__global int* yIndex, __global int* zIndex, int numActiveCells)
+{
+	int index = get_global_id(0);
+	if(index >= numActiveCells) return;
+	
+	yIndex[ yOrientedPairs[index].m_index ] = index;
+	zIndex[ zOrientedPairs[index].m_index ] = index;
 }
 
 __kernel void generateUniques(__global b3FluidGridValueIndexPair* sortedPairs, 
