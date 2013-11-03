@@ -367,6 +367,29 @@ inline void binaryRangeSearch(int numActiveCells, __global b3FluidGridCombinedPo
 	
 	while(first <= last)
 	{
+//#define USE_OPTIMIZED_BINARY_RANGE_SEARCH
+#ifdef USE_OPTIMIZED_BINARY_RANGE_SEARCH
+		int mid = (first + last) / 2;
+		int lowerValueGreaterThanMidValue = (lowerValue > cellValues[mid]);
+		int upperValueLesserThanMidValue = (upperValue < cellValues[mid]);
+		
+		first = (lowerValueGreaterThanMidValue) ? mid + 1 : first;
+		last = (!lowerValueGreaterThanMidValue && upperValueLesserThanMidValue) ? last = mid - 1 : last;
+		
+		if( !lowerValueGreaterThanMidValue && !upperValueLesserThanMidValue )
+		{
+			int lowerIndex = mid;
+			int upperIndex = mid;
+			
+			//Perform a linear search to find the lower and upper index range
+			while(lowerIndex-1 >= 0 && cellValues[lowerIndex-1] >= lowerValue) lowerIndex--;
+			while(upperIndex+1 < numActiveCells && cellValues[upperIndex+1] <= upperValue) upperIndex++;
+			
+			*out_lowerIndex = lowerIndex;
+			*out_upperIndex = upperIndex;
+			return;
+		}
+#else
 		int mid = (first + last) / 2;
 		if( lowerValue > cellValues[mid] )
 		{
@@ -390,8 +413,9 @@ inline void binaryRangeSearch(int numActiveCells, __global b3FluidGridCombinedPo
 			*out_upperIndex = upperIndex;
 			return;
 		}
+#endif
 	}
-
+	
 	*out_lowerIndex = numActiveCells;
 	*out_upperIndex = numActiveCells;
 }

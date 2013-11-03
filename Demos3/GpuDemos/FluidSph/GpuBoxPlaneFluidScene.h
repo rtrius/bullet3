@@ -12,6 +12,7 @@
 #include "ScreenSpaceFluidRendererGL.h"
 #include "BulletFluids/Sph/b3FluidSph.h"
 #include "BulletFluidsOpenCL/b3FluidSphSolverOpenCL.h"
+#include "BulletFluidsOpenCL/b3FluidSphSolverOpenCL2.h"
 #include "BulletFluidsOpenCL/b3FluidSphOpenCL.h"
 
 
@@ -27,7 +28,13 @@ class GpuBoxPlaneFluidScene : public BASE_DEMO_CLASS
 {
 public:
 
+#define USE_INFINITE_GRID_WITH_COLLISIONS
+#ifndef USE_INFINITE_GRID_WITH_COLLISIONS
 	b3FluidSphSolverOpenCL* m_solver;
+#else
+	b3FluidSphSolverOpenCL2* m_solver;
+#endif
+
 	b3FluidSphParametersGlobal m_globalParameters;
 	b3FluidSph* m_sphFluid;
 
@@ -85,7 +92,13 @@ public:
 		m_fluidRenderer = new ScreenSpaceFluidRendererGL(width, height);
 		
 		BASE_DEMO_CLASS::setupScene(ci);
+		
+
+#ifndef USE_INFINITE_GRID_WITH_COLLISIONS
 		m_solver = new b3FluidSphSolverOpenCL(m_clData->m_clContext, m_clData->m_clDevice, m_clData->m_clQueue);
+#else
+		m_solver = new b3FluidSphSolverOpenCL2(m_clData->m_clContext, m_clData->m_clDevice, m_clData->m_clQueue);
+#endif
 		
 		{
 			b3Vector3 OFFSET(0, 0, 0);
