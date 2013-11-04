@@ -245,7 +245,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			b3FluidSphOpenCL* fluidData = m_fluidData[i];
 			
 			if(UPDATE_GRID_ON_GPU)
-				m_sortingGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, m_fluidData[i], m_gridData[i]);
+				m_sortingGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, fluidData, gridData);
 			
 			int numActiveCells = gridData->getNumActiveCells();
 			int numFluidParticles = fluid->numParticles();
@@ -310,7 +310,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 				launcher.launch1D(numFluidParticles);
 			}
 			
-			m_fluidRigidInteractor.interact(m_globalFluidParams, fluidData, gridData, rbData);
+			m_fluidRigidInteractor.interact(m_globalFluidParams, fluidData, gridData, 0, rbData);
 			
 			{
 				b3BufferInfoCL bufferInfo[] = 

@@ -16,6 +16,7 @@
 
 #include "b3FluidSphOpenCL.h"
 #include "b3FluidSortingGridOpenCL.h"
+#include "b3FluidHashGridOpenCL.h"
 
 #include "fluidSphRigidCL.h"
 
@@ -159,6 +160,7 @@ class b3FluidSphRigidInteractorCL
 	cl_kernel m_detectLargeAabbRigidsKernel;
 	cl_kernel m_fluidLargeRigidBroadphaseKernel;
 	cl_kernel m_fluidSmallRigidBroadphaseKernel;
+	cl_kernel m_fluidSmallRigidBroadphaseModuloKernel;
 	cl_kernel m_fluidRigidMidphaseKernel;
 	cl_kernel m_fluidRigidNarrowphaseKernel;
 	cl_kernel m_resolveFluidRigidCollisionsKernel;
@@ -197,6 +199,8 @@ public:
 		b3Assert(m_fluidLargeRigidBroadphaseKernel);
 		m_fluidSmallRigidBroadphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidSmallRigidBroadphase", &error, m_fluidRigidProgram, additionalMacros );
 		b3Assert(m_fluidSmallRigidBroadphaseKernel);
+		m_fluidSmallRigidBroadphaseModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidSmallRigidBroadphaseModulo", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_fluidSmallRigidBroadphaseModuloKernel);
 		m_fluidRigidMidphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidRigidMidphase", &error, m_fluidRigidProgram, additionalMacros );
 		b3Assert(m_fluidRigidMidphaseKernel);
 		m_fluidRigidNarrowphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidRigidNarrowphase", &error, m_fluidRigidProgram, additionalMacros );
@@ -218,6 +222,7 @@ public:
 		clReleaseKernel(m_detectLargeAabbRigidsKernel);
 		clReleaseKernel(m_fluidLargeRigidBroadphaseKernel);
 		clReleaseKernel(m_fluidSmallRigidBroadphaseKernel);
+		clReleaseKernel(m_fluidSmallRigidBroadphaseModuloKernel);
 		clReleaseKernel(m_fluidRigidMidphaseKernel);
 		clReleaseKernel(m_fluidRigidNarrowphaseKernel);
 		clReleaseKernel(m_resolveFluidRigidCollisionsKernel);
@@ -229,17 +234,20 @@ public:
 		clReleaseProgram(m_fluidRigidProgram);
 	}
 	
-
+	//Either gridData or moduloGridData must be nonzero, but not both; it is used to determine which grid type is being used
 	void interact(const b3OpenCLArray<b3FluidSphParametersGlobal>& globalFluidParams, b3FluidSphOpenCL* fluidData, 
-					b3FluidSortingGridOpenCL* gridData, RigidBodyGpuData& rigidBodyData)
+					b3FluidSortingGridOpenCL* gridData, b3FluidHashGridOpenCL* moduloGridData, RigidBodyGpuData& rigidBodyData)
 	{
+		b3Assert(gridData || moduloGridData);
+		b3Assert( !(gridData && moduloGridData));
+	
 		clFinish(m_commandQueue);
 	
 		B3_PROFILE("b3FluidSphRigidInteractorCL::interact()");
 	
 		int numRigidBodies = rigidBodyData.m_numRigidBodies;
 		int numFluidParticles = fluidData->m_pos.size();
-		int numGridCells = gridData->getNumActiveCells();
+		int numGridCells = (gridData) ? gridData->getNumActiveCells() : B3_FLUID_HASH_GRID_NUM_CELLS;
 		
 		if(!numRigidBodies || !numFluidParticles || !numGridCells) return;
 		
@@ -332,6 +340,7 @@ public:
 		}
 		
 		//Broadphase - small AABB rigids
+		if(gridData)
 		{
 			B3_PROFILE("m_fluidSmallRigidBroadphaseKernel");
 				
@@ -363,8 +372,38 @@ public:
 			launcher.setConst(numRigidBodies);
 			
 			launcher.launch1D(numRigidBodies);
-			clFinish(m_commandQueue);
 		}
+		else if(moduloGridData)
+		{
+			B3_PROFILE("m_fluidSmallRigidBroadphaseModuloKernel");
+			
+			b3BufferInfoCL bufferInfo[] = 
+			{
+				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+				
+				b3BufferInfoCL( moduloGridData->m_cellContents.getBufferCL() ),
+				
+				b3BufferInfoCL( rigidBodyData.m_worldSpaceAabbs ),
+				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
+				b3BufferInfoCL( rigidBodyData.m_collidables ),
+				
+				b3BufferInfoCL( m_pairs.getBufferCL() ),
+				b3BufferInfoCL( m_midphasePairs.getBufferCL() )
+			};
+			
+			b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseModuloKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst(numRigidBodies);
+			
+			launcher.launch1D(numRigidBodies);
+		}
+		else
+		{
+			b3Assert(0);	//No grid data
+		}
+			clFinish(m_commandQueue);
 	
 		//Midphase - for triangle mesh and compound shapes
 		{

@@ -24,7 +24,7 @@ subject to the following restrictions:
 #include "fluidSphCL2.h"
 
 b3FluidSphSolverOpenCL2::b3FluidSphSolverOpenCL2(cl_context context, cl_device_id device, cl_command_queue queue)
-: m_globalFluidParams(context, queue), m_hashGridProgram(context, device, queue)
+: m_globalFluidParams(context, queue), m_hashGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
 {
 	m_context = context;
 	m_commandQueue = queue;
@@ -233,7 +233,7 @@ void b3FluidSphSolverOpenCL2::stepSimulation(const b3FluidSphParametersGlobal& F
 			b3FluidSphOpenCL* fluidData = m_fluidData[i];
 			
 			//if(UPDATE_GRID_ON_GPU)
-				m_hashGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, m_fluidData[i], m_gridData[i]);
+				m_hashGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, fluidData, gridData);
 			
 			int numFluidParticles = fluid->numParticles();
 			sphComputePressure( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
@@ -295,8 +295,7 @@ void b3FluidSphSolverOpenCL2::stepSimulation(const b3FluidSphParametersGlobal& F
 				launcher.launch1D(numFluidParticles);
 			}
 			
-			//Rigid body interation not implemeted for this grid type
-			//m_fluidRigidInteractor.interact(m_globalFluidParams, fluidData, gridData, rbData);
+			m_fluidRigidInteractor.interact(m_globalFluidParams, fluidData, 0, gridData, rbData);
 			
 			{
 				b3BufferInfoCL bufferInfo[] = 

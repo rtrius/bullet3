@@ -1228,6 +1228,99 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	
 }
 
+// ////////////////////////////////////////////////////////////////////////////
+// Modulo Hash Grid Only
+// ////////////////////////////////////////////////////////////////////////////
+#define B3_FLUID_HASH_GRID_COORD_RANGE 64
+b3FluidGridCombinedPos getCombinedPositionModulo(b3FluidGridPosition quantizedPosition)
+{
+	//as_uint() requires that sizeof(b3FluidGridCombinedPos) == sizeof(b3FluidGridCoordinate)
+	//This presents an issue if B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT is #defined
+	b3FluidGridCombinedPos unsignedX = as_uint(quantizedPosition.x) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedY = as_uint(quantizedPosition.y) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedZ = as_uint(quantizedPosition.z) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	
+	return unsignedX 
+		+ unsignedY * B3_FLUID_HASH_GRID_COORD_RANGE
+		+ unsignedZ * B3_FLUID_HASH_GRID_COORD_RANGE* B3_FLUID_HASH_GRID_COORD_RANGE;
+}
+__kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+									__global b3Vector3* fluidPosition, 
+									__global b3FluidGridIterator* cellContents, __global btAabbCL* rigidBodyWorldAabbs,
+									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
+									__global FluidRigidPairs* out_pairs, __global FluidRigidPairs* out_midphasePairs,			
+									int numRigidBodies)
+{
+	int i = get_global_id(0);
+	if(i >= numRigidBodies) return;
+	
+	b3Scalar gridCellSize = FG->m_sphSmoothRadius / FG->m_simulationScale;
+	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
+	
+	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
+	//rigidAabb.m_min.w = 0.0f;	//	check if necessary(if using vector functions for point-AABB test)
+	//rigidAabb.m_max.w = 0.0f;
+	
+	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
+	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
+	
+	BodyData rigidBody = rigidBodies[i];
+	int collidableIndex = rigidBody.m_collidableIdx;
+	
+	bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
+						|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
+						
+	__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
+	
+	//	may need to use different criteria for modulo grid(use of B3_FLUID_GRID_COORD_RANGE_HALVED is arbitrary)
+	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;	
+	if( fabs(expandedRigidAabbMin.x) > maxAabbExtent
+	 || fabs(expandedRigidAabbMin.y) > maxAabbExtent
+	 || fabs(expandedRigidAabbMin.z) > maxAabbExtent
+	 || fabs(expandedRigidAabbMax.x) > maxAabbExtent
+	 || fabs(expandedRigidAabbMax.y) > maxAabbExtent
+	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent 
+	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH ) return;
+						
+	b3FluidGridPosition quantizedAabbMin = getDiscretePosition( gridCellSize, expandedRigidAabbMin );
+	b3FluidGridPosition quantizedAabbMax = getDiscretePosition( gridCellSize, expandedRigidAabbMax );
+	
+	for(int z = quantizedAabbMin.z; z <= quantizedAabbMax.z; ++z)
+		for(int y = quantizedAabbMin.y; y <= quantizedAabbMax.y; ++y)
+			for(int x = quantizedAabbMin.x; x <= quantizedAabbMax.x; ++x)
+			{
+				b3FluidGridPosition currentCell;
+				currentCell.x = x;
+				currentCell.y = y;
+				currentCell.z = z;
+				
+				b3FluidGridCombinedPos gridCellIndex = getCombinedPositionModulo(currentCell);
+				
+				{
+					b3FluidGridIterator fluidCell = cellContents[gridCellIndex]; 
+					for(int particleIndex = fluidCell.m_firstIndex; particleIndex <= fluidCell.m_lastIndex; ++particleIndex)
+					{
+						b3Vector3 particlePos = fluidPosition[particleIndex];
+						//particlePos.w = 0.0f;	//	check if necessary(if using vector functions for point-AABB test)
+						
+						if( expandedRigidAabbMin.x <= particlePos.x && particlePos.x <= expandedRigidAabbMax.x
+						 && expandedRigidAabbMin.y <= particlePos.y && particlePos.y <= expandedRigidAabbMax.y
+						 && expandedRigidAabbMin.z <= particlePos.z && particlePos.z <= expandedRigidAabbMax.z )
+						{
+							int pairIndex = atomic_inc(&output[particleIndex].m_numIndicies);
+							if(pairIndex < MAX_FLUID_RIGID_PAIRS) output[particleIndex].m_rigidIndicies[pairIndex] = i;
+						}
+					}
+				}
+				
+			}
+	
+}
+// ////////////////////////////////////////////////////////////////////////////
+// Modulo Hash Grid Only
+// ////////////////////////////////////////////////////////////////////////////
+
 __kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __global b3Vector3* fluidPosition, 
 								__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 								__global b3BvhInfo* bvhInfos, __global btBvhSubtreeInfo* bvhSubtreeInfo, __global btQuantizedBvhNode* bvhNodes,

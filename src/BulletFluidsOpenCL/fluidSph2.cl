@@ -77,12 +77,7 @@ typedef struct
 
 
 typedef unsigned int b3FluidGridCombinedPos;
-#define B3_FLUID_HASH_GRID_COORD_RANGE 64
-	
 typedef int b3FluidGridCoordinate;
-#define B3_FLUID_HASH_GRID_COORD_RANGE_HALVED B3_FLUID_HASH_GRID_COORD_RANGE/2
-
-
 
 typedef struct
 {
@@ -90,22 +85,6 @@ typedef struct
 	int m_lastIndex;
 	
 } b3FluidGridIterator;
-
-
-//Since the hash function used to determine the 'value' of particles is simply 
-//(x + y*CELLS_PER_ROW + z*CELLS_PER_PLANE), adjacent cells have a value 
-//that is 1 greater and lesser than the current cell. 
-//This makes it possible to query 3 cells simultaneously(as a 3 cell bar extended along the x-axis) 
-//by using a 'binary range search' in the range [current_cell_value-1, current_cell_value+1]. 
-//Furthermore, as the 3 particle index ranges returned are also adjacent, it is also possible to 
-//stitch them together to form a single index range.
-#define b3FluidSortingGrid_NUM_FOUND_CELLS_GPU 9
-
-typedef struct
-{
-	b3FluidGridIterator m_iterators[b3FluidSortingGrid_NUM_FOUND_CELLS_GPU];
-	
-} b3FluidSortingGridFoundCellsGpu;		//b3FluidSortingGrid::FoundCellsGpu in b3FluidSortingGrid.h
 
 typedef struct 
 {
@@ -134,17 +113,19 @@ b3FluidGridPosition getDiscretePosition(b3Scalar cellSize, b3Vector3 position)	/
 	
 	return result;
 }
-b3FluidGridCombinedPos getCombinedPosition(b3FluidGridPosition quantizedPosition)	//b3FluidGridPosition::getCombinedPosition()
+
+#define B3_FLUID_HASH_GRID_COORD_RANGE 64
+b3FluidGridCombinedPos getCombinedPositionModulo(b3FluidGridPosition quantizedPosition)
 {
-	b3FluidGridCoordinate signedX = (quantizedPosition.x + B3_FLUID_HASH_GRID_COORD_RANGE_HALVED) % B3_FLUID_HASH_GRID_COORD_RANGE;
-	b3FluidGridCoordinate signedY = (quantizedPosition.y + B3_FLUID_HASH_GRID_COORD_RANGE_HALVED) % B3_FLUID_HASH_GRID_COORD_RANGE;
-	b3FluidGridCoordinate signedZ = (quantizedPosition.z + B3_FLUID_HASH_GRID_COORD_RANGE_HALVED) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	//as_uint() requires that sizeof(b3FluidGridCombinedPos) == sizeof(b3FluidGridCoordinate)
+	//This presents an issue if B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT is #defined
+	b3FluidGridCombinedPos unsignedX = as_uint(quantizedPosition.x) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedY = as_uint(quantizedPosition.y) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedZ = as_uint(quantizedPosition.z) % B3_FLUID_HASH_GRID_COORD_RANGE;
 	
-	b3FluidGridCombinedPos unsignedX = (b3FluidGridCombinedPos)signedX;
-	b3FluidGridCombinedPos unsignedY = (b3FluidGridCombinedPos)signedY * B3_FLUID_HASH_GRID_COORD_RANGE;
-	b3FluidGridCombinedPos unsignedZ = (b3FluidGridCombinedPos)signedZ * B3_FLUID_HASH_GRID_COORD_RANGE * B3_FLUID_HASH_GRID_COORD_RANGE;
-	
-	return unsignedX + unsignedY + unsignedZ;
+	return unsignedX 
+		+ unsignedY * B3_FLUID_HASH_GRID_COORD_RANGE
+		+ unsignedZ * B3_FLUID_HASH_GRID_COORD_RANGE* B3_FLUID_HASH_GRID_COORD_RANGE;
 }
 
 __kernel void generateValueIndexPairs(__global b3Vector3* fluidPositions, __global b3FluidGridValueIndexPair* out_pairs, 
@@ -155,7 +136,7 @@ __kernel void generateValueIndexPairs(__global b3Vector3* fluidPositions, __glob
 	
 	b3FluidGridValueIndexPair result;
 	result.m_index = index;
-	result.m_value = getCombinedPosition( getDiscretePosition(cellSize, fluidPositions[index]) );
+	result.m_value = getCombinedPositionModulo( getDiscretePosition(cellSize, fluidPositions[index]) );
 	
 	out_pairs[index] = result;
 }
@@ -206,7 +187,7 @@ __kernel void detectIndexRanges(__global b3Vector3* fluidPosition, __global b3Fl
 		int upperParticleIndex = index;
 		while( lowerParticleIndex > 0 && valueIndexPairs[lowerParticleIndex - 1].m_value == gridCellValue ) --lowerParticleIndex;
 		
-		int gridCellIndex = getCombinedPosition( getDiscretePosition(gridCellSize, fluidPosition[index]) );
+		int gridCellIndex = getCombinedPositionModulo( getDiscretePosition(gridCellSize, fluidPosition[index]) );
 		out_iterators[gridCellIndex] = (b3FluidGridIterator){ lowerParticleIndex, upperParticleIndex };
 	}
 }
@@ -237,7 +218,7 @@ __kernel void sphComputePressure(__constant b3FluidSphParametersGlobal* FG,  __c
 				currentCell.y += offsetY;
 				currentCell.x += offsetX;
 			
-				int gridCellIndex = getCombinedPosition(currentCell);
+				int gridCellIndex = getCombinedPositionModulo(currentCell);
 				b3FluidGridIterator gridCell = cellContents[gridCellIndex];
 				
 				for(int n = gridCell.m_firstIndex; n <= gridCell.m_lastIndex; ++n)
@@ -284,7 +265,7 @@ __kernel void sphComputeForce(__constant b3FluidSphParametersGlobal* FG, __const
 				currentCell.y += offsetY;
 				currentCell.x += offsetX;
 				
-				int gridCellIndex = getCombinedPosition(currentCell);
+				int gridCellIndex = getCombinedPositionModulo(currentCell);
 				b3FluidGridIterator gridCell = cellContents[gridCellIndex];
 				
 				for(int n = gridCell.m_firstIndex; n <= gridCell.m_lastIndex; ++n)

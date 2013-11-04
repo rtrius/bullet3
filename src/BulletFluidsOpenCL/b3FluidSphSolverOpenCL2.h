@@ -48,6 +48,7 @@ class b3FluidSphSolverOpenCL2 : public b3FluidSphSolver
 	b3AlignedObjectArray<b3FluidHashGridOpenCL*> m_gridData;
 	
 	b3FluidHashGridOpenCLProgram m_hashGridProgram;
+	b3FluidSphRigidInteractorCL m_fluidRigidInteractor;
 	
 	b3AlignedObjectArray<b3Vector3> m_tempSphForce;
 	
