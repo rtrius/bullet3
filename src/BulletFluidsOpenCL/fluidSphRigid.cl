@@ -1581,10 +1581,10 @@ __kernel void mapRigidFluidContacts(__global FluidRigidContacts* fluidRigidConta
 	int particleIndex = get_global_id(0);
 	if(particleIndex >= numFluidParticles) return;
 	
-	FluidRigidContacts contacts = fluidRigidContacts[particleIndex];
-	for(int n = 0; n < contacts.m_numContacts; ++n)
+	__global FluidRigidContacts* contacts = &fluidRigidContacts[particleIndex];
+	for(int n = 0; n < contacts->m_numContacts; ++n)
 	{
-		int rigidIndex = contacts.m_rigidIndicies[n];
+		int rigidIndex = contacts->m_rigidIndicies[n];
 		
 		int pairIndex = atomic_inc(&out_rigidFluidContacts[rigidIndex].m_numContacts);
 		if(pairIndex < MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID) 

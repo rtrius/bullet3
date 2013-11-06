@@ -21,7 +21,7 @@ subject to the following restrictions:
 
 #include "BulletFluids/Sph/b3FluidSphParameters.h"
 
-#include "fluidSphCL2.h"
+#include "fluidSphCL.h"
 
 b3FluidSphSolverOpenCL2::b3FluidSphSolverOpenCL2(cl_context context, cl_device_id device, cl_command_queue queue)
 : m_globalFluidParams(context, queue), m_hashGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
@@ -30,18 +30,18 @@ b3FluidSphSolverOpenCL2::b3FluidSphSolverOpenCL2(cl_context context, cl_device_i
 	m_commandQueue = queue;
 
 	//
-	const char CL_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSph2.cl";
-	const char* kernelSource = fluidSphCL2;	//fluidSphCL2.h
+	const char CL_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSph.cl";
+	const char* kernelSource = fluidSphCL;	//fluidSphCL.h
 	cl_int error;
 	char* additionalMacros = 0;
 	m_fluidsProgram = b3OpenCLUtils::compileCLProgramFromString(context, device, kernelSource, &error, 
 																	additionalMacros, CL_PROGRAM_PATH);
 	b3Assert(m_fluidsProgram);
 
-	m_sphComputePressureKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputePressure", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_sphComputePressureKernel);
-	m_sphComputeForceKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputeForce", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_sphComputeForceKernel);
+	m_sphComputePressureModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputePressureModulo", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_sphComputePressureModuloKernel);
+	m_sphComputeForceModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputeForceModulo", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_sphComputeForceModuloKernel);
 	
 	m_applyForcesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "applyForces", &error, m_fluidsProgram, additionalMacros );
 	b3Assert(m_applyForcesKernel);
@@ -53,8 +53,8 @@ b3FluidSphSolverOpenCL2::b3FluidSphSolverOpenCL2(cl_context context, cl_device_i
 
 b3FluidSphSolverOpenCL2::~b3FluidSphSolverOpenCL2()
 {
-	clReleaseKernel(m_sphComputePressureKernel);
-	clReleaseKernel(m_sphComputeForceKernel);
+	clReleaseKernel(m_sphComputePressureModuloKernel);
+	clReleaseKernel(m_sphComputeForceModuloKernel);
 	
 	clReleaseKernel(m_applyForcesKernel);
 	clReleaseKernel(m_collideAabbImpulseKernel);
@@ -236,8 +236,8 @@ void b3FluidSphSolverOpenCL2::stepSimulation(const b3FluidSphParametersGlobal& F
 				m_hashGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, fluidData, gridData);
 			
 			int numFluidParticles = fluid->numParticles();
-			sphComputePressure( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
-			sphComputeForce( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
+			sphComputePressureModulo( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
+			sphComputeForceModulo( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
 			
 			//The previous vel(velocity at t-1/2) is needed to update vel_eval for leapfrog integration
 			//Since vel_eval(velocity at t) is used only for SPH force computation,
@@ -344,9 +344,9 @@ void b3FluidSphSolverOpenCL2::stepSimulation(const b3FluidSphParametersGlobal& F
 	}
 }
 
-void b3FluidSphSolverOpenCL2::sphComputePressure(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
+void b3FluidSphSolverOpenCL2::sphComputePressureModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
 {
-	B3_PROFILE("sphComputePressure");
+	B3_PROFILE("sphComputePressureModulo");
 	
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
@@ -357,7 +357,7 @@ void b3FluidSphSolverOpenCL2::sphComputePressure(int numFluidParticles, b3FluidH
 		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureKernel);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureModuloKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);
@@ -365,9 +365,9 @@ void b3FluidSphSolverOpenCL2::sphComputePressure(int numFluidParticles, b3FluidH
 	launcher.launch1D(numFluidParticles);
 	clFinish(m_commandQueue);
 }
-void b3FluidSphSolverOpenCL2::sphComputeForce(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
+void b3FluidSphSolverOpenCL2::sphComputeForceModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
 {
-	B3_PROFILE("sphComputeForce");
+	B3_PROFILE("sphComputeForceModulo");
 	
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
@@ -380,7 +380,7 @@ void b3FluidSphSolverOpenCL2::sphComputeForce(int numFluidParticles, b3FluidHash
 		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceKernel);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceModuloKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);

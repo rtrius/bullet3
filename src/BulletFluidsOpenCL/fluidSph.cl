@@ -423,7 +423,7 @@ inline void binaryRangeSearch(int numActiveCells, __global b3FluidGridCombinedPo
 inline void findCellsFromGridPosition(int numActiveCells, __global b3FluidGridCombinedPos* cellValues, __global b3FluidGridIterator* cellContents, 
 										b3FluidGridPosition combinedPosition, b3FluidGridIterator* out_cells)
 {
-	b3FluidGridPosition cellIndicies[b3FluidSortingGrid_NUM_FOUND_CELLS_GPU];	//	may be allocated in global memory(slow)
+	b3FluidGridPosition cellIndicies[b3FluidSortingGrid_NUM_FOUND_CELLS_GPU];
 	
 	b3FluidGridPosition indicies = combinedPosition;
 
@@ -688,3 +688,167 @@ __kernel void integratePositions(__constant b3FluidSphParametersGlobal* FG, __co
 	fluidPosition[i] += nextVelocity * timeStepDivSimScale;
 }
 
+
+// ////////////////////////////////////////////////////////////////////////////
+// Modulo Hash Grid
+// ////////////////////////////////////////////////////////////////////////////
+#define B3_FLUID_HASH_GRID_COORD_RANGE 64
+b3FluidGridCombinedPos getCombinedPositionModulo(b3FluidGridPosition quantizedPosition)
+{
+	//as_uint() requires that sizeof(b3FluidGridCombinedPos) == sizeof(b3FluidGridCoordinate)
+	//This presents an issue if B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT is #defined
+	b3FluidGridCombinedPos unsignedX = as_uint(quantizedPosition.x) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedY = as_uint(quantizedPosition.y) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	b3FluidGridCombinedPos unsignedZ = as_uint(quantizedPosition.z) % B3_FLUID_HASH_GRID_COORD_RANGE;
+	
+	return unsignedX 
+		+ unsignedY * B3_FLUID_HASH_GRID_COORD_RANGE
+		+ unsignedZ * B3_FLUID_HASH_GRID_COORD_RANGE* B3_FLUID_HASH_GRID_COORD_RANGE;
+}
+
+__kernel void generateValueIndexPairsModulo(__global b3Vector3* fluidPositions, __global b3FluidGridValueIndexPair* out_pairs, 
+										b3Scalar cellSize, int numFluidParticles)
+{
+	int index = get_global_id(0);
+	if(index >= numFluidParticles) return;
+	
+	b3FluidGridValueIndexPair result;
+	result.m_index = index;
+	result.m_value = getCombinedPositionModulo( getDiscretePosition(cellSize, fluidPositions[index]) );
+	
+	out_pairs[index] = result;
+}
+
+__kernel void resetGridCellsModulo(__global b3FluidGridIterator* out_iterators, int numGridCells)
+{
+	int index = get_global_id(0);
+	if(index >= numGridCells) return;
+	
+	//Crashes on compiling with Catalyst 13.1 if
+	//(b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX} is used directly
+	int invalidLowerIndex = INVALID_FIRST_INDEX;
+	int invalidUpperIndex = INVALID_LAST_INDEX;
+	out_iterators[index] = (b3FluidGridIterator){invalidLowerIndex, invalidUpperIndex};
+	//out_iterators[index] = (b3FluidGridIterator){INVALID_FIRST_INDEX, INVALID_FIRST_INDEX};
+}
+__kernel void detectIndexRangesModulo(__global b3Vector3* fluidPosition, __global b3FluidGridValueIndexPair* valueIndexPairs, 
+								__global b3FluidGridIterator* out_iterators, b3Scalar gridCellSize, int numFluidParticles)
+{
+	int index = get_global_id(0);
+	if(index >= numFluidParticles) return;
+	
+	b3FluidGridCombinedPos gridCellValue = valueIndexPairs[index].m_value;
+	
+	int lastValidIndex = numFluidParticles - 1;
+	
+	//if the next particle has a different b3FluidGridCombinedPos(is in another cell),
+	//then this particle has the highest index in its cell
+	int isLastParticleInCell = (index < lastValidIndex) ? (gridCellValue != valueIndexPairs[index+1].m_value) : 1;
+	
+	if(isLastParticleInCell)
+	{
+		int lowerParticleIndex = index;
+		int upperParticleIndex = index;
+		while( lowerParticleIndex > 0 && valueIndexPairs[lowerParticleIndex - 1].m_value == gridCellValue ) --lowerParticleIndex;
+		
+		int gridCellIndex = getCombinedPositionModulo( getDiscretePosition(gridCellSize, fluidPosition[index]) );
+		out_iterators[gridCellIndex] = (b3FluidGridIterator){ lowerParticleIndex, upperParticleIndex };
+	}
+}
+
+__kernel void sphComputePressureModulo(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL,
+								__global b3Vector3* fluidPosition, __global b3Scalar* fluidDensity,
+								__global b3FluidGridIterator* cellContents, b3Scalar gridCellSize, int numFluidParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numFluidParticles) return;
+	
+	b3Scalar sum = FG->m_initialSum;
+	
+	b3FluidGridPosition centerCell = getDiscretePosition(gridCellSize, fluidPosition[i]);
+	centerCell.x--;
+	centerCell.y--;
+	centerCell.z--;
+	
+	for(b3FluidGridCoordinate offsetZ = 0; offsetZ < 3; ++offsetZ)
+		for(b3FluidGridCoordinate offsetY = 0; offsetY < 3; ++offsetY)
+			for(b3FluidGridCoordinate offsetX = 0; offsetX < 3; ++offsetX)
+			{
+				b3FluidGridPosition currentCell = centerCell;
+				currentCell.z += offsetZ;
+				currentCell.y += offsetY;
+				currentCell.x += offsetX;
+			
+				int gridCellIndex = getCombinedPositionModulo(currentCell);
+				b3FluidGridIterator gridCell = cellContents[gridCellIndex];
+				
+				for(int n = gridCell.m_firstIndex; n <= gridCell.m_lastIndex; ++n)
+				{
+					b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+					b3Scalar distanceSquared = b3Vector3_length2(delta);
+					
+					b3Scalar c = FG->m_sphRadiusSquared - distanceSquared;
+					sum += (c > 0.0f && i != n) ? c*c*c : 0.0f;		//If c is positive, the particle is within interaction radius(poly6 kernel radius)
+				}
+			}
+	
+	fluidDensity[i] = sum * FL->m_sphParticleMass * FG->m_poly6KernCoeff;
+}
+__kernel void sphComputeForceModulo(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL,
+							__global b3Vector3* fluidPosition, __global b3Vector3* fluidVelEval, 
+							__global b3Vector3* fluidSphForce, __global b3Scalar* fluidDensity,
+							__global b3FluidGridIterator* cellContents, b3Scalar gridCellSize, int numFluidParticles)
+{
+	b3Scalar vterm = FG->m_viscosityKernLapCoeff * FL->m_viscosity;
+	
+	int i = get_global_id(0);
+	if(i >= numFluidParticles) return;
+	
+	b3Scalar density_i = fluidDensity[i];
+	b3Scalar invDensity_i = 1.0f / density_i;
+	b3Scalar pressure_i = (density_i - FL->m_restDensity) * FL->m_stiffness;
+	
+	b3Vector3 force = {0.0f, 0.0f, 0.0f, 0.0f};
+	
+	b3FluidGridPosition centerCell = getDiscretePosition(gridCellSize, fluidPosition[i]);
+	centerCell.x--;
+	centerCell.y--;
+	centerCell.z--;
+	
+	for(b3FluidGridCoordinate offsetZ = 0; offsetZ < 3; ++offsetZ)
+		for(b3FluidGridCoordinate offsetY = 0; offsetY < 3; ++offsetY)
+			for(b3FluidGridCoordinate offsetX = 0; offsetX < 3; ++offsetX)
+			{
+				b3FluidGridPosition currentCell = centerCell;
+				currentCell.z += offsetZ;
+				currentCell.y += offsetY;
+				currentCell.x += offsetX;
+				
+				int gridCellIndex = getCombinedPositionModulo(currentCell);
+				b3FluidGridIterator gridCell = cellContents[gridCellIndex];
+				
+				for(int n = gridCell.m_firstIndex; n <= gridCell.m_lastIndex; ++n)
+				{	
+					b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+					b3Scalar distanceSquared = b3Vector3_length2(delta);
+					
+					if(FG->m_sphRadiusSquared > distanceSquared && i != n)
+					{
+						b3Scalar density_n = fluidDensity[n];
+						b3Scalar invDensity_n = 1.0f / density_n;
+						b3Scalar pressure_n = (density_n - FL->m_restDensity) * FL->m_stiffness;
+					
+						b3Scalar distance = sqrt(distanceSquared);
+						b3Scalar c = FG->m_sphSmoothRadius - distance;
+						b3Scalar pterm = -0.5f * c * FG->m_spikyKernGradCoeff * (pressure_i + pressure_n);
+						pterm /= (distance < B3_EPSILON) ? B3_EPSILON : distance;
+						
+						b3Scalar dterm = c * invDensity_i * invDensity_n;
+						
+						force += (delta * pterm + (fluidVelEval[n] - fluidVelEval[i]) * vterm) * dterm;
+					}
+				}
+			}
+	
+	fluidSphForce[i] = force * FL->m_sphParticleMass;
+}

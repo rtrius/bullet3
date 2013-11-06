@@ -20,7 +20,7 @@ subject to the following restrictions:
 #include "BulletFluids/Sph/b3FluidSortingGrid.h"
 
 #include "b3FluidSphOpenCL.h"
-#include "fluidSphCL2.h"
+#include "fluidSphCL.h"
 
 // /////////////////////////////////////////////////////////////////////////////
 //class b3FluidHashGridOpenCL
@@ -39,32 +39,32 @@ b3FluidHashGridOpenCL::b3FluidHashGridOpenCL(cl_context context, cl_command_queu
 b3FluidHashGridOpenCLProgram::b3FluidHashGridOpenCLProgram(cl_context context, cl_device_id device, cl_command_queue queue)
 : m_tempBufferCL(context, queue), m_radixSorter(context, device, queue), m_valueIndexPairs(context, queue)
 {
-	const char CL_HASH_GRID_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSph2.cl";
+	const char CL_HASH_GRID_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSph.cl";
 	
-	const char* kernelSource = fluidSphCL2;	//fluidSphCL2.h
+	const char* kernelSource = fluidSphCL;	//fluidSphCL.h
 	cl_int error;
 	char* additionalMacros = 0;
 	m_hashGridProgram = b3OpenCLUtils::compileCLProgramFromString(context, device, kernelSource, &error, 
 																	additionalMacros, CL_HASH_GRID_PROGRAM_PATH);
 	b3Assert(m_hashGridProgram);
 
-	m_generateValueIndexPairsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateValueIndexPairs", &error, m_hashGridProgram, additionalMacros );
-	b3Assert(m_generateValueIndexPairsKernel);
+	m_generateValueIndexPairsModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "generateValueIndexPairsModulo", &error, m_hashGridProgram, additionalMacros );
+	b3Assert(m_generateValueIndexPairsModuloKernel);
 	m_rearrangeParticleArraysKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "rearrangeParticleArrays", &error, m_hashGridProgram, additionalMacros );
 	b3Assert(m_rearrangeParticleArraysKernel);
 	
-	m_resetGridCellsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resetGridCells", &error, m_hashGridProgram, additionalMacros );
-	b3Assert(m_resetGridCellsKernel);
-	m_detectIndexRangesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "detectIndexRanges", &error, m_hashGridProgram, additionalMacros );
-	b3Assert(m_detectIndexRangesKernel);
+	m_resetGridCellsModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resetGridCellsModulo", &error, m_hashGridProgram, additionalMacros );
+	b3Assert(m_resetGridCellsModuloKernel);
+	m_detectIndexRangesModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "detectIndexRangesModulo", &error, m_hashGridProgram, additionalMacros );
+	b3Assert(m_detectIndexRangesModuloKernel);
 }
 b3FluidHashGridOpenCLProgram::~b3FluidHashGridOpenCLProgram()
 {
-	clReleaseKernel(m_generateValueIndexPairsKernel);
+	clReleaseKernel(m_generateValueIndexPairsModuloKernel);
 	clReleaseKernel(m_rearrangeParticleArraysKernel);
 	
-	clReleaseKernel(m_resetGridCellsKernel);
-	clReleaseKernel(m_detectIndexRangesKernel);
+	clReleaseKernel(m_resetGridCellsModuloKernel);
+	clReleaseKernel(m_detectIndexRangesModuloKernel);
 	
 	clReleaseProgram(m_hashGridProgram);
 }
@@ -82,8 +82,8 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 	
 	//
 	{
-		B3_PROFILE("generateValueIndexPairs()");
-		generateValueIndexPairs( commandQueue, numFluidParticles, gridCellSize, fluidData->m_pos.getBufferCL() );
+		B3_PROFILE("generateValueIndexPairsModulo()");
+		generateValueIndexPairsModulo( commandQueue, numFluidParticles, gridCellSize, fluidData->m_pos.getBufferCL() );
 		
 		clFinish(commandQueue);
 	}
@@ -118,21 +118,21 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 		clFinish(commandQueue);
 	}
 	
-	//Reset grid cells
+	//Mark all grid cells as empty
 	{
 		b3BufferInfoCL bufferInfo[] = 
 		{
 			b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(commandQueue, m_resetGridCellsKernel);
+		b3LauncherCL launcher(commandQueue, m_resetGridCellsModuloKernel);
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(B3_FLUID_HASH_GRID_NUM_CELLS);
 		
 		launcher.launch1D(B3_FLUID_HASH_GRID_NUM_CELLS);
 	}
 	
-	//Detect index ranges for each cell
+	//Detect and store the lower and upper particle index for each cell
 	{
 		b3BufferInfoCL bufferInfo[] = 
 		{
@@ -141,7 +141,7 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 			b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(commandQueue, m_detectIndexRangesKernel);
+		b3LauncherCL launcher(commandQueue, m_detectIndexRangesModuloKernel);
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(gridCellSize);
 		launcher.setConst(numFluidParticles);
@@ -151,7 +151,7 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 	
 	
 }
-void b3FluidHashGridOpenCLProgram::generateValueIndexPairs(cl_command_queue commandQueue, int numFluidParticles, 
+void b3FluidHashGridOpenCLProgram::generateValueIndexPairsModulo(cl_command_queue commandQueue, int numFluidParticles, 
 															  b3Scalar cellSize, cl_mem fluidPositionsBuffer)
 {
 	b3BufferInfoCL bufferInfo[] = 
@@ -160,7 +160,7 @@ void b3FluidHashGridOpenCLProgram::generateValueIndexPairs(cl_command_queue comm
 		b3BufferInfoCL( m_valueIndexPairs.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsKernel);
+	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsModuloKernel);
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);

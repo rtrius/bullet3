@@ -35,8 +35,8 @@ class b3FluidSphSolverOpenCL2 : public b3FluidSphSolver
 	
 	cl_program m_fluidsProgram;
 	
-	cl_kernel m_sphComputePressureKernel;
-	cl_kernel m_sphComputeForceKernel;
+	cl_kernel m_sphComputePressureModuloKernel;
+	cl_kernel m_sphComputeForceModuloKernel;
 	
 	cl_kernel m_applyForcesKernel;
 	cl_kernel m_collideAabbImpulseKernel;
@@ -62,8 +62,8 @@ public:
 	virtual void stepSimulation(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData);
 	
 private:
-	void sphComputePressure(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
-	void sphComputeForce(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
+	void sphComputePressureModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
+	void sphComputeForceModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
 };
 
 #endif

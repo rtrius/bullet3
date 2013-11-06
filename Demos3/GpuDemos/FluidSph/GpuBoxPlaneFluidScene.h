@@ -28,7 +28,7 @@ class GpuBoxPlaneFluidScene : public BASE_DEMO_CLASS
 {
 public:
 
-#define USE_INFINITE_GRID_WITH_COLLISIONS
+//#define USE_INFINITE_GRID_WITH_COLLISIONS
 #ifndef USE_INFINITE_GRID_WITH_COLLISIONS
 	b3FluidSphSolverOpenCL* m_solver;
 #else

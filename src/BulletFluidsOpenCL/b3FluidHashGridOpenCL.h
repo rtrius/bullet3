@@ -38,11 +38,11 @@ public:
 class b3FluidHashGridOpenCLProgram
 {
 	cl_program m_hashGridProgram;
-	cl_kernel m_generateValueIndexPairsKernel;
+	cl_kernel m_generateValueIndexPairsModuloKernel;
 	cl_kernel m_rearrangeParticleArraysKernel;
 	
-	cl_kernel m_resetGridCellsKernel;
-	cl_kernel m_detectIndexRangesKernel;
+	cl_kernel m_resetGridCellsModuloKernel;
+	cl_kernel m_detectIndexRangesModuloKernel;
 
 	b3OpenCLArray<b3Vector3> m_tempBufferCL;		//Used to rearrange fluid particle arrays(position, velocity, etc.)
 	//b3AlignedObjectArray<b3Vector3> m_tempBufferVector;
@@ -61,7 +61,7 @@ public:
 	
 	
 private:
-	void generateValueIndexPairs(cl_command_queue commandQueue, int numFluidParticles, b3Scalar cellSize, cl_mem fluidPositionsBuffer);
+	void generateValueIndexPairsModulo(cl_command_queue commandQueue, int numFluidParticles, b3Scalar cellSize, cl_mem fluidPositionsBuffer);
 	void rearrangeParticleArrays(cl_command_queue commandQueue, int numFluidParticles, cl_mem fluidBuffer);
 };
 
