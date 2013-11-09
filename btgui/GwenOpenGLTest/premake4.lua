@@ -39,9 +39,11 @@
  		"../OpenGLTrueTypeFont/opengl_fontstashcallbacks.h",
 		"../../src/Bullet3Geometry/b3ConvexHullComputer.cpp",
 		"../../src/Bullet3Geometry/b3ConvexHullComputer.h",
+		"../../src/Bullet3Common/b3Logging.h",
+		"../../src/Bullet3Common/b3Logging.cpp",
 		"../../src/Bullet3Common/b3AlignedAllocator.cpp",
-		"../../src/Bullet3Common/b3Quickprof.cpp",
-		"../../src/Bullet3Common/b3Quickprof.h",
+		"../../btgui/Timing/b3Clock.cpp",
+		"../../btgui/Timing/b3Clock.h",
 		"**.cpp",
 		"**.h",
 	}
@@ -54,6 +56,7 @@
 	}
 	end
 	if os.is("Linux") then 
+		links ("X11")
 		files{
 		"../OpenGLWindow/X11OpenGLWindow.h",
 		"../OpenGLWindow/X11OpenGLWindow.cpp"

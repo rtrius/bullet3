@@ -15,9 +15,9 @@ subject to the following restrictions:
 
 
 ///create 125 (5x5x5) dynamic object
-#define ARRAY_SIZE_X 30
+#define ARRAY_SIZE_X 25
 #define ARRAY_SIZE_Y 20
-#define ARRAY_SIZE_Z 30
+#define ARRAY_SIZE_Z 25
 
 //maximum number of objects (and allow user to shoot additional boxes)
 #define MAX_PROXIES (ARRAY_SIZE_X*ARRAY_SIZE_Y*ARRAY_SIZE_Z + 1024)
@@ -42,7 +42,9 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuRigidBodyPipeline.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
-#include "Bullet3OpenCL/RigidBody/b3Config.h"
+#include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
+
+
 #include "Bullet3Collision/BroadPhaseCollision/b3DynamicBvhBroadphase.h"
 
 
@@ -163,8 +165,10 @@ void BasicGpuDemo::exitCL()
 
 BasicGpuDemo::BasicGpuDemo()
 {
+	m_np=0;
+	m_bp=0;
 	m_clData = new btInternalData;
-	setCameraDistance(btScalar(SCALING*120.));
+	setCameraDistance(btScalar(SCALING*60.));
 	this->setAzi(45);
 	this->setEle(45);
 
@@ -180,9 +184,13 @@ BasicGpuDemo::~BasicGpuDemo()
 
 void	BasicGpuDemo::initPhysics()
 {
-	setTexturing(true);
-	setShadows(true);
+	//use the Bullet 2.x btQuickprof for profiling of Bullet 3.x
+	b3SetCustomEnterProfileZoneFunc(CProfileManager::Start_Profile);
+	b3SetCustomLeaveProfileZoneFunc(CProfileManager::Stop_Profile);
 
+	setTexturing(true);
+	setShadows(false);//too slow with many objects
+	
 	
 	///collision configuration contains default setup for memory, collision setup
 	m_collisionConfiguration = 0;
@@ -207,15 +215,14 @@ void	BasicGpuDemo::initPhysics()
 	}
 
 	b3Config config;
-	b3GpuNarrowPhase* np = new b3GpuNarrowPhase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue,config);
-	b3GpuSapBroadphase* bp = new b3GpuSapBroadphase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
-	//m_data->m_np = np;
-	//m_data->m_bp = bp;
+	m_np = new b3GpuNarrowPhase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue,config);
+	m_bp = new b3GpuSapBroadphase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
+	
 	b3DynamicBvhBroadphase* broadphaseDbvt = new b3DynamicBvhBroadphase(config.m_maxConvexBodies);
 	
-	b3GpuRigidBodyPipeline* rbp = new b3GpuRigidBodyPipeline(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue, np, bp,broadphaseDbvt);
+	m_rbp = new b3GpuRigidBodyPipeline(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue, m_np, m_bp,broadphaseDbvt,config);
 
-	m_dynamicsWorld = new b3GpuDynamicsWorld(bp,np,rbp);
+	m_dynamicsWorld = new b3GpuDynamicsWorld(m_bp,m_np,m_rbp);
 	
 	m_dynamicsWorld->setDebugDrawer(&gDebugDraw);
 	
@@ -284,7 +291,7 @@ void	BasicGpuDemo::initPhysics()
 		// Re-using the same collision is better for memory usage and performance
 
 		btBoxShape* colShape = new btBoxShape(btVector3(SCALING*1,SCALING*1,SCALING*1));
-		//btCollisionShape* colShape = new btSphereShape(btScalar(1.));
+		//btCollisionShape* colShape = new btSphereShape(btScalar(SCALING*1.f));
 		m_collisionShapes.push_back(colShape);
 
 		/// Create Dynamic Objects
@@ -332,9 +339,9 @@ void	BasicGpuDemo::initPhysics()
 	
 
 
-	np->writeAllBodiesToGpu();
-	bp->writeAabbsToGpu();
-	rbp->writeAllInstancesToGpu();
+	m_np->writeAllBodiesToGpu();
+	m_bp->writeAabbsToGpu();
+	m_rbp->writeAllInstancesToGpu();
 
 }
 void	BasicGpuDemo::clientResetScene()
@@ -381,7 +388,11 @@ void	BasicGpuDemo::exitPhysics()
 
 	delete m_collisionConfiguration;
 
+	delete m_np;
 	
+	delete m_bp;
+
+	delete m_rbp;
 }
 
 

@@ -25,27 +25,21 @@ function createProject(vendor)
 		
 		links {
 			"gwen",
-			"Bullet3Common",
-			"Bullet3Geometry",
-			"Bullet3Collision",
-			"Bullet3Dynamics",
 			"Bullet2FileLoader",
-			"Bullet3OpenCL_" .. vendor
-			
+			 "Bullet3OpenCL_" .. vendor,
+			"Bullet3Dynamics",
+			"Bullet3Collision",
+			"Bullet3Geometry",
+			"Bullet3Common",
+	
 		}
 		
 		files {
 			"**.cpp",
 			"**.h",
 			
-			"../Wavefront/string_extra.cpp",
-			"../Wavefront/string_extra.h",
-			"../Wavefront/objLoader.cpp",
-			"../Wavefront/objLoader.h",
-			"../Wavefront/obj_parser.cpp",
-			"../Wavefront/obj_parser.h",
-			"../Wavefront/list.cpp",
-			"../Wavefront/list.h",
+			"../Wavefront/tiny_obj_loader.cpp",
+			"../Wavefront/tiny_obj_loader.h",
 			
 			
 			"../../btgui/OpenGLWindow/GLInstancingRenderer.cpp",
@@ -56,12 +50,19 @@ function createProject(vendor)
 			"../../btgui/OpenGLWindow/LoadShader.h",
 			"../../btgui/OpenGLWindow/TwFonts.cpp",
 			"../../btgui/OpenGLWindow/TwFonts.h",
+			"../../btgui/OpenGLWindow/GLRenderToTexture.cpp",
+			"../../btgui/OpenGLWindow/GLRenderToTexture.h",
 			"../../btgui/OpenGLTrueTypeFont/fontstash.cpp",
 			"../../btgui/OpenGLTrueTypeFont/fontstash.h",
 			"../../btgui/OpenGLTrueTypeFont/opengl_fontstashcallbacks.cpp",
 			"../../btgui/OpenGLTrueTypeFont/opengl_fontstashcallbacks.h",
 			"../../btgui/FontFiles/OpenSans.cpp",
-
+			"../../btgui/stb_image/stb_image.cpp",
+			"../../btgui/stb_image/stb_image.h",
+			"../../btgui/Timing/b3Quickprof.cpp",
+			"../../btgui/Timing/b3Quickprof.h",
+			"../../btgui/Timing/b3Clock.cpp",
+			"../../btgui/Timing/b3Clock.h",
 		}
 
 		if os.is("Windows") then 
@@ -73,6 +74,7 @@ function createProject(vendor)
 			}
 		end
 		if os.is("Linux") then
+			links{"X11"}
 			files {
 				"../../btgui/OpenGLWindow/X11OpenGLWindow.cpp",
 				"../../btgui/OpenGLWindow/X11OpenGLWindows.h"
@@ -88,6 +90,7 @@ function createProject(vendor)
 	end
 end
 
+createProject("clew")
 createProject("Apple")
 createProject("AMD")
 createProject("Intel")

@@ -204,16 +204,7 @@ typedef struct
 	u32 m_paddings[1];
 } Constraint4;
 
-typedef struct
-{
-	float4 m_worldPos[4];
-	float4 m_worldNormal;
-	u32 m_coeffs;
-	int m_batchIdx;
 
-	int m_bodyAPtrAndSignBit;
-	int m_bodyBPtrAndSignBit;
-} Contact4;
 
 typedef struct
 {
@@ -440,8 +431,8 @@ void BatchSolveKernelFriction(__global Body* gBodies,
                       __global int* gN,
                       __global int* gOffsets,
                        int maxBatch,
-                       int bIdx,
-                       int nSplit
+                       int cellBatch,
+                       int4 nSplit
                       )
 {
 	//__local int ldsBatchIdx[WG_SIZE+1];
@@ -457,9 +448,12 @@ void BatchSolveKernelFriction(__global Body* gBodies,
 	//debugInfo[gIdx].m_valInt1 = GET_GROUP_SIZE;
 
 
-	int xIdx = (wgIdx/(nSplit/2))*2 + (bIdx&1);
-	int yIdx = (wgIdx%(nSplit/2))*2 + (bIdx>>1);
-	int cellIdx = xIdx+yIdx*nSplit;
+	int zIdx = (wgIdx/((nSplit.x*nSplit.y)/4))*2+((cellBatch&4)>>2);
+	int remain= (wgIdx%((nSplit.x*nSplit.y)/4));
+	int yIdx = (remain/(nSplit.x/2))*2 + ((cellBatch&2)>>1);
+	int xIdx = (remain%(nSplit.x/2))*2 + (cellBatch&1);
+	int cellIdx = xIdx+yIdx*nSplit.x+zIdx*(nSplit.x*nSplit.y);
+
 	
 	if( gN[cellIdx] == 0 ) 
 		return;

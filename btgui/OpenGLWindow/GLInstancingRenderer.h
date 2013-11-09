@@ -18,6 +18,7 @@ subject to the following restrictions:
 
 #include "Bullet3Common/b3AlignedObjectArray.h"
 
+
 void b3DefaultMouseButtonCallback( int button, int state, float x, float y);
 void b3DefaultMouseMoveCallback(  float x, float y);
 void b3DefaultKeyboardCallback(int key, int state);
@@ -27,6 +28,14 @@ enum
 {
 	B3_GL_TRIANGLES = 1,
 	B3_GL_POINTS
+};
+
+enum 
+{
+	B3_DEFAULT_RENDERMODE=1,
+	//B3_WIREFRAME_RENDERMODE,
+	B3_CREATE_SHADOWMAP_RENDERMODE,
+	B3_USE_SHADOWMAP_RENDERMODE,
 };
 
 class GLInstancingRenderer
@@ -41,6 +50,10 @@ class GLInstancingRenderer
 	bool m_textureenabled;
 	bool m_textureinitialized;
 
+	int m_screenWidth;
+	int m_screenHeight;
+
+	void renderSceneInternal(int renderMode=B3_DEFAULT_RENDERMODE);
 
 	
 public:
@@ -49,19 +62,24 @@ public:
 
 	void init();
 
+	void renderScene();
+
 	void InitShaders();
-	void RenderScene(void);
 	void CleanupShaders();
 
+	void updateShape(int shapeIndex, const float* vertices);
+
 	///vertices must be in the format x,y,z, nx,ny,nz, u,v
-	int registerShape(const float* vertices, int numvertices, const int* indices, int numIndices, int primitiveType=B3_GL_TRIANGLES);
-		
+	int registerShape(const float* vertices, int numvertices, const int* indices, int numIndices, int primitiveType=B3_GL_TRIANGLES, int textureIndex=-1);
+	
+	int	registerTexture(const unsigned char* texels, int width, int height);
+
 	///position x,y,z, quaternion x,y,z,w, color r,g,b,a, scaling x,y,z
 	int registerGraphicsInstance(int shapeIndex, const float* position, const float* quaternion, const float* color, const float* scaling);
 
 	void writeTransforms();
 
-	void writeSingleInstanceTransformToCPU(float* position, float* orientation, int srcIndex);
+	void writeSingleInstanceTransformToCPU(const float* position, const float* orientation, int srcIndex);
 
 	void writeSingleInstanceTransformToGPU(float* position, float* orientation, int srcIndex);
 
@@ -71,6 +89,9 @@ public:
 
 	struct	GLInstanceRendererInternalData* getInternalData();
 
+	void drawLine(const float from[4], const float to[4], const float color[4], float lineWidth=1);
+	void drawPoints(const float* positions, const float color[4], int numPoints, int pointStrideInBytes, float pointDrawSize);
+	void drawPoint(const float* position, const float color[4], float pointSize=1);
 	void updateCamera();
 
 	void	getCameraPosition(float cameraPos[4]);
@@ -83,14 +104,29 @@ public:
 	
 	void	setCameraYaw(float yaw);
 	void	setCameraPitch(float pitch);
-
+	float	getCameraYaw() const;
+	float	getCameraPitch() const;
 
 	void	resize(int width, int height);
+	int	getScreenWidth()
+	{
+		return m_screenWidth;
+	}
+	int getScreenHeight()
+	{
+		return m_screenHeight;
+	}
 
 	int getMaxShapeCapacity() const
 	{
 		return m_maxShapeCapacityInBytes;
 	}
+	int getInstanceCapacity() const
+	{
+		return m_maxNumObjectCapacity;
+	}
+	void enableShadowMap();
+
 };
 
 #endif //GL_INSTANCING_RENDERER_H

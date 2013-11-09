@@ -11,7 +11,6 @@
 #include "OpenGLWindow/GLPrimitiveRenderer.h"
 #include "OpenGLWindow/GLInstancingRenderer.h"
 //#include "OpenGL3CoreRenderer.h"
-#include "Bullet3Common/b3Quickprof.h"
 //#include "b3GpuDynamicsWorld.h"
 #include <assert.h>
 #include <string.h>
@@ -19,7 +18,7 @@
 #include "OpenGLTrueTypeFont/opengl_fontstashcallbacks.h"
 
 #include "OpenGLWindow/GwenOpenGL3CoreRenderer.h"
-
+#include "../btgui/Timing/b3Quickprof.h"
 
 #include "Gwen/Gwen.h"
 #include "Gwen/Controls/Button.h"
@@ -47,7 +46,7 @@ int sGlutScreenWidth = 640;
 int sGlutScreenHeight = 480;
 int sLastmousepos[2] = {0,0};
 
-#include "basic_initialize/b3OpenCLUtils.h"
+#include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 
 cl_context			g_cxMainContext;
 cl_command_queue	g_cqCommandQue;
@@ -83,7 +82,7 @@ sth_stash* initFont(GLPrimitiveRenderer* primRender)
 	unsigned char* data = (unsigned char*) data2;
 	if (!(droidRegular = sth_add_font_from_memory(stash, data)))
 	{
-		printf("error!\n");
+		b3Error("error!\n");
 	}
 
     err = glGetError();

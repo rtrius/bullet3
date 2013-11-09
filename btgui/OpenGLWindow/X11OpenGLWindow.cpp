@@ -1,12 +1,15 @@
 #include "X11OpenGLWindow.h"
+#include "OpenGLInclude.h"
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<X11/X.h>
 #include<X11/Xlib.h>
 #include<GL/gl.h>
 #include<GL/glx.h>
-#include<GL/glu.h>
+//#include<GL/glu.h>
 
+#include <stdio.h>
 
 GLint                   att[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None };
 
@@ -47,7 +50,8 @@ struct InternalData2
 
 
 X11OpenGLWindow::X11OpenGLWindow()
-:m_OpenGLInitialized(false)
+:m_OpenGLInitialized(false),
+m_requestedExit(false)
 {
     m_data = new InternalData2;
 }
@@ -114,7 +118,7 @@ void    X11OpenGLWindow::createWindow(const b3gWindowConstructionInfo& ci)
      m_data->m_cmap = XCreateColormap(m_data->m_dpy, m_data->m_root, m_data->m_vi->visual, AllocNone);
 
      m_data->m_swa.colormap = m_data->m_cmap;
-     m_data->m_swa.event_mask = ExposureMask | KeyPressMask |ButtonPressMask | ButtonReleaseMask |PointerMotionMask|StructureNotifyMask;
+     m_data->m_swa.event_mask = ExposureMask | KeyReleaseMask | KeyPressMask |ButtonPressMask | ButtonReleaseMask |PointerMotionMask|StructureNotifyMask;
 
      m_data->m_win = XCreateWindow(m_data->m_dpy, m_data->m_root, 0, 0, ci.m_width, ci.m_height, 0, m_data->m_vi->depth, InputOutput, m_data->m_vi->visual, CWColormap | CWEventMask, &m_data->m_swa);
 
@@ -140,7 +144,18 @@ int X11OpenGLWindow::getAsciiCodeFromVirtualKeycode(int keycode)
     switch( key )
     {
         case XK_Escape:       return B3G_ESCAPE;
-
+	
+	case XK_Control_L:
+	case XK_Control_R:     {
+			return B3G_CONTROL;
+	}
+	case XK_Alt_L:	 
+	case XK_Alt_R:   
+		{
+		  return B3G_ALT;
+		}
+	case XK_Shift_L:
+	case XK_Shift_R:	      return B3G_SHIFT;
         case XK_F1:           return B3G_F1;
         case XK_F2:           return B3G_F2;
         case XK_F3:           return B3G_F3;
@@ -199,7 +214,6 @@ void X11OpenGLWindow::pumpMessage()
 
             case KeyRelease:
             {
-   //           printf(",");
    //           fflush(stdout);
 
                 if (m_data->m_keyboardCallback)
@@ -369,12 +383,12 @@ float   X11OpenGLWindow::getTimeInSeconds()
 
 bool    X11OpenGLWindow::requestedExit() const
 {
-    return false;
+    return m_requestedExit;
 }
 
 void    X11OpenGLWindow::setRequestExit()
 {
-
+	m_requestedExit=true;
 }
 
 void X11OpenGLWindow::setRenderCallback( b3RenderCallback renderCallback)
@@ -418,3 +432,9 @@ void X11OpenGLWindow::setKeyboardCallback( b3KeyboardCallback	keyboardCallback)
 	m_data->m_keyboardCallback = keyboardCallback;
 
 }
+
+b3KeyboardCallback      X11OpenGLWindow::getKeyboardCallback()
+{
+	return m_data->m_keyboardCallback;
+}
+

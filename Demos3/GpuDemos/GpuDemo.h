@@ -1,6 +1,7 @@
 #ifndef GPU_DEMO_H
 #define GPU_DEMO_H
 class GLInstancingRenderer;
+class GLPrimitiveRenderer;
 
 
 
@@ -30,21 +31,32 @@ public:
             float gapX;
             float gapY;
             float gapZ;
+			bool m_useInstancedCollisionShapes;
             GLInstancingRenderer*   m_instancingRenderer;
+			GLPrimitiveRenderer*	m_primRenderer;
+			
 			class b3gWindowInterface*	m_window;
 			class GwenUserInterface*	m_gui;
-
+			
             ConstructionInfo()
                     :useOpenCL(true),
                     preferredOpenCLPlatformIndex(-1),
                     preferredOpenCLDeviceIndex(-1),
-					arraySizeX(20),
-		arraySizeY(20),
-		arraySizeZ(20),
+	#ifdef __APPLE__
+	arraySizeX(10),
+	arraySizeY(10),
+	arraySizeZ(10),
+	#else
+
+		arraySizeX(30),
+		arraySizeY(30),
+		arraySizeZ(30),
+#endif
 		m_useConcaveMesh(false),
-		gapX(14.3),
-		gapY(14.0),
-		gapZ(14.3),
+		gapX(16.3),
+		gapY(6.3),
+		gapZ(16.3),
+		m_useInstancedCollisionShapes(true),
                     m_instancingRenderer(0),
 					m_window(0),
 					m_gui(0)
@@ -69,7 +81,20 @@ public:
 	
 	int	registerGraphicsSphereShape(const ConstructionInfo& ci, float radius, bool usePointSprites=true, int largeSphereThreshold=100, int mediumSphereThreshold=10);
 
+	struct GpuDemoInternalData*	getInternalData();
+	
+	virtual bool	mouseMoveCallback(float x,float y)
+	{
+		return false;
+	}
+	virtual bool	mouseButtonCallback(int button, int state, float x, float y)
+	{
+		return false;
+	}
+	virtual bool	keyboardCallback(int key, int state)
+	{
+		return false;
+	}
 };
 
 #endif
-

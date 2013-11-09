@@ -35,17 +35,24 @@ subject to the following restrictions:
 #include <GL/glu.h>
 #else
 #include <GL/gl.h>
-#include <GL/glu.h>
+//#include <GL/glu.h>
 #endif //_WINDOWS
 #endif //APPLE
 
-
+//disable glGetError
+//#undef glGetError
+//#define glGetError MyGetError
+//
+//GLenum inline MyGetError()
+//{
+//	return 0;
+//}
 
 ///on Linux only glDrawElementsInstancedARB is defined?!?
-#ifdef __linux
-#define glDrawElementsInstanced glDrawElementsInstancedARB
-
-#endif //__linux
+//#ifdef __linux
+//#define glDrawElementsInstanced glDrawElementsInstancedARB
+//
+//#endif //__linux
 
 #endif //__OPENGL_INCLUDE_H
 

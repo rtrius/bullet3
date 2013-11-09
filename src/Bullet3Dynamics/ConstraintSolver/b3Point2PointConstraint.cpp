@@ -25,8 +25,7 @@ subject to the following restrictions:
 
 b3Point2PointConstraint::b3Point2PointConstraint(int rbA,int rbB, const b3Vector3& pivotInA,const b3Vector3& pivotInB)
 :b3TypedConstraint(B3_POINT2POINT_CONSTRAINT_TYPE,rbA,rbB),m_pivotInA(pivotInA),m_pivotInB(pivotInB),
-m_flags(0),
-m_useSolveConstraintObsolete(false)
+m_flags(0)
 {
 
 }
@@ -41,32 +40,16 @@ m_useSolveConstraintObsolete(false)
 }
 */
 
-void	b3Point2PointConstraint::buildJacobian()
+
+void b3Point2PointConstraint::getInfo1 (b3ConstraintInfo1* info,const b3RigidBodyCL* bodies)
 {
-
-	///we need it for both methods
-	{
-		m_appliedImpulse = b3Scalar(0.);
-	}
-
+	getInfo1NonVirtual(info,bodies);
 }
 
-void b3Point2PointConstraint::getInfo1 (b3ConstraintInfo1* info)
+void b3Point2PointConstraint::getInfo1NonVirtual (b3ConstraintInfo1* info,const b3RigidBodyCL* bodies)
 {
-	getInfo1NonVirtual(info);
-}
-
-void b3Point2PointConstraint::getInfo1NonVirtual (b3ConstraintInfo1* info)
-{
-	if (m_useSolveConstraintObsolete)
-	{
-		info->m_numConstraintRows = 0;
-		info->nub = 0;
-	} else
-	{
 		info->m_numConstraintRows = 3;
 		info->nub = 3;
-	}
 }
 
 
@@ -77,7 +60,7 @@ void b3Point2PointConstraint::getInfo2 (b3ConstraintInfo2* info, const b3RigidBo
 	b3Transform trA;
 	trA.setIdentity();
 	trA.setOrigin(bodies[m_rbA].m_pos);
-	trA.setRotation(bodies[m_rbB].m_quat);
+	trA.setRotation(bodies[m_rbA].m_quat);
 
 	b3Transform trB;
 	trB.setIdentity();
@@ -89,7 +72,6 @@ void b3Point2PointConstraint::getInfo2 (b3ConstraintInfo2* info, const b3RigidBo
 
 void b3Point2PointConstraint::getInfo2NonVirtual (b3ConstraintInfo2* info, const b3Transform& body0_trans, const b3Transform& body1_trans)
 {
-	b3Assert(!m_useSolveConstraintObsolete);
 
 	 //retrieve matrices
 
@@ -101,6 +83,8 @@ void b3Point2PointConstraint::getInfo2NonVirtual (b3ConstraintInfo2* info, const
 	info->m_J1linearAxis[2*info->rowskip+2] = 1;
 
 	b3Vector3 a1 = body0_trans.getBasis()*getPivotInA();
+	b3Vector3 a1a = b3QuatRotate(body0_trans.getRotation(),getPivotInA());
+
 	{
 		b3Vector3* angular0 = (b3Vector3*)(info->m_J1angularAxis);
 		b3Vector3* angular1 = (b3Vector3*)(info->m_J1angularAxis+info->rowskip);

@@ -68,21 +68,17 @@ public:
 
 	B3_DECLARE_ALIGNED_ALLOCATOR();
 
-	///for backwards compatibility during the transition to 'getInfo/getInfo2'
-	bool		m_useSolveConstraintObsolete;
-
 	b3ConstraintSetting	m_setting;
 
 	b3Point2PointConstraint(int  rbA,int rbB, const b3Vector3& pivotInA,const b3Vector3& pivotInB);
 
-	b3Point2PointConstraint(int  rbA,const b3Vector3& pivotInA);
+	//b3Point2PointConstraint(int  rbA,const b3Vector3& pivotInA);
 
 
-	virtual void	buildJacobian();
 
-	virtual void getInfo1 (b3ConstraintInfo1* info);
+	virtual void getInfo1 (b3ConstraintInfo1* info,const b3RigidBodyCL* bodies);
 
-	void getInfo1NonVirtual (b3ConstraintInfo1* info);
+	void getInfo1NonVirtual (b3ConstraintInfo1* info,const b3RigidBodyCL* bodies);
 
 	virtual void getInfo2 (b3ConstraintInfo2* info, const b3RigidBodyCL* bodies);
 

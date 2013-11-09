@@ -24,8 +24,11 @@
 			"../OpenGLWindow/LoadShader.cpp",
 			"../OpenGLWindow/LoadShader.h",
 			"../../src/Bullet3Common/b3AlignedAllocator.cpp",
-			"../../src/Bullet3Common/b3Quickprof.cpp",
-			"../../src/Bullet3Common/b3Quickprof.h" ,
+			"../../src/Bullet3Common/b3Logging.cpp",
+			"../Timing/b3Quickprof.cpp",
+			"../Timing/b3Quickprof.h" ,
+			"../Timing/b3Clock.cpp",
+			"../Timing/b3Clock.h" ,
 			"fontstash.cpp",
       "fontstash.h",
       "opengl_fontstashcallbacks.cpp",
@@ -43,6 +46,7 @@
 			}
 		end
 		if os.is("Linux") then 
+			links{"X11"}
 			files{
 				"../OpenGLWindow/X11OpenGLWindow.h",
 				"../OpenGLWindow/X11OpenGLWindow.cpp"

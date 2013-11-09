@@ -13,6 +13,7 @@ subject to the following restrictions:
 */
 //Originally written by Takahiro Harada
 
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Contact4Data.h"
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 #pragma OPENCL EXTENSION cl_khr_local_int32_base_atomics : enable
@@ -64,16 +65,7 @@ typedef unsigned char u8;
 
 
 
-typedef struct 
-{
-	float4 m_worldPos[4];
-	float4 m_worldNormal;
-	u32 m_coeffs;
-	int m_batchIdx;
 
-	int m_bodyA;//sign bit set for fixed objects
-	int m_bodyB;
-}Contact4;
 
 typedef struct 
 {
@@ -127,7 +119,7 @@ u32 tryWrite(__local u32* buff, int idx)
 }
 
 //	batching on the GPU
-__kernel void CreateBatches( __global const Contact4* gConstraints, __global Contact4* gConstraintsOut,
+__kernel void CreateBatches( __global const struct b3Contact4Data* gConstraints, __global struct b3Contact4Data* gConstraintsOut,
 		__global const u32* gN, __global const u32* gStart, 
 		int m_staticIdx )
 {
@@ -180,8 +172,8 @@ __kernel void CreateBatches( __global const Contact4* gConstraints, __global Con
 							int dstIdx;
 							AtomInc1( ldsRingEnd, dstIdx );
 							
-							int a = gConstraints[m_start+srcIdx].m_bodyA;
-							int b = gConstraints[m_start+srcIdx].m_bodyB;
+							int a = gConstraints[m_start+srcIdx].m_bodyAPtrAndSignBit;
+							int b = gConstraints[m_start+srcIdx].m_bodyBPtrAndSignBit;
 							ldsRingElem[dstIdx].m_a = (a>b)? b:a;
 							ldsRingElem[dstIdx].m_b = (a>b)? a:b;
 							ldsRingElem[dstIdx].m_idx = srcIdx;
@@ -216,19 +208,21 @@ __kernel void CreateBatches( __global const Contact4* gConstraints, __global Con
 
 						if( aUsed==0 && bUsed==0 )
 						{
-							int aAvailable;
-							int bAvailable;
+							int aAvailable=1;
+							int bAvailable=1;
 							int ea = abs(e.m_a);
 							int eb = abs(e.m_b);
-
-							aAvailable = tryWrite( ldsCheckBuffer, ea );
-							bAvailable = tryWrite( ldsCheckBuffer, eb );
 
 							bool aStatic = (e.m_a<0) ||(ea==m_staticIdx);
 							bool bStatic = (e.m_b<0) ||(eb==m_staticIdx);
 							
-							aAvailable = aStatic? 1: aAvailable;
-							bAvailable = bStatic? 1: bAvailable;
+							if (!aStatic)
+								aAvailable = tryWrite( ldsCheckBuffer, ea );
+							if (!bStatic)
+								bAvailable = tryWrite( ldsCheckBuffer, eb );
+							
+							//aAvailable = aStatic? 1: aAvailable;
+							//bAvailable = bStatic? 1: bAvailable;
 
 							bool success = (aAvailable && bAvailable);
 							if(success)

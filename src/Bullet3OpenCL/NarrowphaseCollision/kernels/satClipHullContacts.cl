@@ -41,16 +41,7 @@ typedef unsigned int u32;
 
 
 
-typedef struct
-{
-	float4 m_worldPos[4];
-	float4 m_worldNormal;	//	w: m_nPoints
-	u32 m_coeffs;
-	u32 m_batchIdx;
-
-	int m_bodyAPtrAndSignBit;//x:m_bodyAPtr, y:m_bodyBPtr
-	int m_bodyBPtrAndSignBit;
-} Contact4;
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Contact4Data.h"
 
 
 ///keep this in sync with btCollidable.h
@@ -73,7 +64,7 @@ typedef struct
 	int m_unused2;
 } btGpuChildShape;
 
-#define GET_NPOINTS(x) (x).m_worldNormal.w
+#define GET_NPOINTS(x) (x).m_worldNormalOnB.w
 
 typedef struct
 {
@@ -879,13 +870,13 @@ int extractManifoldSequential(const float4* p, int nPoints, float4 nearNormal, i
 
 
 
-__kernel void   extractManifoldAndAddContactKernel(__global const int2* pairs, 
+__kernel void   extractManifoldAndAddContactKernel(__global const int4* pairs, 
 																	__global const BodyData* rigidBodies, 
 																	__global const float4* closestPointsWorld,
 																	__global const float4* separatingNormalsWorld,
 																	__global const int* contactCounts,
 																	__global const int* contactOffsets,
-																	__global Contact4* restrict contactsOut,
+																	__global struct b3Contact4Data* restrict contactsOut,
 																	counter32_t nContactsOut,
 																	int numPairs,
 																	int pairIndex
@@ -916,17 +907,19 @@ __kernel void   extractManifoldAndAddContactKernel(__global const int2* pairs,
 		AppendInc( nContactsOut, dstIdx );
 		//if ((dstIdx+nContacts) < capacity)
 		{
-			__global Contact4* c = contactsOut + dstIdx;
-			c->m_worldNormal = normal;
-			c->m_coeffs = (u32)(0.f*0xffff) | ((u32)(0.7f*0xffff)<<16);
+			__global struct b3Contact4Data* c = contactsOut + dstIdx;
+			c->m_worldNormalOnB = -normal;
+			c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
 			c->m_batchIdx = idx;
 			int bodyA = pairs[pairIndex].x;
 			int bodyB = pairs[pairIndex].y;
 			c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0 ? -bodyA:bodyA;
 			c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0 ? -bodyB:bodyB;
+			c->m_childIndexA = -1;
+			c->m_childIndexB = -1;
 			for (int i=0;i<nContacts;i++)
 			{
-				c->m_worldPos[i] = localPoints[contactIdx[i]];
+				c->m_worldPosB[i] = localPoints[contactIdx[i]];
 			}
 			GET_NPOINTS(*c) = nContacts;
 		}
@@ -952,7 +945,7 @@ void	trMul(float4 translationA, Quaternion orientationA,
 
 
 
-__kernel void   clipHullHullKernel( __global const int2* pairs, 
+__kernel void   clipHullHullKernel( __global int4* pairs, 
 																					__global const BodyData* rigidBodies, 
 																					__global const btCollidableGpu* collidables,
 																					__global const ConvexPolyhedronCL* convexShapes, 
@@ -962,9 +955,10 @@ __kernel void   clipHullHullKernel( __global const int2* pairs,
 																					__global const int* indices,
 																					__global const float4* separatingNormals,
 																					__global const int* hasSeparatingAxis,
-																					__global Contact4* restrict globalContactsOut,
+																					__global struct b3Contact4Data* restrict globalContactsOut,
 																					counter32_t nGlobalContactsOut,
-																					int numPairs)
+																					int numPairs,
+																					int contactCapacity)
 {
 
 	int i = get_global_id(0);
@@ -1024,20 +1018,24 @@ __kernel void   clipHullHullKernel( __global const int2* pairs,
 		
 				int dstIdx;
 				AppendInc( nGlobalContactsOut, dstIdx );
-				//if ((dstIdx+nReducedContacts) < capacity)
+				if (dstIdx<contactCapacity)
 				{
-					__global Contact4* c = globalContactsOut+ dstIdx;
-					c->m_worldNormal = normal;
-					c->m_coeffs = (u32)(0.f*0xffff) | ((u32)(0.7f*0xffff)<<16);
+					pairs[pairIndex].z = dstIdx;
+
+					__global struct b3Contact4Data* c = globalContactsOut+ dstIdx;
+					c->m_worldNormalOnB = -normal;
+					c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
 					c->m_batchIdx = pairIndex;
 					int bodyA = pairs[pairIndex].x;
 					int bodyB = pairs[pairIndex].y;
 					c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0?-bodyA:bodyA;
 					c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0?-bodyB:bodyB;
+					c->m_childIndexA = -1;
+					c->m_childIndexB = -1;
 
 					for (int i=0;i<nReducedContacts;i++)
 					{
-						c->m_worldPos[i] = pointsIn[contactIdx[i]];
+						c->m_worldPosB[i] = pointsIn[contactIdx[i]];
 					}
 					GET_NPOINTS(*c) = nReducedContacts;
 				}
@@ -1060,7 +1058,7 @@ __kernel void   clipCompoundsHullHullKernel( __global const int4* gpuCompoundPai
 																					__global const btGpuChildShape* gpuChildShapes,
 																					__global const float4* gpuCompoundSepNormalsOut,
 																					__global const int* gpuHasCompoundSepNormalsOut,
-																					__global Contact4* restrict globalContactsOut,
+																					__global struct b3Contact4Data* restrict globalContactsOut,
 																					counter32_t nGlobalContactsOut,
 																					int numCompoundPairs, int maxContactCapacity)
 {
@@ -1157,18 +1155,19 @@ __kernel void   clipCompoundsHullHullKernel( __global const int4* gpuCompoundPai
 				AppendInc( nGlobalContactsOut, dstIdx );
 				if ((dstIdx+nReducedContacts) < maxContactCapacity)
 				{
-					__global Contact4* c = globalContactsOut+ dstIdx;
-					c->m_worldNormal = normal;
-					c->m_coeffs = (u32)(0.f*0xffff) | ((u32)(0.7f*0xffff)<<16);
+					__global struct b3Contact4Data* c = globalContactsOut+ dstIdx;
+					c->m_worldNormalOnB = -normal;
+					c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
 					c->m_batchIdx = pairIndex;
 					int bodyA = gpuCompoundPairs[pairIndex].x;
 					int bodyB = gpuCompoundPairs[pairIndex].y;
 					c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0?-bodyA:bodyA;
 					c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0?-bodyB:bodyB;
-
+					c->m_childIndexA = childShapeIndexA;
+					c->m_childIndexB = childShapeIndexB;
 					for (int i=0;i<nReducedContacts;i++)
 					{
-						c->m_worldPos[i] = pointsIn[contactIdx[i]];
+						c->m_worldPosB[i] = pointsIn[contactIdx[i]];
 					}
 					GET_NPOINTS(*c) = nReducedContacts;
 				}
@@ -1181,12 +1180,12 @@ __kernel void   clipCompoundsHullHullKernel( __global const int4* gpuCompoundPai
 
 
 
-__kernel void   sphereSphereCollisionKernel( __global const int2* pairs, 
+__kernel void   sphereSphereCollisionKernel( __global const int4* pairs, 
 																					__global const BodyData* rigidBodies, 
 																					__global const btCollidableGpu* collidables,
 																					__global const float4* separatingNormals,
 																					__global const int* hasSeparatingAxis,
-																					__global Contact4* restrict globalContactsOut,
+																					__global struct b3Contact4Data* restrict globalContactsOut,
 																					counter32_t nGlobalContactsOut,
 																					int numPairs)
 {
@@ -1232,15 +1231,18 @@ __kernel void   sphereSphereCollisionKernel( __global const int2* pairs,
 				
 				if (dstIdx < numPairs)
 				{
-					__global Contact4* c = &globalContactsOut[dstIdx];
-					c->m_worldNormal = normalOnSurfaceB;
-					c->m_coeffs = (u32)(0.f*0xffff) | ((u32)(0.7f*0xffff)<<16);
+					__global struct b3Contact4Data* c = &globalContactsOut[dstIdx];
+					c->m_worldNormalOnB = -normalOnSurfaceB;
+					c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
 					c->m_batchIdx = pairIndex;
 					int bodyA = pairs[pairIndex].x;
 					int bodyB = pairs[pairIndex].y;
 					c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0?-bodyA:bodyA;
 					c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0?-bodyB:bodyB;
-					c->m_worldPos[0] = contactPosB;
+					c->m_worldPosB[0] = contactPosB;
+					c->m_childIndexA = -1;
+					c->m_childIndexB = -1;
+
 					GET_NPOINTS(*c) = 1;
 				}//if (dstIdx < numPairs)
 			}//if ( len <= (radiusA+radiusB))
@@ -1258,7 +1260,7 @@ __kernel void   clipHullHullConcaveConvexKernel( __global int4* concavePairsIn,
 																					__global const int* indices,
 																					__global const btGpuChildShape* gpuChildShapes,
 																					__global const float4* separatingNormals,
-																					__global Contact4* restrict globalContactsOut,
+																					__global struct b3Contact4Data* restrict globalContactsOut,
 																					counter32_t nGlobalContactsOut,
 																					int numConcavePairs)
 {
@@ -1285,6 +1287,7 @@ __kernel void   clipHullHullConcaveConvexKernel( __global int4* concavePairsIn,
 		int bodyIndexA = concavePairsIn[i].x;
 		int bodyIndexB = concavePairsIn[i].y;
 		int f = concavePairsIn[i].z;
+		int childShapeIndexA = f;
 		
 		int collidableIndexA = rigidBodies[bodyIndexA].m_collidableIdx;
 		int collidableIndexB = rigidBodies[bodyIndexB].m_collidableIdx;
@@ -1411,12 +1414,13 @@ __kernel void   clipHullHullConcaveConvexKernel( __global int4* concavePairsIn,
 		float4 sepAxis = separatingNormals[i];
 		
 		int shapeTypeB = collidables[collidableIndexB].m_shapeType;
+		int childShapeIndexB =-1;
 		if (shapeTypeB==SHAPE_COMPOUND_OF_CONVEX_HULLS)
 		{
 			///////////////////
 			///compound shape support
 			
-			int childShapeIndexB = concavePairsIn[pairIndex].w;
+			childShapeIndexB = concavePairsIn[pairIndex].w;
 			int childColIndexB = gpuChildShapes[childShapeIndexB].m_shapeIndex;
 			shapeIndexB = collidables[childColIndexB].m_shapeIndex;
 			float4 childPosB = gpuChildShapes[childShapeIndexB].m_childPosition;
@@ -1460,18 +1464,19 @@ __kernel void   clipHullHullConcaveConvexKernel( __global int4* concavePairsIn,
 			AppendInc( nGlobalContactsOut, dstIdx );
 			//if ((dstIdx+nReducedContacts) < capacity)
 			{
-				__global Contact4* c = globalContactsOut+ dstIdx;
-				c->m_worldNormal = normal;
-				c->m_coeffs = (u32)(0.f*0xffff) | ((u32)(0.7f*0xffff)<<16);
+				__global struct b3Contact4Data* c = globalContactsOut+ dstIdx;
+				c->m_worldNormalOnB = -normal;
+				c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
 				c->m_batchIdx = pairIndex;
 				int bodyA = concavePairsIn[pairIndex].x;
 				int bodyB = concavePairsIn[pairIndex].y;
 				c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0?-bodyA:bodyA;
 				c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0?-bodyB:bodyB;
-
+				c->m_childIndexA = childShapeIndexA;
+				c->m_childIndexB = childShapeIndexB;
 				for (int i=0;i<nReducedContacts;i++)
 				{
-					c->m_worldPos[i] = pointsIn[contactIdx[i]];
+					c->m_worldPosB[i] = pointsIn[contactIdx[i]];
 				}
 				GET_NPOINTS(*c) = nReducedContacts;
 			}
@@ -1660,7 +1665,7 @@ int clipFaces(__global float4* worldVertsA1,
 
 
 
-__kernel void   findClippingFacesKernel(  __global const int2* pairs,
+__kernel void   findClippingFacesKernel(  __global const int4* pairs,
                                         __global const BodyData* rigidBodies,
                                         __global const btCollidableGpu* collidables,
                                         __global const ConvexPolyhedronCL* convexShapes,
@@ -1723,11 +1728,11 @@ __kernel void   findClippingFacesKernel(  __global const int2* pairs,
 
 
 
-__kernel void   clipFacesAndContactReductionKernel( __global const int2* pairs,
+__kernel void   clipFacesAndContactReductionKernel( __global int4* pairs,
                                                    __global const BodyData* rigidBodies,
                                                    __global const float4* separatingNormals,
                                                    __global const int* hasSeparatingAxis,
-                                                     __global Contact4* globalContactsOut,
+                                                     __global struct b3Contact4Data* globalContactsOut,
                                                    __global int4* clippingFacesOut,
                                                    __global float4* worldVertsA1,
                                                    __global float4* worldNormalsA1,
@@ -1836,11 +1841,11 @@ __kernel void   clipFacesAndContactReductionKernel( __global const int2* pairs,
 
 
 
-__kernel void   newContactReductionKernel( __global const int2* pairs,
+__kernel void   newContactReductionKernel( __global int4* pairs,
                                                    __global const BodyData* rigidBodies,
                                                    __global const float4* separatingNormals,
                                                    __global const int* hasSeparatingAxis,
-                                                   __global Contact4* globalContactsOut,
+                                                   __global struct b3Contact4Data* globalContactsOut,
                                                    __global int4* clippingFaces,
                                                    __global float4* worldVertsB2,
                                                    volatile __global int* nGlobalContactsOut,
@@ -1880,25 +1885,31 @@ __kernel void   newContactReductionKernel( __global const int2* pairs,
                 
 				if (dstIdx < numPairs)
 				{
-					__global Contact4* c = &globalContactsOut[dstIdx];
-					c->m_worldNormal = normal;
-					c->m_coeffs = (u32)(0.f*0xffff) | ((u32)(0.7f*0xffff)<<16);
+
+					__global struct b3Contact4Data* c = &globalContactsOut[dstIdx];
+					c->m_worldNormalOnB = -normal;
+					c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
 					c->m_batchIdx = pairIndex;
 					int bodyA = pairs[pairIndex].x;
 					int bodyB = pairs[pairIndex].y;
+
+					pairs[pairIndex].w = dstIdx;
+
 					c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0?-bodyA:bodyA;
 					c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0?-bodyB:bodyB;
-                    
+                    c->m_childIndexA =-1;
+					c->m_childIndexB =-1;
+
                     switch (nReducedContacts)
                     {
                         case 4:
-                            c->m_worldPos[3] = pointsIn[contactIdx.w];
+                            c->m_worldPosB[3] = pointsIn[contactIdx.w];
                         case 3:
-                            c->m_worldPos[2] = pointsIn[contactIdx.z];
+                            c->m_worldPosB[2] = pointsIn[contactIdx.z];
                         case 2:
-                            c->m_worldPos[1] = pointsIn[contactIdx.y];
+                            c->m_worldPosB[1] = pointsIn[contactIdx.y];
                         case 1:
-                            c->m_worldPos[0] = pointsIn[contactIdx.x];
+                            c->m_worldPosB[0] = pointsIn[contactIdx.x];
                         default:
                         {
                         }

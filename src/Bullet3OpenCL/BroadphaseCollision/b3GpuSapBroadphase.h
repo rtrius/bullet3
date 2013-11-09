@@ -7,7 +7,7 @@ class b3Vector3;
 #include "Bullet3OpenCL/ParallelPrimitives/b3RadixSort32CL.h"
 
 #include "b3SapAabb.h"
-
+#include "Bullet3Common/shared/b3Int2.h"
 
 
 class b3GpuSapBroadphase
@@ -21,17 +21,46 @@ class b3GpuSapBroadphase
 	cl_kernel				m_copyAabbsKernel;
 	cl_kernel				m_sapKernel;
 	cl_kernel				m_sap2Kernel;
+	cl_kernel				m_prepareSumVarianceKernel;
+	cl_kernel				m_computePairsIncremental3dSapKernel;
 
 	class b3RadixSort32CL* m_sorter;
 
 	///test for 3d SAP
 	b3AlignedObjectArray<b3SortData>		m_sortedAxisCPU[3][2];
+	b3AlignedObjectArray<b3UnsignedInt2>	m_objectMinMaxIndexCPU[3][2];
+	b3OpenCLArray<b3UnsignedInt2>			m_objectMinMaxIndexGPUaxis0;
+	b3OpenCLArray<b3UnsignedInt2>			m_objectMinMaxIndexGPUaxis1;
+	b3OpenCLArray<b3UnsignedInt2>			m_objectMinMaxIndexGPUaxis2;
+	b3OpenCLArray<b3UnsignedInt2>			m_objectMinMaxIndexGPUaxis0prev;
+	b3OpenCLArray<b3UnsignedInt2>			m_objectMinMaxIndexGPUaxis1prev;
+	b3OpenCLArray<b3UnsignedInt2>			m_objectMinMaxIndexGPUaxis2prev;
+
+	b3OpenCLArray<b3SortData>				m_sortedAxisGPU0;
+	b3OpenCLArray<b3SortData>				m_sortedAxisGPU1;
+	b3OpenCLArray<b3SortData>				m_sortedAxisGPU2;
+	b3OpenCLArray<b3SortData>				m_sortedAxisGPU0prev;
+	b3OpenCLArray<b3SortData>				m_sortedAxisGPU1prev;
+	b3OpenCLArray<b3SortData>				m_sortedAxisGPU2prev;
+
+
+	b3OpenCLArray<b3Int4>					m_addedHostPairsGPU;
+	b3OpenCLArray<b3Int4>					m_removedHostPairsGPU;
+	b3OpenCLArray<int>						m_addedCountGPU;
+	b3OpenCLArray<int>						m_removedCountGPU;
+	
 	int	m_currentBuffer;
 
 	public:
-	
+
+	b3OpenCLArray<int> m_pairCount;
+
 	b3OpenCLArray<b3SapAabb>	m_allAabbsGPU;
 	b3AlignedObjectArray<b3SapAabb>	m_allAabbsCPU;
+
+	b3OpenCLArray<b3Vector3>	m_sum;
+	b3OpenCLArray<b3Vector3>	m_sum2;
+	b3OpenCLArray<b3Vector3>	m_dst;
 
 	b3OpenCLArray<b3SapAabb>	m_smallAabbsGPU;
 	b3AlignedObjectArray<b3SapAabb>	m_smallAabbsCPU;
@@ -39,18 +68,21 @@ class b3GpuSapBroadphase
 	b3OpenCLArray<b3SapAabb>	m_largeAabbsGPU;
 	b3AlignedObjectArray<b3SapAabb>	m_largeAabbsCPU;
 
-	b3OpenCLArray<b3Int2>		m_overlappingPairs;
+	b3OpenCLArray<b3Int4>		m_overlappingPairs;
 
 	//temporary gpu work memory
 	b3OpenCLArray<b3SortData>	m_gpuSmallSortData;
 	b3OpenCLArray<b3SapAabb>	m_gpuSmallSortedAabbs;
 
+	class b3PrefixScanFloat4CL*		m_prefixScanFloat4;
 
 	b3GpuSapBroadphase(cl_context ctx,cl_device_id device, cl_command_queue  q );
 	virtual ~b3GpuSapBroadphase();
 	
-	void  calculateOverlappingPairs();
-	void  calculateOverlappingPairsHost();
+	void  calculateOverlappingPairs(int maxPairs);
+	void  calculateOverlappingPairsHost(int maxPairs);
+	
+	void  reset();
 
 	void init3dSap();
 	void calculateOverlappingPairsHostIncremental3Sap();

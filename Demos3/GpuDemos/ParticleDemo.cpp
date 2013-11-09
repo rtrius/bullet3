@@ -19,7 +19,6 @@ static char* particleKernelsString =
 #include "GpuDemoInternalData.h"
 
 
-#include "Bullet3Common/b3Quickprof.h"
 
 //1000000 particles
 //#define NUM_PARTICLES_X 100
@@ -244,10 +243,10 @@ void ParticleDemo::setupScene(const ConstructionInfo& ci)
 				void* userPtr = (void*)userIndex;
 				int collidableIndex = userIndex;
 				b3Vector3 aabbMin,aabbMax;
-				b3Vector3 particleRadius(rad,rad,rad);
+				b3Vector3 particleRadius=b3MakeVector3(rad,rad,rad);
 
-				aabbMin = b3Vector3(position[0],position[1],position[2])-particleRadius;
-				aabbMax = b3Vector3(position[0],position[1],position[2])+particleRadius;
+				aabbMin = b3MakeVector3(position[0],position[1],position[2])-particleRadius;
+				aabbMax = b3MakeVector3(position[0],position[1],position[2])+particleRadius;
 				m_data->m_broadphaseGPU->createProxy(aabbMin,aabbMax,collidableIndex,1,1);
 				userIndex++;
 
@@ -277,7 +276,7 @@ void	ParticleDemo::renderScene()
 	
 	if (m_instancingRenderer)
 	{
-		m_instancingRenderer->RenderScene();
+		m_instancingRenderer->renderScene();
 	}
 
 }
@@ -397,7 +396,7 @@ void ParticleDemo::clientMoveAndDisplay()
 		cl_mem pairsGPU  = 0;
 
 		{
-			m_data->m_broadphaseGPU->calculateOverlappingPairs();
+			m_data->m_broadphaseGPU->calculateOverlappingPairs(64*numParticles);
 			pairsGPU = m_data->m_broadphaseGPU->getOverlappingPairBuffer();
 			numPairsGPU = m_data->m_broadphaseGPU->getNumOverlap();
 		}

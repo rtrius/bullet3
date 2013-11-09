@@ -6,8 +6,18 @@
 
 struct b3SortData
 {
-	int m_key;
-	int m_value;
+	union
+	{
+		unsigned int m_key;
+		unsigned int x;
+	};
+
+	union
+	{
+		unsigned int m_value;
+		unsigned int y;
+		
+	};
 };
 #include "b3BufferInfoCL.h"
 

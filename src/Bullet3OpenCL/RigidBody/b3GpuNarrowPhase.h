@@ -1,7 +1,7 @@
 #ifndef B3_GPU_NARROWPHASE_H
 #define B3_GPU_NARROWPHASE_H
 
-#include "Bullet3OpenCL/NarrowphaseCollision/b3Collidable.h"
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Collidable.h"
 #include "Bullet3OpenCL/Initialize/b3OpenCLInclude.h"
 #include "Bullet3Common/b3AlignedObjectArray.h"
 #include "Bullet3Common/b3Vector3.h"
@@ -19,7 +19,7 @@ protected:
 	cl_device_id m_device;
 	cl_command_queue m_queue;
 
-	int registerConvexHullShape(class b3ConvexUtility* convexPtr, b3Collidable& col);
+	int registerConvexHullShapeInternal(class b3ConvexUtility* convexPtr, b3Collidable& col);
 	int registerConcaveMeshShape(b3AlignedObjectArray<b3Vector3>* vertices, b3AlignedObjectArray<int>* indices, b3Collidable& col, const float* scaling);
 
 public:
@@ -48,22 +48,30 @@ public:
 	void setObjectTransform(const float* position, const float* orientation , int bodyIndex);
 
 	void	writeAllBodiesToGpu();
-
+	void  reset();
 	void	readbackAllBodiesToCpu();
-	void	getObjectTransformFromCpu(float* position, float* orientation , int bodyIndex) const;
+	bool	getObjectTransformFromCpu(float* position, float* orientation , int bodyIndex) const;
 
-	virtual void computeContacts(cl_mem broadphasePairs, int numBroadphasePairs, cl_mem aabbs, int numObjects);
+	void setObjectTransformCpu(float* position, float* orientation , int bodyIndex);
+	void setObjectVelocityCpu(float* linVel, float* angVel, int bodyIndex);
+
+	
+	virtual void computeContacts(cl_mem broadphasePairs, int numBroadphasePairs, cl_mem aabbsWorldSpace, int numObjects);
 	
 
 	cl_mem	getBodiesGpu();
+	const struct b3RigidBodyCL* getBodiesCpu() const;
+	//struct b3RigidBodyCL* getBodiesCpu();
+
 	int	getNumBodiesGpu() const;
 
 	cl_mem	getBodyInertiasGpu();
 	int	getNumBodyInertiasGpu() const;
 
 	cl_mem	getCollidablesGpu();
+	const struct b3Collidable* getCollidablesCpu() const;
 	int		getNumCollidablesGpu() const;
-
+	
 	cl_mem getConvexPolyhedraGpu();
 	int getNumConvexPolyhedraGpu() const;
 	
@@ -86,12 +94,14 @@ public:
 	cl_mem getGpuChildShapesGpu();
 	int getNumGpuChildShapesGpu() const;
 	
+	const struct b3SapAabb* getLocalSpaceAabbsCpu() const;
+	
 	const struct b3Contact4* getContactsCPU() const;
 
 	cl_mem	getContactsGpu();
 	int	getNumContactsGpu() const;
 
-	cl_mem	getAabbBufferGpu();
+	cl_mem	getAabbLocalSpaceBufferGpu();
 	
 	int getNumRigidBodies() const;
 
@@ -103,6 +113,16 @@ public:
 	}
 	b3Collidable& getCollidableCpu(int collidableIndex);
 	const b3Collidable& getCollidableCpu(int collidableIndex) const;
+
+	const b3GpuNarrowPhaseInternalData*	getInternalData() const
+	{
+			return m_data;
+	}
+
+	b3GpuNarrowPhaseInternalData*	getInternalData()
+	{
+			return m_data;
+	}
 
 	const struct b3SapAabb& getLocalSpaceAabb(int collidableIndex) const;
 };

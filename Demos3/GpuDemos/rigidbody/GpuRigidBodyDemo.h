@@ -2,6 +2,7 @@
 #define GPU_RIGID_BODY_DEMO_H
 
 #include "../GpuDemo.h"
+#include "Bullet3Common/b3Vector3.h"
 
 class GpuRigidBodyDemo : public GpuDemo
 {
@@ -38,7 +39,11 @@ public:
 	
 	virtual void clientMoveAndDisplay();
 
-	
+	//for picking
+	b3Vector3	getRayTo(int x,int y);
+	virtual bool	mouseMoveCallback(float x,float y);
+	virtual bool	mouseButtonCallback(int button, int state, float x, float y);
+	virtual bool	keyboardCallback(int key, int state);
 };
 
 #endif //GPU_RIGID_BODY_DEMO_H

@@ -2,16 +2,25 @@
 #define GPU_CONVEX_SCENE_H
 
 #include "GpuRigidBodyDemo.h"
+#include "Bullet3Common/b3AlignedObjectArray.h"
+#include "Bullet3Collision/NarrowPhaseCollision/b3RaycastInfo.h"
 
 class GpuConvexScene : public GpuRigidBodyDemo
 {
+protected:
+	class GLPrimitiveRenderer* m_primRenderer;
+
+	class b3GpuRaycast*	m_raycaster;
+
 public:
 
-	GpuConvexScene(){}
+	GpuConvexScene() :m_primRenderer(0), m_raycaster(0)
+	{
+	}
 	virtual ~GpuConvexScene(){}
 	virtual const char* getName()
 	{
-		return "GRBConvex";
+		return "Tetrahedra";
 	}
 
 	static GpuDemo* MyCreateFunc()
@@ -21,6 +30,8 @@ public:
 	}
 
 	virtual void setupScene(const ConstructionInfo& ci);
+
+	virtual void	destroyScene();
 
 	virtual int	createDynamicsObjects(const ConstructionInfo& ci);
 
@@ -39,7 +50,7 @@ public:
 	virtual ~GpuConvexPlaneScene(){}
 	virtual const char* getName()
 	{
-		return "GRBConvexPlane";
+		return "ConvexOnPlane";
 	}
 
 	static GpuDemo* MyCreateFunc()
@@ -61,7 +72,7 @@ public:
 	virtual ~GpuBoxPlaneScene(){}
 	virtual const char* getName()
 	{
-		return "GRBBoxPlane";
+		return "BoxBox";
 	}
 
 	static GpuDemo* MyCreateFunc()
@@ -72,7 +83,32 @@ public:
 
 	virtual int	createDynamicsObjects(const ConstructionInfo& ci);
 
-	
 
 };
+
+class GpuTetraScene : public GpuConvexScene
+{
+
+protected:
+void createFromTetGenData(const char* ele,
+	const char* node,
+	const ConstructionInfo& ci);
+
+public:
+	virtual const char* getName()
+	{
+		return "TetraBreakable";
+	}
+
+	static GpuDemo* MyCreateFunc()
+	{
+		GpuDemo* demo = new GpuTetraScene;
+		return demo;
+	}
+
+	virtual int	createDynamicsObjects(const ConstructionInfo& ci);
+
+};
+
+
 #endif //GPU_CONVEX_SCENE_H

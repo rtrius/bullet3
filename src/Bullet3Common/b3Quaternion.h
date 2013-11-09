@@ -407,9 +407,9 @@ public:
 		b3Scalar s_squared = 1.f-m_floats[3]*m_floats[3];
 		
 		if (s_squared < b3Scalar(10.) * B3_EPSILON) //Check for divide by zero
-			return b3Vector3(1.0, 0.0, 0.0);  // Arbitrary
+			return b3MakeVector3(1.0, 0.0, 0.0);  // Arbitrary
 		b3Scalar s = 1.f/b3Sqrt(s_squared);
-		return b3Vector3(m_floats[0] * s, m_floats[1] * s, m_floats[2] * s);
+		return b3MakeVector3(m_floats[0] * s, m_floats[1] * s, m_floats[2] * s);
 	}
 
 	/**@brief Return the inverse of this quaternion */
@@ -832,17 +832,31 @@ b3Slerp(const b3Quaternion& q1, const b3Quaternion& q2, const b3Scalar& t)
 	return q1.slerp(q2, t);
 }
 
+B3_FORCE_INLINE b3Quaternion
+b3QuatMul(const b3Quaternion& rot0, const b3Quaternion& rot1)
+{
+	return rot0*rot1;
+}
+
+B3_FORCE_INLINE b3Quaternion
+b3QuatNormalized(const b3Quaternion& orn)
+{
+	return orn.normalized();
+}
+
+
+
 B3_FORCE_INLINE b3Vector3 
 b3QuatRotate(const b3Quaternion& rotation, const b3Vector3& v) 
 {
 	b3Quaternion q = rotation * v;
 	q *= rotation.inverse();
 #if defined (B3_USE_SSE_IN_API) && defined (B3_USE_SSE)
-	return b3Vector3(_mm_and_ps(q.get128(), b3vFFF0fMask));
+	return b3MakeVector3(_mm_and_ps(q.get128(), b3vFFF0fMask));
 #elif defined(B3_USE_NEON)
-    return b3Vector3((float32x4_t)vandq_s32((int32x4_t)q.get128(), b3vFFF0Mask));
+    return b3MakeVector3((float32x4_t)vandq_s32((int32x4_t)q.get128(), b3vFFF0Mask));
 #else	
-	return b3Vector3(q.getX(),q.getY(),q.getZ());
+	return b3MakeVector3(q.getX(),q.getY(),q.getZ());
 #endif
 }
 

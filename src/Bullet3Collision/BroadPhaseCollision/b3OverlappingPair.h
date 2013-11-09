@@ -16,26 +16,38 @@ subject to the following restrictions:
 #ifndef B3_OVERLAPPING_PAIR_H
 #define B3_OVERLAPPING_PAIR_H
 
-#include "Bullet3Common/b3Int2.h"
+#include "Bullet3Common/shared/b3Int4.h"
 
-//typedef b3Int2 b3BroadphasePair;
-struct b3BroadphasePair : public b3Int2
+#define B3_NEW_PAIR_MARKER -1
+#define B3_REMOVED_PAIR_MARKER -2
+
+typedef b3Int4 b3BroadphasePair;
+
+inline b3Int4 b3MakeBroadphasePair(int xx,int yy)
+{
+	b3Int4 pair;
+
+	if (xx < yy)
+    { 
+        pair.x = xx; 
+        pair.y = yy;
+    }
+    else 
+    { 
+		pair.x = yy;
+        pair.y = xx;
+    }
+	pair.z = B3_NEW_PAIR_MARKER;
+	pair.w = B3_NEW_PAIR_MARKER;
+	return pair;
+}
+
+/*struct b3BroadphasePair : public b3Int4
 {
 	explicit b3BroadphasePair(){}
-	b3BroadphasePair(int xx,int yy)
-	{
-		if (xx < yy)
-        { 
-            x = xx; 
-            y = yy;
-        }
-        else 
-        { 
-			x = yy;
-            y = xx;
-        }
-	}
+	
 };
+*/
 
 class b3BroadphasePairSortPredicate
 {

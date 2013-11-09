@@ -56,7 +56,7 @@ function createGpuDemos( demos, incdirs, linknames, vendor)
 				initOpenCL(vendor)
 				
 				kind "ConsoleApp"
-				targetdir ".."
+				targetdir "../bin"
 		
 				links {"Bullet3OpenCL_" .. vendor }
 				
@@ -114,6 +114,11 @@ end
  					"BulletDynamics", "BulletCollision", "LinearMath"},
  					"NVIDIA")
 
+createGpuDemos(localgpudemos,{"../src","../Demos/OpenGL"},{"OpenGLSupport",
+ 					"Bullet3Dynamics","Bullet3Collision","Bullet3Geometry","Bullet3Common",
+ 					"BulletDynamics", "BulletCollision", "LinearMath"},
+ 					"clew")
+ 					
 createGpuDemos(localgpudemos,{"../src","../Demos/OpenGL"},{"OpenGLSupport",
  					"Bullet3Dynamics","Bullet3Collision","Bullet3Geometry","Bullet3Common",
  					"BulletDynamics", "BulletCollision", "LinearMath"},

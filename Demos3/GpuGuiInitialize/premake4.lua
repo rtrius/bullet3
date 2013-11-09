@@ -24,16 +24,17 @@ function createProject(vendor)
 			"gwen"
 		}
 		
-
 		initOpenGL()
 		initGlew()
 		
 		files {
 		"main.cpp",
-			"../../opencl/basic_initialize/b3OpenCLUtils.cpp",
-			"../../opencl/basic_initialize/b3OpenCLUtils.h",
+			"../../src/Bullet3OpenCL/Initialize/b3OpenCLUtils.cpp",
+			"../../src/Bullet3OpenCL/Initialize/b3OpenCLUtils.h",
 			"../../btgui/OpenGLWindow/GLInstancingRenderer.cpp",
 			"../../btgui/OpenGLWindow/GLInstancingRenderer.h",
+			"../../btgui/OpenGLWindow/GLRenderToTexture.cpp",
+			"../../btgui/OpenGLWindow/GLRenderToTexture.h",
 			"../../btgui/OpenGLWindow/GLPrimitiveRenderer.h",
 			"../../btgui/OpenGLWindow/GLPrimitiveRenderer.cpp",
 			"../../btgui/OpenGLWindow/LoadShader.cpp",
@@ -49,8 +50,13 @@ function createProject(vendor)
 			"../../src/Bullet3Geometry/b3ConvexHullComputer.cpp",
 			"../../src/Bullet3Geometry/b3ConvexHullComputer.h",
 			"../../src/Bullet3Common/b3AlignedAllocator.cpp",
-			"../../src/Bullet3Common/b3Quickprof.cpp",
-			"../../src/Bullet3Common/b3Quickprof.h"
+			"../../src/Bullet3Common/b3Logging.cpp",
+			"../../src/Bullet3Common/b3Logging.h",
+			"../../btgui/Timing/b3Quickprof.cpp",
+			"../../btgui/Timing/b3Quickprof.h",
+			"../../btgui/Timing/b3Clock.cpp",
+			"../../btgui/Timing/b3Clock.h",
+
 		}
 
 		if os.is("Windows") then 
@@ -62,6 +68,7 @@ function createProject(vendor)
 			}
 		end
 		if os.is("Linux") then
+			links {"X11"}
 			files {
 				"../../btgui/OpenGLWindow/X11OpenGLWindow.cpp",
 				"../../btgui/OpenGLWindow/X11OpenGLWindows.h"
@@ -78,6 +85,7 @@ function createProject(vendor)
 	end
 end
 
+createProject("clew")
 createProject("Apple")
 createProject("AMD")
 createProject("Intel")

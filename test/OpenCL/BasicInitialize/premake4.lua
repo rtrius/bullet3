@@ -19,12 +19,14 @@ function createProject(vendor)
 		files {
 			"main.cpp",
 			"../../../src/Bullet3OpenCL/Initialize/b3OpenCLUtils.cpp",
-			"../../../src/Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
+			"../../../src/Bullet3Common/b3AlignedAllocator.cpp",
+			"../../../src/Bullet3OpenCL/Initialize/b3OpenCLUtils.h",
+			"../../../src/Bullet3Common/b3Logging.cpp",
 		}
 		
 	end
 end
-	
+createProject("clew")	
 createProject("Apple")
 createProject("AMD")
 createProject("Intel")

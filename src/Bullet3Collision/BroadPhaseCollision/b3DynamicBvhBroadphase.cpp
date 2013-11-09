@@ -204,12 +204,21 @@ void							b3DynamicBvhBroadphase::destroyProxy(	b3BroadphaseProxy* absproxy,
 	m_needcleanup=true;
 }
 
+void	b3DynamicBvhBroadphase::getAabb(int objectId,b3Vector3& aabbMin, b3Vector3& aabbMax ) const
+{
+	const b3DbvtProxy*						proxy=&m_proxies[objectId];
+	aabbMin = proxy->m_aabbMin;
+	aabbMax = proxy->m_aabbMax;
+}
+/*
 void	b3DynamicBvhBroadphase::getAabb(b3BroadphaseProxy* absproxy,b3Vector3& aabbMin, b3Vector3& aabbMax ) const
 {
 	b3DbvtProxy*						proxy=(b3DbvtProxy*)absproxy;
 	aabbMin = proxy->m_aabbMin;
 	aabbMax = proxy->m_aabbMax;
 }
+*/
+
 
 struct	BroadphaseRayTester : b3DynamicBvh::ICollide
 {
@@ -280,12 +289,13 @@ void	b3DynamicBvhBroadphase::aabbTest(const b3Vector3& aabbMin,const b3Vector3& 
 
 
 //
-void							b3DynamicBvhBroadphase::setAabb(		b3BroadphaseProxy* absproxy,
+void							b3DynamicBvhBroadphase::setAabb(int objectId,
 														  const b3Vector3& aabbMin,
 														  const b3Vector3& aabbMax,
 														  b3Dispatcher* /*dispatcher*/)
 {
-	b3DbvtProxy*						proxy=(b3DbvtProxy*)absproxy;
+	b3DbvtProxy*						proxy=&m_proxies[objectId];
+//	b3DbvtProxy*						proxy=(b3DbvtProxy*)absproxy;
 	B3_ATTRIBUTE_ALIGNED16(b3DbvtVolume)	aabb=b3DbvtVolume::FromMM(aabbMin,aabbMax);
 #if B3_DBVT_BP_PREVENTFALSEUPDATE
 	if(b3NotEqual(aabb,proxy->leaf->volume))
@@ -431,7 +441,7 @@ void b3DynamicBvhBroadphase::performDeferredRemoval(b3Dispatcher* dispatcher)
 		
 		int i;
 
-		b3BroadphasePair previousPair(-1,-1);
+		b3BroadphasePair previousPair = b3MakeBroadphasePair(-1,-1);
 		
 		
 		
@@ -622,7 +632,7 @@ void							b3DynamicBvhBroadphase::getBroadphaseAabb(b3Vector3& aabbMin,b3Vector
 			bounds=m_sets[0].m_root->volume;
 	else if(!m_sets[1].empty())	bounds=m_sets[1].m_root->volume;
 	else
-		bounds=b3DbvtVolume::FromCR(b3Vector3(0,0,0),0);
+		bounds=b3DbvtVolume::FromCR(b3MakeVector3(0,0,0),0);
 	aabbMin=bounds.Mins();
 	aabbMax=bounds.Maxs();
 }

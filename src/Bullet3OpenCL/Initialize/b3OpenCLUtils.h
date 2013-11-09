@@ -49,10 +49,14 @@ int b3OpenCLUtils_getNumPlatforms(cl_int* pErrNum);
 ///get the nr'th platform, where nr is in the range [0..getNumPlatforms)
 cl_platform_id b3OpenCLUtils_getPlatform(int nr, cl_int* pErrNum);
 
+
 void b3OpenCLUtils_printPlatformInfo(cl_platform_id platform);
 
 const char* b3OpenCLUtils_getSdkVendorName();
-
+	
+///set the path (directory/folder) where the compiled OpenCL kernel are stored
+void b3OpenCLUtils_setCachePath(const char* path);
+	
 cl_context 	b3OpenCLUtils_createContextFromPlatform(cl_platform_id platform, cl_device_type deviceType, cl_int* pErrNum, void* pGLCtx , void* pGLDC ,int preferredDeviceIndex , int preferredPlatformIndex);
 
 #ifdef __cplusplus
@@ -101,12 +105,19 @@ typedef struct
 
 } b3OpenCLDeviceInfo;
 
-typedef struct
+struct b3OpenCLPlatformInfo
 {
 	char m_platformVendor[B3_MAX_STRING_LENGTH];
 	char m_platformName[B3_MAX_STRING_LENGTH];
 	char m_platformVersion[B3_MAX_STRING_LENGTH];
-} b3OpenCLPlatformInfo;
+	
+	b3OpenCLPlatformInfo()
+	{
+		m_platformVendor[0]=0;
+		m_platformName[0]=0;
+		m_platformVersion[0]=0;
+	}
+};
 
 
 ///C++ API for OpenCL utilities: convenience functions
@@ -171,6 +182,10 @@ struct b3OpenCLUtils
 	static inline cl_context 	createContextFromPlatform(cl_platform_id platform, cl_device_type deviceType, cl_int* pErrNum, void* pGLCtx = 0, void* pGLDC = 0,int preferredDeviceIndex = -1, int preferredPlatformIndex= -1)
 	{
 		return b3OpenCLUtils_createContextFromPlatform(platform, deviceType, pErrNum, pGLCtx,pGLDC,preferredDeviceIndex, preferredPlatformIndex);
+	}
+	static void setCachePath(const char* path)
+	{
+		b3OpenCLUtils_setCachePath(path);
 	}
 };
 

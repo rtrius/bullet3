@@ -17,22 +17,11 @@ subject to the following restrictions:
 #define B3_CONTACT4_H
 
 #include "Bullet3Common/b3Vector3.h"
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Contact4Data.h"
 
-
-B3_ATTRIBUTE_ALIGNED16(struct) b3Contact4
+B3_ATTRIBUTE_ALIGNED16(struct) b3Contact4 : public b3Contact4Data
 {
 	B3_DECLARE_ALIGNED_ALLOCATOR();
-
-	b3Vector3	m_worldPos[4];
-	b3Vector3	m_worldNormal;
-//	float m_restituitionCoeff;
-//	float m_frictionCoeff;
-	unsigned short  m_restituitionCoeffCmp;
-	unsigned short  m_frictionCoeffCmp;
-	int m_batchIdx;
-
-	int m_bodyAPtrAndSignBit;
-	int m_bodyBPtrAndSignBit;
 
 	int getBodyA()const {return abs(m_bodyAPtrAndSignBit);}
 	int getBodyB()const {return abs(m_bodyBPtrAndSignBit);}
@@ -46,10 +35,10 @@ B3_ATTRIBUTE_ALIGNED16(struct) b3Contact4
 	float getFrictionCoeff() const { return ((float)m_frictionCoeffCmp/(float)0xffff); }
 	void setFrictionCoeff( float c ) { b3Assert( c >= 0.f && c <= 1.f ); m_frictionCoeffCmp = (unsigned short)(c*0xffff); }
 
-	float& getNPoints() { return m_worldNormal[3]; }
-	float getNPoints() const { return m_worldNormal[3]; }
+	//float& getNPoints() { return m_worldNormal[3]; }
+	int getNPoints() const { return (int) m_worldNormalOnB.w; }
 
-	float getPenetration(int idx) const { return m_worldPos[idx][3]; }
+	float getPenetration(int idx) const { return m_worldPosB[idx].w; }
 
 	bool isInvalid() const { return (getBodyA()==0 || getBodyB()==0); }
 };

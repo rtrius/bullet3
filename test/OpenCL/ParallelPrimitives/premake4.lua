@@ -30,11 +30,15 @@ function createProject(vendor)
 			"../../../src/Bullet3Common/b3AlignedAllocator.cpp",
 			"../../../src/Bullet3Common/b3AlignedAllocator.h",
 			"../../../src/Bullet3Common/b3AlignedObjectArray.h",
+			"../../../src/Bullet3Common/b3Logging.cpp",
+			"../../../src/Bullet3Common/b3Logging.h",
+
 		}
 		
 	end
 end
 
+createProject("clew")
 createProject("AMD")
 createProject("Intel")
 createProject("NVIDIA")

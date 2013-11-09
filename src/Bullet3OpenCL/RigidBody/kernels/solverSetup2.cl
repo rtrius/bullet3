@@ -14,6 +14,8 @@ subject to the following restrictions:
 //Originally written by Takahiro Harada
 
 
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Contact4Data.h"
+
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 #pragma OPENCL EXTENSION cl_khr_local_int32_base_atomics : enable
 #pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
@@ -377,16 +379,7 @@ typedef struct
 	u32 m_paddings[1];
 } Constraint4;
 
-typedef struct
-{
-	float4 m_worldPos[4];
-	float4 m_worldNormal;
-	u32 m_coeffs;
-	int m_batchIdx;
 
-	int m_bodyAPtrAndSignBit;
-	int m_bodyBPtrAndSignBit;
-} Contact4;
 
 typedef struct
 {
@@ -429,7 +422,7 @@ typedef struct
 //	others
 __kernel
 __attribute__((reqd_work_group_size(WG_SIZE,1,1)))
-void ReorderContactKernel(__global Contact4* in, __global Contact4* out, __global int2* sortData, int4 cb )
+void ReorderContactKernel(__global struct b3Contact4Data* in, __global struct b3Contact4Data* out, __global int2* sortData, int4 cb )
 {
 	int nContacts = cb.x;
 	int gIdx = GET_GLOBAL_IDX;
@@ -440,6 +433,73 @@ void ReorderContactKernel(__global Contact4* in, __global Contact4* out, __globa
 		out[gIdx] = in[srcIdx];
 	}
 }
+
+__kernel __attribute__((reqd_work_group_size(WG_SIZE,1,1)))
+void SetDeterminismSortDataChildShapeB(__global struct b3Contact4Data* contactsIn, __global int2* sortDataOut, int nContacts)
+{
+	int gIdx = GET_GLOBAL_IDX;
+
+	if( gIdx < nContacts )
+	{
+		int2 sd;
+		sd.x = contactsIn[gIdx].m_childIndexB;
+		sd.y = gIdx;
+		sortDataOut[gIdx] = sd;
+	}
+}
+
+__kernel __attribute__((reqd_work_group_size(WG_SIZE,1,1)))
+void SetDeterminismSortDataChildShapeA(__global struct b3Contact4Data* contactsIn, __global int2* sortDataInOut, int nContacts)
+{
+	int gIdx = GET_GLOBAL_IDX;
+
+	if( gIdx < nContacts )
+	{
+		int2 sdIn;
+		sdIn = sortDataInOut[gIdx];
+		int2 sdOut;
+		sdOut.x = contactsIn[sdIn.y].m_childIndexA;
+		sdOut.y = sdIn.y;
+		sortDataInOut[gIdx] = sdOut;
+	}
+}
+
+__kernel __attribute__((reqd_work_group_size(WG_SIZE,1,1)))
+void SetDeterminismSortDataBodyA(__global struct b3Contact4Data* contactsIn, __global int2* sortDataInOut, int nContacts)
+{
+	int gIdx = GET_GLOBAL_IDX;
+
+	if( gIdx < nContacts )
+	{
+		int2 sdIn;
+		sdIn = sortDataInOut[gIdx];
+		int2 sdOut;
+		sdOut.x = contactsIn[sdIn.y].m_bodyAPtrAndSignBit;
+		sdOut.y = sdIn.y;
+		sortDataInOut[gIdx] = sdOut;
+	}
+}
+
+
+__kernel
+__attribute__((reqd_work_group_size(WG_SIZE,1,1)))
+void SetDeterminismSortDataBodyB(__global struct b3Contact4Data* contactsIn, __global int2* sortDataInOut, int nContacts)
+{
+	int gIdx = GET_GLOBAL_IDX;
+
+	if( gIdx < nContacts )
+	{
+		int2 sdIn;
+		sdIn = sortDataInOut[gIdx];
+		int2 sdOut;
+		sdOut.x = contactsIn[sdIn.y].m_bodyBPtrAndSignBit;
+		sdOut.y = sdIn.y;
+		sortDataInOut[gIdx] = sdOut;
+	}
+}
+
+
+
 
 typedef struct
 {
@@ -479,8 +539,8 @@ static __constant const int gridTable8x8[] =
 
 __kernel
 __attribute__((reqd_work_group_size(WG_SIZE,1,1)))
-void SetSortDataKernel(__global Contact4* gContact, __global Body* gBodies, __global int2* gSortDataOut, 
-int nContacts,float scale,int N_SPLIT, int staticIdx)
+void SetSortDataKernel(__global struct b3Contact4Data* gContact, __global Body* gBodies, __global int2* gSortDataOut, 
+int nContacts,float scale,int4 nSplit,int staticIdx)
 
 {
 	int gIdx = GET_GLOBAL_IDX;
@@ -499,9 +559,10 @@ int nContacts,float scale,int N_SPLIT, int staticIdx)
 #if USE_SPATIAL_BATCHING		
 		int idx = (aStatic)? bIdx: aIdx;
 		float4 p = gBodies[idx].m_pos;
-		int xIdx = (int)((p.x-((p.x<0.f)?1.f:0.f))*scale) & (N_SPLIT-1);
-		int zIdx = (int)((p.z-((p.z<0.f)?1.f:0.f))*scale) & (N_SPLIT-1);
-		int newIndex = (xIdx+zIdx*N_SPLIT);
+		int xIdx = (int)((p.x-((p.x<0.f)?1.f:0.f))*scale) & (nSplit.x-1);
+		int yIdx = (int)((p.y-((p.y<0.f)?1.f:0.f))*scale) & (nSplit.y-1);
+		int zIdx = (int)((p.z-((p.z<0.f)?1.f:0.f))*scale) & (nSplit.z-1);
+		int newIndex = (xIdx+yIdx*nSplit.x+zIdx*nSplit.x*nSplit.y);
 		
 #else//USE_SPATIAL_BATCHING
 	#if USE_4x4_GRID
@@ -539,7 +600,7 @@ int nContacts,float scale,int N_SPLIT, int staticIdx)
 
 __kernel
 __attribute__((reqd_work_group_size(WG_SIZE,1,1)))
-void CopyConstraintKernel(__global Contact4* gIn, __global Contact4* gOut, int4 cb )
+void CopyConstraintKernel(__global struct b3Contact4Data* gIn, __global struct b3Contact4Data* gOut, int4 cb )
 {
 	int gIdx = GET_GLOBAL_IDX;
 	if( gIdx < cb.x )

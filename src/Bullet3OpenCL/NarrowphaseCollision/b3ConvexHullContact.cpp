@@ -20,15 +20,22 @@ subject to the following restrictions:
 
 //#define B3_DEBUG_SAT_FACE
 
+//#define CHECK_ON_HOST
+
+#ifdef CHECK_ON_HOST
+//#define PERSISTENT_CONTACTS_HOST
+#endif
+
 int b3g_actualSATPairTests=0;
 
 #include "b3ConvexHullContact.h"
 #include <string.h>//memcpy
 #include "b3ConvexPolyhedronCL.h"
-
+#include "Bullet3OpenCL/NarrowphaseCollision/b3ContactCache.h"
+#include "Bullet3Geometry/b3AabbUtil.h"
 
 typedef b3AlignedObjectArray<b3Vector3> b3VertexArray;
-#include "Bullet3Common/b3Quickprof.h"
+
 
 #include <float.h> //for FLT_MAX
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
@@ -49,6 +56,15 @@ typedef b3AlignedObjectArray<b3Vector3> b3VertexArray;
 #define BT_NARROWPHASE_PRIMITIVE_CONTACT_PATH "src/Bullet3OpenCL/NarrowphaseCollision/kernels/primitiveContacts.cl"
 
 
+#ifndef __global
+#define __global
+#endif
+
+#ifndef __kernel
+#define __kernel
+#endif
+
+
 #define dot3F4 b3Dot
 
 GpuSatCollision::GpuSatCollision(cl_context ctx,cl_device_id device, cl_command_queue  q )
@@ -56,7 +72,15 @@ GpuSatCollision::GpuSatCollision(cl_context ctx,cl_device_id device, cl_command_
 m_device(device),
 m_queue(q),
 m_findSeparatingAxisKernel(0),
-m_totalContactsOut(m_context, m_queue)
+m_totalContactsOut(m_context, m_queue),
+m_sepNormals(m_context, m_queue),
+m_hasSeparatingNormals(m_context, m_queue),
+m_concaveSepNormals(m_context, m_queue),
+m_numConcavePairsOut(m_context, m_queue),
+m_gpuCompoundPairs(m_context, m_queue),
+m_gpuCompoundSepNormals(m_context, m_queue),
+m_gpuHasCompoundSepNormals(m_context, m_queue),
+m_numCompoundPairsOut(m_context, m_queue)
 {
 	m_totalContactsOut.push_back(0);
 	
@@ -228,7 +252,7 @@ struct MyTriangleCallback : public b3NodeOverlapCallback
 
 
 #define float4 b3Vector3
-#define make_float4(x,y,z,w) b3Vector4(x,y,z,w)
+#define make_float4(x,y,z,w) b3MakeVector3(x,y,z,w)
 
 float signedDistanceFromPointToPlane(const float4& point, const float4& planeEqn, float4* closestPointOnFace)
 {
@@ -265,7 +289,7 @@ inline bool IsPointInPolygon(const float4& p,
     float4 ap;
     float4 v;
 
-	float4 plane = make_float4(face->m_plane.x,face->m_plane.y,face->m_plane.z,0.f);
+	float4 plane = b3MakeVector3(face->m_plane.x,face->m_plane.y,face->m_plane.z,0.f);
 	
 	if (face->m_numIndices<2)
 		return false;
@@ -323,7 +347,7 @@ int extractManifoldSequentialGlobal( const float4* p, int nPoints, const float4&
     if (nPoints >64)
         nPoints = 64;
     
-	float4 center = make_float4(0,0,0,0);
+	float4 center = b3MakeVector3(0,0,0,0);
 	{
 		
 		for (int i=0;i<nPoints;i++)
@@ -406,442 +430,10 @@ int extractManifoldSequentialGlobal( const float4* p, int nPoints, const float4&
 
 
 
-
-
-	
-
-
-
-void computeContactPlaneConvex(int pairIndex,
-																int bodyIndexA, int bodyIndexB, 
-																int collidableIndexA, int collidableIndexB, 
-																const b3RigidBodyCL* rigidBodies, 
-																const b3Collidable* collidables,
-																const b3ConvexPolyhedronCL* convexShapes,
-																const b3Vector3* convexVertices,
-																const int* convexIndices,
-																const b3GpuFace* faces,
-																b3Contact4* globalContactsOut,
-																int& nGlobalContactsOut,
-																int maxContactCapacity)
-{
-
-		int shapeIndex = collidables[collidableIndexB].m_shapeIndex;
-	const b3ConvexPolyhedronCL* hullB = &convexShapes[shapeIndex];
-	
-	b3Vector3 posB = rigidBodies[bodyIndexB].m_pos;
-	b3Quaternion ornB = rigidBodies[bodyIndexB].m_quat;
-	b3Vector3 posA = rigidBodies[bodyIndexA].m_pos;
-	b3Quaternion ornA = rigidBodies[bodyIndexA].m_quat;
-
-	int numContactsOut = 0;
-	int numWorldVertsB1= 0;
-
-	b3Vector3 planeEq = faces[collidables[collidableIndexA].m_shapeIndex].m_plane;
-	b3Vector3 planeNormal(planeEq.x,planeEq.y,planeEq.z);
-	b3Vector3 planeNormalWorld = b3QuatRotate(ornA,planeNormal);
-	float planeConstant = planeEq.w;
-	b3Transform convexWorldTransform;
-	convexWorldTransform.setIdentity();
-	convexWorldTransform.setOrigin(posB);
-	convexWorldTransform.setRotation(ornB);
-	b3Transform planeTransform;
-	planeTransform.setIdentity();
-	planeTransform.setOrigin(posA);
-	planeTransform.setRotation(ornA);
-
-	b3Transform planeInConvex;
-	planeInConvex= convexWorldTransform.inverse() * planeTransform;
-	b3Transform convexInPlane;
-	convexInPlane = planeTransform.inverse() * convexWorldTransform;
-	
-	b3Vector3 planeNormalInConvex = planeInConvex.getBasis()*-planeNormal;
-	float maxDot = -1e30;
-	int hitVertex=-1;
-	b3Vector3 hitVtx;
-
-#define MAX_PLANE_CONVEX_POINTS 64
-
-	b3Vector3 contactPoints[MAX_PLANE_CONVEX_POINTS];
-	int numPoints = 0;
-
-	b3Int4 contactIdx;
-	contactIdx.s[0] = 0;
-	contactIdx.s[1] = 1;
-	contactIdx.s[2] = 2;
-	contactIdx.s[3] = 3;
-	
-	for (int i=0;i<hullB->m_numVertices;i++)
-	{
-		b3Vector3 vtx = convexVertices[hullB->m_vertexOffset+i];
-		float curDot = vtx.dot(planeNormalInConvex);
-
-
-		if (curDot>maxDot)
-		{
-			hitVertex=i;
-			maxDot=curDot;
-			hitVtx = vtx;
-			//make sure the deepest points is always included
-			if (numPoints==MAX_PLANE_CONVEX_POINTS)
-				numPoints--;
-		}
-
-		if (numPoints<MAX_PLANE_CONVEX_POINTS)
-		{
-			b3Vector3 vtxWorld = convexWorldTransform*vtx;
-			b3Vector3 vtxInPlane = planeTransform.inverse()*vtxWorld;
-			float dist = planeNormal.dot(vtxInPlane)-planeConstant;
-			if (dist<0.f)
-			{
-				vtxWorld.w = dist;
-				contactPoints[numPoints] = vtxWorld;
-				numPoints++;
-			}
-		}
-
-	}
-
-	int numReducedPoints  = 0;
-
-	numReducedPoints = numPoints;
-	
-	if (numPoints>4)
-	{
-		numReducedPoints = extractManifoldSequentialGlobal( contactPoints, numPoints, planeNormalInConvex, &contactIdx);
-	}
-	int dstIdx;
-//    dstIdx = nGlobalContactsOut++;//AppendInc( nGlobalContactsOut, dstIdx );
-		
-	if (numReducedPoints>0)
-	{
-		if (nGlobalContactsOut < maxContactCapacity)
-		{
-			dstIdx=nGlobalContactsOut;
-			nGlobalContactsOut++;
-
-			b3Contact4* c = &globalContactsOut[dstIdx];
-			c->m_worldNormal = planeNormalWorld;
-			c->setFrictionCoeff(0.7);
-			c->setRestituitionCoeff(0.f);
-
-			c->m_batchIdx = pairIndex;
-			c->m_bodyAPtrAndSignBit = rigidBodies[bodyIndexA].m_invMass==0?-bodyIndexA:bodyIndexA;
-			c->m_bodyBPtrAndSignBit = rigidBodies[bodyIndexB].m_invMass==0?-bodyIndexB:bodyIndexB;
-			for (int i=0;i<numReducedPoints;i++)
-			{
-				b3Vector3 pOnB1 = contactPoints[contactIdx.s[i]];
-				c->m_worldPos[i] = pOnB1;
-			}
-			c->m_worldNormal[3] = (b3Scalar)numReducedPoints;
-		}//if (dstIdx < numPairs)
-	}	
-		
-
-
-//	printf("computeContactPlaneConvex\n");
-}
-
-
-
-
-void computeContactPlaneCompound(int pairIndex,
-																int bodyIndexA, int bodyIndexB, 
-																int collidableIndexA, int collidableIndexB, 
-																const b3RigidBodyCL* rigidBodies, 
-																const b3Collidable* collidables,
-																const b3ConvexPolyhedronCL* convexShapes,
-																const b3Vector3* convexVertices,
-																const int* convexIndices,
-																const b3GpuFace* faces,
-																b3Contact4* globalContactsOut,
-																int& nGlobalContactsOut,
-																int maxContactCapacity)
-{
-
-	int shapeTypeB = collidables[collidableIndexB].m_shapeType;
-	b3Assert(shapeTypeB == SHAPE_COMPOUND_OF_CONVEX_HULLS);
-
-
-
-	int shapeIndex = collidables[collidableIndexB].m_shapeIndex;
-	const b3ConvexPolyhedronCL* hullB = &convexShapes[shapeIndex];
-	
-	b3Vector3 posB = rigidBodies[bodyIndexB].m_pos;
-	b3Quaternion ornB = rigidBodies[bodyIndexB].m_quat;
-	b3Vector3 posA = rigidBodies[bodyIndexA].m_pos;
-	b3Quaternion ornA = rigidBodies[bodyIndexA].m_quat;
-
-	int numContactsOut = 0;
-	int numWorldVertsB1= 0;
-
-	b3Vector3 planeEq = faces[collidables[collidableIndexA].m_shapeIndex].m_plane;
-	b3Vector3 planeNormal(planeEq.x,planeEq.y,planeEq.z);
-	b3Vector3 planeNormalWorld = b3QuatRotate(ornA,planeNormal);
-	float planeConstant = planeEq.w;
-	b3Transform convexWorldTransform;
-	convexWorldTransform.setIdentity();
-	convexWorldTransform.setOrigin(posB);
-	convexWorldTransform.setRotation(ornB);
-	b3Transform planeTransform;
-	planeTransform.setIdentity();
-	planeTransform.setOrigin(posA);
-	planeTransform.setRotation(ornA);
-
-	b3Transform planeInConvex;
-	planeInConvex= convexWorldTransform.inverse() * planeTransform;
-	b3Transform convexInPlane;
-	convexInPlane = planeTransform.inverse() * convexWorldTransform;
-	
-	b3Vector3 planeNormalInConvex = planeInConvex.getBasis()*-planeNormal;
-	float maxDot = -1e30;
-	int hitVertex=-1;
-	b3Vector3 hitVtx;
-
-#define MAX_PLANE_CONVEX_POINTS 64
-
-	b3Vector3 contactPoints[MAX_PLANE_CONVEX_POINTS];
-	int numPoints = 0;
-
-	b3Int4 contactIdx;
-	contactIdx.s[0] = 0;
-	contactIdx.s[1] = 1;
-	contactIdx.s[2] = 2;
-	contactIdx.s[3] = 3;
-	
-	for (int i=0;i<hullB->m_numVertices;i++)
-	{
-		b3Vector3 vtx = convexVertices[hullB->m_vertexOffset+i];
-		float curDot = vtx.dot(planeNormalInConvex);
-
-
-		if (curDot>maxDot)
-		{
-			hitVertex=i;
-			maxDot=curDot;
-			hitVtx = vtx;
-			//make sure the deepest points is always included
-			if (numPoints==MAX_PLANE_CONVEX_POINTS)
-				numPoints--;
-		}
-
-		if (numPoints<MAX_PLANE_CONVEX_POINTS)
-		{
-			b3Vector3 vtxWorld = convexWorldTransform*vtx;
-			b3Vector3 vtxInPlane = planeTransform.inverse()*vtxWorld;
-			float dist = planeNormal.dot(vtxInPlane)-planeConstant;
-			if (dist<0.f)
-			{
-				vtxWorld.w = dist;
-				contactPoints[numPoints] = vtxWorld;
-				numPoints++;
-			}
-		}
-
-	}
-
-	int numReducedPoints  = 0;
-
-	numReducedPoints = numPoints;
-	
-	if (numPoints>4)
-	{
-		numReducedPoints = extractManifoldSequentialGlobal( contactPoints, numPoints, planeNormalInConvex, &contactIdx);
-	}
-	int dstIdx;
-//    dstIdx = nGlobalContactsOut++;//AppendInc( nGlobalContactsOut, dstIdx );
-		
-	if (numReducedPoints>0)
-	{
-		if (nGlobalContactsOut < maxContactCapacity)
-		{
-			dstIdx=nGlobalContactsOut;
-			nGlobalContactsOut++;
-
-			b3Contact4* c = &globalContactsOut[dstIdx];
-			c->m_worldNormal = planeNormalWorld;
-			c->setFrictionCoeff(0.7);
-			c->setRestituitionCoeff(0.f);
-
-			c->m_batchIdx = pairIndex;
-			c->m_bodyAPtrAndSignBit = rigidBodies[bodyIndexA].m_invMass==0?-bodyIndexA:bodyIndexA;
-			c->m_bodyBPtrAndSignBit = rigidBodies[bodyIndexB].m_invMass==0?-bodyIndexB:bodyIndexB;
-			for (int i=0;i<numReducedPoints;i++)
-			{
-				b3Vector3 pOnB1 = contactPoints[contactIdx.s[i]];
-				c->m_worldPos[i] = pOnB1;
-			}
-			c->m_worldNormal[3] = (b3Scalar)numReducedPoints;
-		}//if (dstIdx < numPairs)
-	}	
-		
-
-
-//	printf("computeContactPlaneConvex\n");
-}
-
-
-
-
-
-void	computeContactSphereConvex(int pairIndex,
-																int bodyIndexA, int bodyIndexB, 
-																int collidableIndexA, int collidableIndexB, 
-																const b3RigidBodyCL* rigidBodies, 
-																const b3Collidable* collidables,
-																const b3ConvexPolyhedronCL* convexShapes,
-																const b3Vector3* convexVertices,
-																const int* convexIndices,
-																const b3GpuFace* faces,
-																b3Contact4* globalContactsOut,
-																int& nGlobalContactsOut,
-																int maxContactCapacity)
-{
-
-	float radius = collidables[collidableIndexA].m_radius;
-	float4 spherePos1 = rigidBodies[bodyIndexA].m_pos;
-	b3Quaternion sphereOrn = rigidBodies[bodyIndexA].m_quat;
-
-
-
-	float4 pos = rigidBodies[bodyIndexB].m_pos;
-	
-
-	b3Quaternion quat = rigidBodies[bodyIndexB].m_quat;
-
-	b3Transform tr;
-	tr.setIdentity();
-	tr.setOrigin(pos);
-	tr.setRotation(quat);
-	b3Transform trInv = tr.inverse();
-
-	float4 spherePos = trInv(spherePos1);
-
-	int collidableIndex = rigidBodies[bodyIndexB].m_collidableIdx;
-	int shapeIndex = collidables[collidableIndex].m_shapeIndex;
-	int numFaces = convexShapes[shapeIndex].m_numFaces;
-	float4 closestPnt = make_float4(0, 0, 0, 0);
-	float4 hitNormalWorld = make_float4(0, 0, 0, 0);
-	float minDist = -1000000.f; // TODO: What is the largest/smallest float?
-	bool bCollide = true;
-	int region = -1;
-	float4 localHitNormal;
-	for ( int f = 0; f < numFaces; f++ )
-	{
-		b3GpuFace face = faces[convexShapes[shapeIndex].m_faceOffset+f];
-		float4 planeEqn;
-		float4 localPlaneNormal = make_float4(face.m_plane.getX(),face.m_plane.getY(),face.m_plane.getZ(),0.f);
-		float4 n1 = localPlaneNormal;//quatRotate(quat,localPlaneNormal);
-		planeEqn = n1;
-		planeEqn[3] = face.m_plane[3];
-
-		float4 pntReturn;
-		float dist = signedDistanceFromPointToPlane(spherePos, planeEqn, &pntReturn);
-
-		if ( dist > radius)
-		{
-			bCollide = false;
-			break;
-		}
-
-		if ( dist > 0 )
-		{
-			//might hit an edge or vertex
-			b3Vector3 out;
-
-			bool isInPoly = IsPointInPolygon(spherePos,
-					&face,
-					&convexVertices[convexShapes[shapeIndex].m_vertexOffset],
-					convexIndices,
-                    &out);
-			if (isInPoly)
-			{
-				if (dist>minDist)
-				{
-					minDist = dist;
-					closestPnt = pntReturn;
-					localHitNormal = planeEqn;
-					region=1;
-				}
-			} else
-			{
-				b3Vector3 tmp = spherePos-out;
-				b3Scalar l2 = tmp.length2();
-				if (l2<radius*radius)
-				{
-					dist  = b3Sqrt(l2);
-					if (dist>minDist)
-					{
-						minDist = dist;
-						closestPnt = out;
-						localHitNormal = tmp/dist;
-						region=2;
-					}
-					
-				} else
-				{
-					bCollide = false;
-					break;
-				}
-			}
-		}
-		else
-		{
-			if ( dist > minDist )
-			{
-				minDist = dist;
-				closestPnt = pntReturn;
-				localHitNormal = planeEqn;
-				region=3;
-			}
-		}
-	}
-	static int numChecks = 0;
-	numChecks++;
-
-	if (bCollide && minDist > -10000)
-	{
-		
-		float4 normalOnSurfaceB1 = tr.getBasis()*-localHitNormal;//-hitNormalWorld;
-		float4 pOnB1 = tr(closestPnt);
-		//printf("dist ,%f,",minDist);
-		float actualDepth = minDist-radius;
-		if (actualDepth<0)
-		{
-		//printf("actualDepth = ,%f,", actualDepth);
-		//printf("normalOnSurfaceB1 = ,%f,%f,%f,", normalOnSurfaceB1.getX(),normalOnSurfaceB1.getY(),normalOnSurfaceB1.getZ());
-		//printf("region=,%d,\n", region);
-		pOnB1[3] = actualDepth;
-
-		int dstIdx;
-//    dstIdx = nGlobalContactsOut++;//AppendInc( nGlobalContactsOut, dstIdx );
-		
-		if (nGlobalContactsOut < maxContactCapacity)
-		{
-			dstIdx=nGlobalContactsOut;
-			nGlobalContactsOut++;
-
-			b3Contact4* c = &globalContactsOut[dstIdx];
-			c->m_worldNormal = normalOnSurfaceB1;
-			c->setFrictionCoeff(0.7);
-			c->setRestituitionCoeff(0.f);
-
-			c->m_batchIdx = pairIndex;
-			c->m_bodyAPtrAndSignBit = rigidBodies[bodyIndexA].m_invMass==0?-bodyIndexA:bodyIndexA;
-			c->m_bodyBPtrAndSignBit = rigidBodies[bodyIndexB].m_invMass==0?-bodyIndexB:bodyIndexB;
-			c->m_worldPos[0] = pOnB1;
-			int numPoints = 1;
-			c->m_worldNormal[3] = (b3Scalar)numPoints;
-		}//if (dstIdx < numPairs)
-		}
-	}//if (hasCollision)
-	
-}
-
 #define MAX_VERTS 1024
 
 
-inline void project(const b3ConvexPolyhedronCL& hull,  const float4& pos, const b3Quaternion& orn, const float4& dir, const b3AlignedObjectArray<b3Vector3>& vertices, b3Scalar& min, b3Scalar& max)
+inline void project(const b3ConvexPolyhedronData& hull,  const float4& pos, const b3Quaternion& orn, const float4& dir, const b3AlignedObjectArray<b3Vector3>& vertices, b3Scalar& min, b3Scalar& max)
 {
 	min = FLT_MAX;
 	max = -FLT_MAX;
@@ -872,7 +464,7 @@ inline void project(const b3ConvexPolyhedronCL& hull,  const float4& pos, const 
 }
 
 
-static bool TestSepAxis(const b3ConvexPolyhedronCL& hullA, const b3ConvexPolyhedronCL& hullB, 
+static bool TestSepAxis(const b3ConvexPolyhedronData& hullA, const b3ConvexPolyhedronData& hullB, 
 	const float4& posA,const b3Quaternion& ornA,
 	const float4& posB,const b3Quaternion& ornB,
 	const float4& sep_axis, const b3AlignedObjectArray<b3Vector3>& verticesA,const b3AlignedObjectArray<b3Vector3>& verticesB,b3Scalar& depth)
@@ -900,7 +492,7 @@ inline bool IsAlmostZero(const b3Vector3& v)
 }
 
 
-static bool findSeparatingAxis(	const b3ConvexPolyhedronCL& hullA, const b3ConvexPolyhedronCL& hullB, 
+static bool findSeparatingAxis(	const b3ConvexPolyhedronData& hullA, const b3ConvexPolyhedronData& hullB, 
 	const float4& posA1,
 	const b3Quaternion& ornA,
 	const float4& posB1,
@@ -1048,9 +640,91 @@ static bool findSeparatingAxis(	const b3ConvexPolyhedronCL& hullA, const b3Conve
 }
 
 
+bool findSeparatingAxisEdgeEdge(	__global const b3ConvexPolyhedronData* hullA, __global const b3ConvexPolyhedronData* hullB, 
+	const b3Float4& posA1,
+	const b3Quat& ornA,
+	const b3Float4& posB1,
+	const b3Quat& ornB,
+	const b3Float4& DeltaC2,
+	__global const b3AlignedObjectArray<float4>& vertices, 
+	__global const b3AlignedObjectArray<float4>& uniqueEdges, 
+	__global const b3AlignedObjectArray<b3GpuFace>& faces,
+	__global const b3AlignedObjectArray<int>&  indices,
+	float4* sep,
+	float* dmin)
+{
+//	int i = get_global_id(0);
+
+	float4 posA = posA1;
+	posA.w = 0.f;
+	float4 posB = posB1;
+	posB.w = 0.f;
+
+	int curPlaneTests=0;
+
+	int curEdgeEdge = 0;
+	// Test edges
+	for(int e0=0;e0<hullA->m_numUniqueEdges;e0++)
+	{
+		const float4 edge0 = uniqueEdges[hullA->m_uniqueEdgesOffset+e0];
+		float4 edge0World = b3QuatRotate(ornA,edge0);
+
+		for(int e1=0;e1<hullB->m_numUniqueEdges;e1++)
+		{
+			const float4 edge1 = uniqueEdges[hullB->m_uniqueEdgesOffset+e1];
+			float4 edge1World = b3QuatRotate(ornB,edge1);
+
+
+			float4 crossje = cross3(edge0World,edge1World);
+
+			curEdgeEdge++;
+			if(!IsAlmostZero(crossje))
+			{
+				crossje = normalize3(crossje);
+				if (dot3F4(DeltaC2,crossje)<0)
+					crossje*=-1.f;
+					
+				float dist;
+				bool result = true;
+				{
+					float Min0,Max0;
+					float Min1,Max1;
+					project(*hullA,posA,ornA,crossje,vertices, Min0, Max0);
+					project(*hullB,posB,ornB,crossje,vertices, Min1, Max1);
+				
+					if(Max0<Min1 || Max1<Min0)
+						result = false;
+				
+					float d0 = Max0 - Min1;
+					float d1 = Max1 - Min0;
+					dist = d0<d1 ? d0:d1;
+					result = true;
+
+				}
+				
+
+				if(dist<*dmin)
+				{
+					*dmin = dist;
+					*sep = crossje;
+				}
+			}
+		}
+
+	}
+
+	
+	if((dot3F4(-DeltaC2,*sep))>0.0f)
+	{
+		*sep = -(*sep);
+	}
+	return true;
+}
+
+
 __inline float4 lerp3(const float4& a,const float4& b, float  t)
 {
-	return make_float4(	a.x + (b.x - a.x) * t,
+	return b3MakeVector3(	a.x + (b.x - a.x) * t,
 						a.y + (b.y - a.y) * t,
 						a.z + (b.z - a.z) * t,
 						0.f);
@@ -1107,11 +781,11 @@ int clipFace(const float4* pVtxIn, int numVertsIn, float4& planeNormalWS,float p
 }
 
 
-int clipFaceAgainstHull(const float4& separatingNormal, const b3ConvexPolyhedronCL* hullA,  
+int clipFaceAgainstHull(const float4& separatingNormal, const b3ConvexPolyhedronData* hullA,  
 	const float4& posA, const b3Quaternion& ornA, float4* worldVertsB1, int numWorldVertsB1,
 	float4* worldVertsB2, int capacityWorldVertsB2,
 	const float minDist, float maxDist,
-	const float4* verticesA,	const b3GpuFace* facesA,	const int* indicesA,
+	const b3AlignedObjectArray<float4>& verticesA,	const b3AlignedObjectArray<b3GpuFace>& facesA,	const b3AlignedObjectArray<int>& indicesA,
 	//const float4* verticesB,	const b3GpuFace* facesB,	const int* indicesB,
 	float4* contactsOut,
 	int contactCapacity)
@@ -1129,7 +803,7 @@ int clipFaceAgainstHull(const float4& separatingNormal, const b3ConvexPolyhedron
 		float dmin = FLT_MAX;
 		for(int face=0;face<hullA->m_numFaces;face++)
 		{
-			const float4 Normal = make_float4(
+			const float4 Normal = b3MakeVector3(
 				facesA[hullA->m_faceOffset+face].m_plane.x, 
 				facesA[hullA->m_faceOffset+face].m_plane.y, 
 				facesA[hullA->m_faceOffset+face].m_plane.z,0.f);
@@ -1193,13 +867,18 @@ int clipFaceAgainstHull(const float4& separatingNormal, const b3ConvexPolyhedron
 			{
 				depth = minDist;
 			}
-
-			if (depth <=maxDist)
+			if (numContactsOut<contactCapacity)
 			{
-				float4 pointInWorld = pVtxIn[i];
-				//resultOut.addContactPoint(separatingNormal,point,depth);
-				contactsOut[numContactsOut++] = make_float4(pointInWorld.x,pointInWorld.y,pointInWorld.z,depth);
-				//printf("depth=%f\n",depth);
+				if (depth <=maxDist)
+				{
+					float4 pointInWorld = pVtxIn[i];
+					//resultOut.addContactPoint(separatingNormal,point,depth);
+					contactsOut[numContactsOut++] = b3MakeVector3(pointInWorld.x,pointInWorld.y,pointInWorld.z,depth);
+					//printf("depth=%f\n",depth);
+				}
+			} else
+			{
+				b3Error("exceeding contact capacity (%d,%df)\n", numContactsOut,contactCapacity);
 			}
 		}
 	}
@@ -1210,12 +889,12 @@ int clipFaceAgainstHull(const float4& separatingNormal, const b3ConvexPolyhedron
 
 
 static int	clipHullAgainstHull(const float4& separatingNormal, 
-	const b3ConvexPolyhedronCL& hullA, const b3ConvexPolyhedronCL& hullB, 
+	const b3ConvexPolyhedronData& hullA, const b3ConvexPolyhedronData& hullB, 
 	const float4& posA, const b3Quaternion& ornA,const float4& posB, const b3Quaternion& ornB, 
 	float4* worldVertsB1, float4* worldVertsB2, int capacityWorldVerts,
 	const float minDist, float maxDist,
-	const float4* verticesA,	const b3GpuFace* facesA,	const int* indicesA,
-	const float4* verticesB,	const b3GpuFace* facesB,	const int* indicesB,
+	const b3AlignedObjectArray<float4>& verticesA,	const b3AlignedObjectArray<b3GpuFace>& facesA,	const b3AlignedObjectArray<int>& indicesA,
+	const b3AlignedObjectArray<float4>& verticesB,	const b3AlignedObjectArray<b3GpuFace>& facesB,	const b3AlignedObjectArray<int>& indicesB,
 
 	float4*	contactsOut,
 	int contactCapacity)
@@ -1255,7 +934,7 @@ static int	clipHullAgainstHull(const float4& separatingNormal,
 #endif //BT_DEBUG_SAT_FACE
 			//if (facesB[hullB.m_faceOffset+face].m_numIndices>2)
 			{
-				const float4 Normal = make_float4(facesB[hullB.m_faceOffset+face].m_plane.x, 
+				const float4 Normal = b3MakeVector3(facesB[hullB.m_faceOffset+face].m_plane.x, 
 					facesB[hullB.m_faceOffset+face].m_plane.y, facesB[hullB.m_faceOffset+face].m_plane.z,0.f);
 				const float4 WorldNormal = b3QuatRotate(ornB, Normal);
 #ifdef BT_DEBUG_SAT_FACE
@@ -1407,7 +1086,7 @@ int extractManifold(const float4* p, int nPoints, const float4& nearNormal, b3In
 
 
 
-void clipHullHullSingle(
+int clipHullHullSingle(
 			int bodyIndexA, int bodyIndexB,
 										 const float4& posA,
 										 const b3Quaternion& ornA,
@@ -1417,7 +1096,7 @@ void clipHullHullSingle(
 			int collidableIndexA, int collidableIndexB,
 
 			const b3AlignedObjectArray<b3RigidBodyCL>* bodyBuf, 
-			b3AlignedObjectArray<b3Contact4>* contactOut, 
+			b3AlignedObjectArray<b3Contact4>* globalContactOut, 
 			int& nContacts,
 			
 			const b3AlignedObjectArray<b3ConvexPolyhedronCL>& hostConvexDataA,
@@ -1435,9 +1114,10 @@ void clipHullHullSingle(
 
 			const b3AlignedObjectArray<b3Collidable>& hostCollidablesA,
 			const b3AlignedObjectArray<b3Collidable>& hostCollidablesB,
-			const b3Vector3& sepNormalWorldSpace			)
+			const b3Vector3& sepNormalWorldSpace,
+			int maxContactCapacity			)
 {
-
+	int contactIndex = -1;
 	b3ConvexPolyhedronCL hullA, hullB;
     
     b3Collidable colA = hostCollidablesA[collidableIndexA];
@@ -1451,7 +1131,7 @@ void clipHullHullSingle(
     
 	
 	float4 contactsOut[MAX_VERTS];
-	int contactCapacity = MAX_VERTS;
+	int localContactCapacity = MAX_VERTS;
 
 #ifdef _WIN32
 	b3Assert(_finite(bodyBuf->at(bodyIndexA).m_pos.x));
@@ -1465,7 +1145,7 @@ void clipHullHullSingle(
 		float4 worldVertsB2[MAX_VERTS];
 		int capacityWorldVerts = MAX_VERTS;
 
-		float4 hostNormal = make_float4(sepNormalWorldSpace.getX(),sepNormalWorldSpace.getY(),sepNormalWorldSpace.getZ(),0.f);
+		float4 hostNormal = make_float4(sepNormalWorldSpace.x,sepNormalWorldSpace.y,sepNormalWorldSpace.z,0.f);
 		int shapeA = hostCollidablesA[collidableIndexA].m_shapeIndex;
 		int shapeB = hostCollidablesB[collidableIndexB].m_shapeIndex;
 
@@ -1478,11 +1158,11 @@ void clipHullHullSingle(
 		{
 		//B3_PROFILE("transform computation");
 		//trA.setIdentity();
-		trA.setOrigin(b3Vector3(posA.x,posA.y,posA.z));
+		trA.setOrigin(b3MakeVector3(posA.x,posA.y,posA.z));
 		trA.setRotation(b3Quaternion(ornA.x,ornA.y,ornA.z,ornA.w));
 				
 		//trB.setIdentity();
-		trB.setOrigin(b3Vector3(posB.x,posB.y,posB.z));
+		trB.setOrigin(b3MakeVector3(posB.x,posB.y,posB.z));
 		trB.setRotation(b3Quaternion(ornB.x,ornB.y,ornB.z,ornB.w));
 		}
 
@@ -1496,16 +1176,16 @@ void clipHullHullSingle(
 								(float4&)trB.getOrigin(), (b3Quaternion&)trBorn,
 								worldVertsB1,worldVertsB2,capacityWorldVerts,
 								minDist, maxDist,
-								(float4*)&verticesA[0],	&facesA[0],&indicesA[0],
-								(float4*)&verticesB[0],	&facesB[0],&indicesB[0],
+								verticesA,	facesA,indicesA,
+								verticesB,	facesB,indicesB,
 								
-								contactsOut,contactCapacity);
+								contactsOut,localContactCapacity);
 
 		if (numContactsOut>0)
 		{
 			B3_PROFILE("overlap");
 
-			float4 normalOnSurfaceB = -(float4&)hostNormal;
+			float4 normalOnSurfaceB = (float4&)hostNormal;
 			float4 centerOut;
 			
 			b3Int4 contactIdx;
@@ -1523,32 +1203,1300 @@ void clipHullHullSingle(
 					
 			b3Assert(numPoints);
 					
-			
-			contactOut->expand();
-			b3Contact4& contact = contactOut->at(nContacts);
-			contact.m_batchIdx = 0;//i;
-			contact.m_bodyAPtrAndSignBit = (bodyBuf->at(bodyIndexA).m_invMass==0)? -bodyIndexA:bodyIndexA;
-			contact.m_bodyBPtrAndSignBit = (bodyBuf->at(bodyIndexB).m_invMass==0)? -bodyIndexB:bodyIndexB;
-
-			contact.m_frictionCoeffCmp = 45874;
-			contact.m_restituitionCoeffCmp = 0;
-					
-			float distance = 0.f;
-			for (int p=0;p<numPoints;p++)
+			if (nContacts<maxContactCapacity)
 			{
-				contact.m_worldPos[p] = contactsOut[contactIdx.s[p]];
-				contact.m_worldNormal = normalOnSurfaceB; 
+				contactIndex = nContacts;
+				globalContactOut->expand();
+				b3Contact4& contact = globalContactOut->at(nContacts);
+				contact.m_batchIdx = 0;//i;
+				contact.m_bodyAPtrAndSignBit = (bodyBuf->at(bodyIndexA).m_invMass==0)? -bodyIndexA:bodyIndexA;
+				contact.m_bodyBPtrAndSignBit = (bodyBuf->at(bodyIndexB).m_invMass==0)? -bodyIndexB:bodyIndexB;
+
+				contact.m_frictionCoeffCmp = 45874;
+				contact.m_restituitionCoeffCmp = 0;
+					
+				float distance = 0.f;
+				for (int p=0;p<numPoints;p++)
+				{
+					contact.m_worldPosB[p] = contactsOut[contactIdx.s[p]];//check if it is actually on B
+					contact.m_worldNormalOnB = normalOnSurfaceB; 
+				}
+				//printf("bodyIndexA %d,bodyIndexB %d,normal=%f,%f,%f numPoints %d\n",bodyIndexA,bodyIndexB,normalOnSurfaceB.x,normalOnSurfaceB.y,normalOnSurfaceB.z,numPoints);
+				contact.m_worldNormalOnB.w = (b3Scalar)numPoints;
+				nContacts++;
+			} else
+			{
+				b3Error("Error: exceeding contact capacity (%d/%d)\n", nContacts,maxContactCapacity);
 			}
-			//printf("bodyIndexA %d,bodyIndexB %d,normal=%f,%f,%f numPoints %d\n",bodyIndexA,bodyIndexB,normalOnSurfaceB.x,normalOnSurfaceB.y,normalOnSurfaceB.z,numPoints);
-			contact.m_worldNormal.w = numPoints;
-			nContacts++;
 		}
 	}
+	return contactIndex;
+}
+
+	
+
+
+
+void computeContactPlaneConvex(int pairIndex,
+																int bodyIndexA, int bodyIndexB, 
+																int collidableIndexA, int collidableIndexB, 
+																const b3RigidBodyCL* rigidBodies, 
+																const b3Collidable* collidables,
+																const b3ConvexPolyhedronCL* convexShapes,
+																const b3Vector3* convexVertices,
+																const int* convexIndices,
+																const b3GpuFace* faces,
+																b3Contact4* globalContactsOut,
+																int& nGlobalContactsOut,
+																int maxContactCapacity)
+{
+
+		int shapeIndex = collidables[collidableIndexB].m_shapeIndex;
+	const b3ConvexPolyhedronCL* hullB = &convexShapes[shapeIndex];
+	
+	b3Vector3 posB = rigidBodies[bodyIndexB].m_pos;
+	b3Quaternion ornB = rigidBodies[bodyIndexB].m_quat;
+	b3Vector3 posA = rigidBodies[bodyIndexA].m_pos;
+	b3Quaternion ornA = rigidBodies[bodyIndexA].m_quat;
+
+	int numContactsOut = 0;
+	int numWorldVertsB1= 0;
+
+	b3Vector3 planeEq = faces[collidables[collidableIndexA].m_shapeIndex].m_plane;
+	b3Vector3 planeNormal=b3MakeVector3(planeEq.x,planeEq.y,planeEq.z);
+	b3Vector3 planeNormalWorld = b3QuatRotate(ornA,planeNormal);
+	float planeConstant = planeEq.w;
+	b3Transform convexWorldTransform;
+	convexWorldTransform.setIdentity();
+	convexWorldTransform.setOrigin(posB);
+	convexWorldTransform.setRotation(ornB);
+	b3Transform planeTransform;
+	planeTransform.setIdentity();
+	planeTransform.setOrigin(posA);
+	planeTransform.setRotation(ornA);
+
+	b3Transform planeInConvex;
+	planeInConvex= convexWorldTransform.inverse() * planeTransform;
+	b3Transform convexInPlane;
+	convexInPlane = planeTransform.inverse() * convexWorldTransform;
+	
+	b3Vector3 planeNormalInConvex = planeInConvex.getBasis()*-planeNormal;
+	float maxDot = -1e30;
+	int hitVertex=-1;
+	b3Vector3 hitVtx;
+
+#define MAX_PLANE_CONVEX_POINTS 64
+
+	b3Vector3 contactPoints[MAX_PLANE_CONVEX_POINTS];
+	int numPoints = 0;
+
+	b3Int4 contactIdx;
+	contactIdx.s[0] = 0;
+	contactIdx.s[1] = 1;
+	contactIdx.s[2] = 2;
+	contactIdx.s[3] = 3;
+	
+	for (int i=0;i<hullB->m_numVertices;i++)
+	{
+		b3Vector3 vtx = convexVertices[hullB->m_vertexOffset+i];
+		float curDot = vtx.dot(planeNormalInConvex);
+
+
+		if (curDot>maxDot)
+		{
+			hitVertex=i;
+			maxDot=curDot;
+			hitVtx = vtx;
+			//make sure the deepest points is always included
+			if (numPoints==MAX_PLANE_CONVEX_POINTS)
+				numPoints--;
+		}
+
+		if (numPoints<MAX_PLANE_CONVEX_POINTS)
+		{
+			b3Vector3 vtxWorld = convexWorldTransform*vtx;
+			b3Vector3 vtxInPlane = planeTransform.inverse()*vtxWorld;
+			float dist = planeNormal.dot(vtxInPlane)-planeConstant;
+			if (dist<0.f)
+			{
+				vtxWorld.w = dist;
+				contactPoints[numPoints] = vtxWorld;
+				numPoints++;
+			}
+		}
+
+	}
+
+	int numReducedPoints  = 0;
+
+	numReducedPoints = numPoints;
+	
+	if (numPoints>4)
+	{
+		numReducedPoints = extractManifoldSequentialGlobal( contactPoints, numPoints, planeNormalInConvex, &contactIdx);
+	}
+	int dstIdx;
+//    dstIdx = nGlobalContactsOut++;//AppendInc( nGlobalContactsOut, dstIdx );
+		
+	if (numReducedPoints>0)
+	{
+		if (nGlobalContactsOut < maxContactCapacity)
+		{
+			dstIdx=nGlobalContactsOut;
+			nGlobalContactsOut++;
+
+			b3Contact4* c = &globalContactsOut[dstIdx];
+			c->m_worldNormalOnB = -planeNormalWorld;
+			c->setFrictionCoeff(0.7);
+			c->setRestituitionCoeff(0.f);
+
+			c->m_batchIdx = pairIndex;
+			c->m_bodyAPtrAndSignBit = rigidBodies[bodyIndexA].m_invMass==0?-bodyIndexA:bodyIndexA;
+			c->m_bodyBPtrAndSignBit = rigidBodies[bodyIndexB].m_invMass==0?-bodyIndexB:bodyIndexB;
+			for (int i=0;i<numReducedPoints;i++)
+			{
+				b3Vector3 pOnB1 = contactPoints[contactIdx.s[i]];
+				c->m_worldPosB[i] = pOnB1;
+			}
+			c->m_worldNormalOnB.w = (b3Scalar)numReducedPoints;
+		}//if (dstIdx < numPairs)
+	}	
+		
+
+
+//	printf("computeContactPlaneConvex\n");
 }
 
 
-void computeContactConvexConvex(
-					int pairIndex,
+
+B3_FORCE_INLINE b3Vector3	MyUnQuantize(const unsigned short* vecIn, const b3Vector3& quantization, const b3Vector3& bvhAabbMin)
+	{
+			b3Vector3	vecOut;
+			vecOut.setValue(
+			(b3Scalar)(vecIn[0]) / (quantization.x),
+			(b3Scalar)(vecIn[1]) / (quantization.y),
+			(b3Scalar)(vecIn[2]) / (quantization.z));
+			vecOut += bvhAabbMin;
+			return vecOut;
+	}
+
+void traverseTreeTree()
+{
+
+}
+
+#include "Bullet3Common/shared/b3Mat3x3.h"
+
+int numAabbChecks = 0;
+int maxNumAabbChecks = 0;
+int maxDepth = 0;
+
+// work-in-progress
+__kernel void   findCompoundPairsKernel( 
+	int pairIndex,
+	int bodyIndexA,
+	int bodyIndexB,
+	int collidableIndexA,
+	int collidableIndexB,
+	__global const b3RigidBodyData* rigidBodies, 
+	__global const b3Collidable* collidables,
+	__global const b3ConvexPolyhedronData* convexShapes, 
+	__global const b3AlignedObjectArray<b3Float4>& vertices,
+	__global const b3AlignedObjectArray<b3Aabb>& aabbsWorldSpace,
+	__global const b3AlignedObjectArray<b3Aabb>& aabbsLocalSpace,
+	__global const b3GpuChildShape* gpuChildShapes,
+	__global b3Int4* gpuCompoundPairsOut,
+	__global  int* numCompoundPairsOut,
+	int maxNumCompoundPairsCapacity,
+	b3AlignedObjectArray<b3QuantizedBvhNode>&	treeNodesCPU,
+	b3AlignedObjectArray<b3BvhSubtreeInfo>&	subTreesCPU,
+	b3AlignedObjectArray<b3BvhInfo>&	bvhInfoCPU
+	)
+{
+	numAabbChecks=0;
+	maxNumAabbChecks=0;
+	int i = pairIndex;
+	{
+		
+
+		int shapeIndexA = collidables[collidableIndexA].m_shapeIndex;
+		int shapeIndexB = collidables[collidableIndexB].m_shapeIndex;
+
+
+		//once the broadphase avoids static-static pairs, we can remove this test
+		if ((rigidBodies[bodyIndexA].m_invMass==0) &&(rigidBodies[bodyIndexB].m_invMass==0))
+		{
+			return;
+		}
+
+		if ((collidables[collidableIndexA].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS) &&(collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS))
+		{
+			int bvhA = collidables[collidableIndexA].m_compoundBvhIndex;
+			int bvhB = collidables[collidableIndexB].m_compoundBvhIndex;
+			int numSubTreesA = bvhInfoCPU[bvhA].m_numSubTrees;
+			int subTreesOffsetA = bvhInfoCPU[bvhA].m_subTreeOffset;
+			int subTreesOffsetB = bvhInfoCPU[bvhB].m_subTreeOffset;
+
+
+			int numSubTreesB = bvhInfoCPU[bvhB].m_numSubTrees;
+			
+			float4 posA = rigidBodies[bodyIndexA].m_pos;
+			b3Quat ornA = rigidBodies[bodyIndexA].m_quat;
+
+			b3Transform transA;
+			transA.setIdentity();
+			transA.setOrigin(posA);
+			transA.setRotation(ornA);
+
+			b3Quat ornB = rigidBodies[bodyIndexB].m_quat;
+			float4 posB = rigidBodies[bodyIndexB].m_pos;
+
+			b3Transform transB;
+			transB.setIdentity();
+			transB.setOrigin(posB);
+			transB.setRotation(ornB);
+
+
+
+			for (int p=0;p<numSubTreesA;p++)
+			{
+				b3BvhSubtreeInfo subtreeA = subTreesCPU[subTreesOffsetA+p];
+				//bvhInfoCPU[bvhA].m_quantization
+				b3Vector3 treeAminLocal = MyUnQuantize(subtreeA.m_quantizedAabbMin,bvhInfoCPU[bvhA].m_quantization,bvhInfoCPU[bvhA].m_aabbMin);
+				b3Vector3 treeAmaxLocal = MyUnQuantize(subtreeA.m_quantizedAabbMax,bvhInfoCPU[bvhA].m_quantization,bvhInfoCPU[bvhA].m_aabbMin);
+
+				b3Vector3 aabbAMinOut,aabbAMaxOut;
+				float margin=0.f;
+				b3TransformAabb2(treeAminLocal,treeAmaxLocal, margin,transA.getOrigin(),transA.getRotation(),&aabbAMinOut,&aabbAMaxOut);
+
+				for (int q=0;q<numSubTreesB;q++)
+				{
+					b3BvhSubtreeInfo subtreeB = subTreesCPU[subTreesOffsetB+q];
+
+					b3Vector3 treeBminLocal = MyUnQuantize(subtreeB.m_quantizedAabbMin,bvhInfoCPU[bvhB].m_quantization,bvhInfoCPU[bvhB].m_aabbMin);
+					b3Vector3 treeBmaxLocal = MyUnQuantize(subtreeB.m_quantizedAabbMax,bvhInfoCPU[bvhB].m_quantization,bvhInfoCPU[bvhB].m_aabbMin);
+
+					b3Vector3 aabbBMinOut,aabbBMaxOut;
+					float margin=0.f;
+					b3TransformAabb2(treeBminLocal,treeBmaxLocal, margin,transB.getOrigin(),transB.getRotation(),&aabbBMinOut,&aabbBMaxOut);
+
+					
+					numAabbChecks=0;
+					bool aabbOverlap = b3TestAabbAgainstAabb(aabbAMinOut,aabbAMaxOut,aabbBMinOut,aabbBMaxOut);
+					if (aabbOverlap)
+					{
+						
+						int startNodeIndexA = subtreeA.m_rootNodeIndex+bvhInfoCPU[bvhA].m_nodeOffset;
+						int endNodeIndexA = startNodeIndexA+subtreeA.m_subtreeSize;
+
+						int startNodeIndexB = subtreeB.m_rootNodeIndex+bvhInfoCPU[bvhB].m_nodeOffset;
+						int endNodeIndexB = startNodeIndexB+subtreeB.m_subtreeSize;
+
+						b3AlignedObjectArray<b3Int2> nodeStack;
+						b3Int2 node0;
+						node0.x = startNodeIndexA;
+						node0.y = startNodeIndexB;
+
+						int maxStackDepth = 1024;
+						nodeStack.resize(maxStackDepth);
+						int depth=0;
+						nodeStack[depth++]=node0;
+
+						do
+						{
+							if (depth > maxDepth)
+							{
+								maxDepth=depth;
+								printf("maxDepth=%d\n",maxDepth);
+							}
+							b3Int2 node = nodeStack[--depth];
+							
+							b3Vector3 aMinLocal = MyUnQuantize(treeNodesCPU[node.x].m_quantizedAabbMin,bvhInfoCPU[bvhA].m_quantization,bvhInfoCPU[bvhA].m_aabbMin);
+							b3Vector3 aMaxLocal = MyUnQuantize(treeNodesCPU[node.x].m_quantizedAabbMax,bvhInfoCPU[bvhA].m_quantization,bvhInfoCPU[bvhA].m_aabbMin);
+
+							b3Vector3 bMinLocal = MyUnQuantize(treeNodesCPU[node.y].m_quantizedAabbMin,bvhInfoCPU[bvhB].m_quantization,bvhInfoCPU[bvhB].m_aabbMin);
+							b3Vector3 bMaxLocal = MyUnQuantize(treeNodesCPU[node.y].m_quantizedAabbMax,bvhInfoCPU[bvhB].m_quantization,bvhInfoCPU[bvhB].m_aabbMin);
+
+							float margin=0.f;
+							b3Vector3 aabbAMinOut,aabbAMaxOut;
+							b3TransformAabb2(aMinLocal,aMaxLocal, margin,transA.getOrigin(),transA.getRotation(),&aabbAMinOut,&aabbAMaxOut);
+
+							b3Vector3 aabbBMinOut,aabbBMaxOut;
+							b3TransformAabb2(bMinLocal,bMaxLocal, margin,transB.getOrigin(),transB.getRotation(),&aabbBMinOut,&aabbBMaxOut);
+
+							numAabbChecks++;
+							bool nodeOverlap = b3TestAabbAgainstAabb(aabbAMinOut,aabbAMaxOut,aabbBMinOut,aabbBMaxOut);
+							if (nodeOverlap)
+							{
+								bool isLeafA = treeNodesCPU[node.x].isLeafNode();
+								bool isLeafB = treeNodesCPU[node.y].isLeafNode();
+								bool isInternalA = !isLeafA;
+								bool isInternalB = !isLeafB;
+
+								//fail, even though it might hit two leaf nodes
+								if (depth+4>maxStackDepth && !(isLeafA && isLeafB))
+								{
+									b3Error("Error: traversal exceeded maxStackDepth\n");
+									continue;
+								}
+
+								if(isInternalA)
+								{
+									int nodeAleftChild = node.x+1;
+									bool isNodeALeftChildLeaf = treeNodesCPU[node.x+1].isLeafNode();
+									int nodeArightChild = isNodeALeftChildLeaf? node.x+2 : node.x+1 + treeNodesCPU[node.x+1].getEscapeIndex();
+
+									if(isInternalB)
+									{					
+										int nodeBleftChild = node.y+1;
+										bool isNodeBLeftChildLeaf = treeNodesCPU[node.y+1].isLeafNode();
+										int nodeBrightChild = isNodeBLeftChildLeaf? node.y+2 : node.y+1 + treeNodesCPU[node.y+1].getEscapeIndex();
+
+										nodeStack[depth++] = b3MakeInt2(nodeAleftChild, nodeBleftChild);
+										nodeStack[depth++] = b3MakeInt2(nodeArightChild, nodeBleftChild);
+										nodeStack[depth++] = b3MakeInt2(nodeAleftChild, nodeBrightChild);
+										nodeStack[depth++] = b3MakeInt2(nodeArightChild, nodeBrightChild);
+									}
+									else
+									{
+										nodeStack[depth++] = b3MakeInt2(nodeAleftChild,node.y);
+										nodeStack[depth++] = b3MakeInt2(nodeArightChild,node.y);
+									}
+								}
+								else
+								{
+									if(isInternalB)
+									{
+										int nodeBleftChild = node.y+1;
+										bool isNodeBLeftChildLeaf = treeNodesCPU[node.y+1].isLeafNode();
+										int nodeBrightChild = isNodeBLeftChildLeaf? node.y+2 : node.y+1 + treeNodesCPU[node.y+1].getEscapeIndex();
+										nodeStack[depth++] = b3MakeInt2(node.x,nodeBleftChild);
+										nodeStack[depth++] = b3MakeInt2(node.x,nodeBrightChild);
+									}
+									else
+									{
+										int compoundPairIdx = b3AtomicInc(numCompoundPairsOut);
+										if (compoundPairIdx<maxNumCompoundPairsCapacity)
+										{
+											int childShapeIndexA = treeNodesCPU[node.x].getTriangleIndex();
+											int childShapeIndexB = treeNodesCPU[node.y].getTriangleIndex();
+											gpuCompoundPairsOut[compoundPairIdx]  = b3MakeInt4(bodyIndexA,bodyIndexB,childShapeIndexA,childShapeIndexB);
+										}
+									}
+								}
+							}
+						} while (depth);
+						maxNumAabbChecks = b3Max(numAabbChecks,maxNumAabbChecks);
+					}
+				}
+			}
+			
+			return;
+		}
+
+		if ((collidables[collidableIndexA].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS) ||(collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS))
+		{
+
+			if (collidables[collidableIndexA].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS) 
+			{
+
+				int numChildrenA = collidables[collidableIndexA].m_numChildShapes;
+				for (int c=0;c<numChildrenA;c++)
+				{
+					int childShapeIndexA = collidables[collidableIndexA].m_shapeIndex+c;
+					int childColIndexA = gpuChildShapes[childShapeIndexA].m_shapeIndex;
+
+					float4 posA = rigidBodies[bodyIndexA].m_pos;
+					b3Quat ornA = rigidBodies[bodyIndexA].m_quat;
+					float4 childPosA = gpuChildShapes[childShapeIndexA].m_childPosition;
+					b3Quat childOrnA = gpuChildShapes[childShapeIndexA].m_childOrientation;
+					float4 newPosA = b3QuatRotate(ornA,childPosA)+posA;
+					b3Quat newOrnA = b3QuatMul(ornA,childOrnA);
+					
+
+					
+					b3Aabb aabbA = aabbsLocalSpace[childColIndexA];
+
+					
+					b3Transform transA;
+					transA.setIdentity();
+					transA.setOrigin(newPosA);
+					transA.setRotation(newOrnA);
+					b3Scalar margin=0.0f;
+
+					b3Vector3 aabbAMinOut,aabbAMaxOut;
+
+					b3TransformAabb2((const b3Float4&)aabbA.m_min,(const b3Float4&)aabbA.m_max, margin,transA.getOrigin(),transA.getRotation(),&aabbAMinOut,&aabbAMaxOut);
+
+					if (collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS)
+					{
+						int numChildrenB = collidables[collidableIndexB].m_numChildShapes;
+						for (int b=0;b<numChildrenB;b++)
+						{
+							int childShapeIndexB = collidables[collidableIndexB].m_shapeIndex+b;
+							int childColIndexB = gpuChildShapes[childShapeIndexB].m_shapeIndex;
+							b3Quat ornB = rigidBodies[bodyIndexB].m_quat;
+							float4 posB = rigidBodies[bodyIndexB].m_pos;
+							float4 childPosB = gpuChildShapes[childShapeIndexB].m_childPosition;
+							b3Quat childOrnB = gpuChildShapes[childShapeIndexB].m_childOrientation;
+							float4 newPosB = transform(&childPosB,&posB,&ornB);
+							b3Quat newOrnB = b3QuatMul(ornB,childOrnB);
+
+							
+
+							b3Aabb aabbB = aabbsLocalSpace[childColIndexB];
+
+							b3Transform transB;
+							transB.setIdentity();
+							transB.setOrigin(newPosB);
+							transB.setRotation(newOrnB);
+
+							b3Vector3 aabbBMinOut,aabbBMaxOut;
+							b3TransformAabb2((const b3Float4&)aabbB.m_min,(const b3Float4&)aabbB.m_max, margin,transB.getOrigin(),transB.getRotation(),&aabbBMinOut,&aabbBMaxOut);
+
+							numAabbChecks++;
+							bool aabbOverlap = b3TestAabbAgainstAabb(aabbAMinOut,aabbAMaxOut,aabbBMinOut,aabbBMaxOut);
+							if (aabbOverlap)
+							{
+								/*
+								int numFacesA = convexShapes[shapeIndexA].m_numFaces;
+								float dmin = FLT_MAX;
+								float4 posA = newPosA;
+								posA.w = 0.f;
+								float4 posB = newPosB;
+								posB.w = 0.f;
+								float4 c0local = convexShapes[shapeIndexA].m_localCenter;
+								b3Quat ornA = newOrnA;
+								float4 c0 = transform(&c0local, &posA, &ornA);
+								float4 c1local = convexShapes[shapeIndexB].m_localCenter;
+								b3Quat ornB =newOrnB;
+								float4 c1 = transform(&c1local,&posB,&ornB);
+								const float4 DeltaC2 = c0 - c1;
+								*/
+								{//
+									int compoundPairIdx = b3AtomicInc(numCompoundPairsOut);
+									if (compoundPairIdx<maxNumCompoundPairsCapacity)
+									{
+										gpuCompoundPairsOut[compoundPairIdx]  = b3MakeInt4(bodyIndexA,bodyIndexB,childShapeIndexA,childShapeIndexB);
+									}
+								}//
+							}//fi(1)
+						} //for (int b=0
+					}//if (collidables[collidableIndexB].
+					else//if (collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS)
+					{
+						if (1)
+						{
+							int numFacesA = convexShapes[shapeIndexA].m_numFaces;
+							float dmin = FLT_MAX;
+							float4 posA = newPosA;
+							posA.w = 0.f;
+							float4 posB = rigidBodies[bodyIndexB].m_pos;
+							posB.w = 0.f;
+							float4 c0local = convexShapes[shapeIndexA].m_localCenter;
+							b3Quat ornA = newOrnA;
+							float4 c0 = transform(&c0local, &posA, &ornA);
+							float4 c1local = convexShapes[shapeIndexB].m_localCenter;
+							b3Quat ornB = rigidBodies[bodyIndexB].m_quat;
+							float4 c1 = transform(&c1local,&posB,&ornB);
+							const float4 DeltaC2 = c0 - c1;
+
+							{
+								int compoundPairIdx = b3AtomicInc(numCompoundPairsOut);
+								if (compoundPairIdx<maxNumCompoundPairsCapacity)
+								{
+									gpuCompoundPairsOut[compoundPairIdx] = b3MakeInt4(bodyIndexA,bodyIndexB,childShapeIndexA,-1);
+								}//if (compoundPairIdx<maxNumCompoundPairsCapacity)
+							}//
+						}//fi (1)
+					}//if (collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS)
+				}//for (int b=0;b<numChildrenB;b++)	
+				return;
+			}//if (collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS)
+			if ((collidables[collidableIndexA].m_shapeType!=SHAPE_CONCAVE_TRIMESH) 
+				&& (collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS))
+			{
+				int numChildrenB = collidables[collidableIndexB].m_numChildShapes;
+				for (int b=0;b<numChildrenB;b++)
+				{
+					int childShapeIndexB = collidables[collidableIndexB].m_shapeIndex+b;
+					int childColIndexB = gpuChildShapes[childShapeIndexB].m_shapeIndex;
+					b3Quat ornB = rigidBodies[bodyIndexB].m_quat;
+					float4 posB = rigidBodies[bodyIndexB].m_pos;
+					float4 childPosB = gpuChildShapes[childShapeIndexB].m_childPosition;
+					b3Quat childOrnB = gpuChildShapes[childShapeIndexB].m_childOrientation;
+					float4 newPosB = b3QuatRotate(ornB,childPosB)+posB;
+					b3Quat newOrnB = b3QuatMul(ornB,childOrnB);
+
+					int shapeIndexB = collidables[childColIndexB].m_shapeIndex;
+
+
+					//////////////////////////////////////
+
+					if (1)
+					{
+						int numFacesA = convexShapes[shapeIndexA].m_numFaces;
+						float dmin = FLT_MAX;
+						float4 posA = rigidBodies[bodyIndexA].m_pos;
+						posA.w = 0.f;
+						float4 posB = newPosB;
+						posB.w = 0.f;
+						float4 c0local = convexShapes[shapeIndexA].m_localCenter;
+						b3Quat ornA = rigidBodies[bodyIndexA].m_quat;
+						float4 c0 = transform(&c0local, &posA, &ornA);
+						float4 c1local = convexShapes[shapeIndexB].m_localCenter;
+						b3Quat ornB =newOrnB;
+						float4 c1 = transform(&c1local,&posB,&ornB);
+						const float4 DeltaC2 = c0 - c1;
+						{//
+							int compoundPairIdx = b3AtomicInc(numCompoundPairsOut);
+							if (compoundPairIdx<maxNumCompoundPairsCapacity)
+							{
+								gpuCompoundPairsOut[compoundPairIdx] = b3MakeInt4(bodyIndexA,bodyIndexB,-1,childShapeIndexB);
+							}//fi (compoundPairIdx<maxNumCompoundPairsCapacity)
+						}//
+					}//fi (1)	
+				}//for (int b=0;b<numChildrenB;b++)
+				return;
+			}//if (collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS)
+			return;
+		}//fi ((collidables[collidableIndexA].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS) ||(collidables[collidableIndexB].m_shapeType==SHAPE_COMPOUND_OF_CONVEX_HULLS))
+	}//i<numPairs
+}
+
+
+
+__kernel void   processCompoundPairsKernel( __global const b3Int4* gpuCompoundPairs,
+										__global const b3RigidBodyData* rigidBodies, 
+										__global const b3Collidable* collidables,
+										__global const b3ConvexPolyhedronData* convexShapes, 
+										__global const b3AlignedObjectArray<b3Float4>& vertices,
+										__global const b3AlignedObjectArray<b3Float4>& uniqueEdges,
+										__global const b3AlignedObjectArray<b3GpuFace>& faces,
+										__global const b3AlignedObjectArray<int>& indices,
+										__global b3Aabb* aabbs,
+										__global const b3GpuChildShape* gpuChildShapes,
+										__global b3AlignedObjectArray<b3Float4>& gpuCompoundSepNormalsOut,
+										__global b3AlignedObjectArray<int>& gpuHasCompoundSepNormalsOut,
+										int numCompoundPairs,
+										int i
+										)
+{
+
+//	int i = get_global_id(0);
+	if (i<numCompoundPairs)
+	{
+		int bodyIndexA = gpuCompoundPairs[i].x;
+		int bodyIndexB = gpuCompoundPairs[i].y;
+
+		int childShapeIndexA = gpuCompoundPairs[i].z;
+		int childShapeIndexB = gpuCompoundPairs[i].w;
+		
+		int collidableIndexA = -1;
+		int collidableIndexB = -1;
+		
+		b3Quat ornA = rigidBodies[bodyIndexA].m_quat;
+		float4 posA = rigidBodies[bodyIndexA].m_pos;
+		
+		b3Quat ornB = rigidBodies[bodyIndexB].m_quat;
+		float4 posB = rigidBodies[bodyIndexB].m_pos;
+							
+		if (childShapeIndexA >= 0)
+		{
+			collidableIndexA = gpuChildShapes[childShapeIndexA].m_shapeIndex;
+			float4 childPosA = gpuChildShapes[childShapeIndexA].m_childPosition;
+			b3Quat	childOrnA = gpuChildShapes[childShapeIndexA].m_childOrientation;
+			float4 newPosA = b3QuatRotate(ornA,childPosA)+posA;
+			b3Quat newOrnA = b3QuatMul(ornA,childOrnA);
+			posA = newPosA;
+			ornA = newOrnA;
+		} else
+		{
+			collidableIndexA = rigidBodies[bodyIndexA].m_collidableIdx;
+		}
+		
+		if (childShapeIndexB>=0)
+		{
+			collidableIndexB = gpuChildShapes[childShapeIndexB].m_shapeIndex;
+			float4 childPosB = gpuChildShapes[childShapeIndexB].m_childPosition;
+			b3Quat childOrnB = gpuChildShapes[childShapeIndexB].m_childOrientation;
+			float4 newPosB = b3QuatRotate(ornB,childPosB)+posB;
+			b3Quat newOrnB = b3QuatMul(ornB,childOrnB);
+			posB = newPosB;
+			ornB = newOrnB;
+		} else
+		{
+			collidableIndexB = rigidBodies[bodyIndexB].m_collidableIdx;	
+		}
+	
+		gpuHasCompoundSepNormalsOut[i] = 0;
+	
+		int shapeIndexA = collidables[collidableIndexA].m_shapeIndex;
+		int shapeIndexB = collidables[collidableIndexB].m_shapeIndex;
+	
+		int shapeTypeA = collidables[collidableIndexA].m_shapeType;
+		int shapeTypeB = collidables[collidableIndexB].m_shapeType;
+	
+
+		if ((shapeTypeA != SHAPE_CONVEX_HULL) || (shapeTypeB != SHAPE_CONVEX_HULL))
+		{
+			return;
+		}
+
+		int hasSeparatingAxis = 5;
+							
+		int numFacesA = convexShapes[shapeIndexA].m_numFaces;
+		float dmin = FLT_MAX;
+		posA.w = 0.f;
+		posB.w = 0.f;
+		float4 c0local = convexShapes[shapeIndexA].m_localCenter;
+		float4 c0 = transform(&c0local, &posA, &ornA);
+		float4 c1local = convexShapes[shapeIndexB].m_localCenter;
+		float4 c1 = transform(&c1local,&posB,&ornB);
+		const float4 DeltaC2 = c0 - c1;
+		float4 sepNormal = make_float4(1,0,0,0);
+//		bool sepA = findSeparatingAxis(	convexShapes[shapeIndexA], convexShapes[shapeIndexB],posA,ornA,posB,ornB,DeltaC2,vertices,uniqueEdges,faces,indices,&sepNormal,&dmin);
+		bool sepA = findSeparatingAxis(	convexShapes[shapeIndexA], convexShapes[shapeIndexB],posA,ornA,posB,ornB,vertices,uniqueEdges,faces,indices,vertices,uniqueEdges,faces,indices,sepNormal);//,&dmin);
+	
+		hasSeparatingAxis = 4;
+		if (!sepA)
+		{
+			hasSeparatingAxis = 0;
+		} else
+		{
+			bool sepB = findSeparatingAxis(	convexShapes[shapeIndexB],convexShapes[shapeIndexA],posB,ornB,posA,ornA,vertices,uniqueEdges,faces,indices,vertices,uniqueEdges,faces,indices,sepNormal);//,&dmin);
+
+			if (!sepB)
+			{
+				hasSeparatingAxis = 0;
+			} else//(!sepB)
+			{
+				bool sepEE = findSeparatingAxisEdgeEdge(	&convexShapes[shapeIndexA], &convexShapes[shapeIndexB],posA,ornA,posB,ornB,DeltaC2,vertices,uniqueEdges,faces,indices,&sepNormal,&dmin);
+				if (sepEE)
+				{
+						gpuCompoundSepNormalsOut[i] = sepNormal;//fastNormalize4(sepNormal);
+						gpuHasCompoundSepNormalsOut[i] = 1;
+				}//sepEE
+			}//(!sepB)
+		}//(!sepA)
+		
+		
+	}
+		
+}
+
+
+__kernel void   clipCompoundsHullHullKernel( __global const b3Int4* gpuCompoundPairs, 
+																					__global const b3RigidBodyData* rigidBodies, 
+																					__global const b3Collidable* collidables,
+																					__global const b3ConvexPolyhedronData* convexShapes, 
+																					__global const b3AlignedObjectArray<b3Float4>& vertices,
+																					__global const b3AlignedObjectArray<b3Float4>& uniqueEdges,
+																					__global const b3AlignedObjectArray<b3GpuFace>& faces,
+																					__global const b3AlignedObjectArray<int>& indices,
+																					__global const b3GpuChildShape* gpuChildShapes,
+																					__global const b3AlignedObjectArray<b3Float4>& gpuCompoundSepNormalsOut,
+																					__global const b3AlignedObjectArray<int>& gpuHasCompoundSepNormalsOut,
+																					__global struct b3Contact4Data* globalContactsOut,
+																					int* nGlobalContactsOut,
+																					int numCompoundPairs, int maxContactCapacity, int i)
+{
+
+//	int i = get_global_id(0);
+	int pairIndex = i;
+	
+	float4 worldVertsB1[64];
+	float4 worldVertsB2[64];
+	int capacityWorldVerts = 64;	
+
+	float4 localContactsOut[64];
+	int localContactCapacity=64;
+	
+	float minDist = -1e30f;
+	float maxDist = 0.0f;
+
+	if (i<numCompoundPairs)
+	{
+
+		if (gpuHasCompoundSepNormalsOut[i])
+		{
+
+			int bodyIndexA = gpuCompoundPairs[i].x;
+			int bodyIndexB = gpuCompoundPairs[i].y;
+			
+			int childShapeIndexA = gpuCompoundPairs[i].z;
+			int childShapeIndexB = gpuCompoundPairs[i].w;
+			
+			int collidableIndexA = -1;
+			int collidableIndexB = -1;
+			
+			b3Quat ornA = rigidBodies[bodyIndexA].m_quat;
+			float4 posA = rigidBodies[bodyIndexA].m_pos;
+			
+			b3Quat ornB = rigidBodies[bodyIndexB].m_quat;
+			float4 posB = rigidBodies[bodyIndexB].m_pos;
+								
+			if (childShapeIndexA >= 0)
+			{
+				collidableIndexA = gpuChildShapes[childShapeIndexA].m_shapeIndex;
+				float4 childPosA = gpuChildShapes[childShapeIndexA].m_childPosition;
+				b3Quat childOrnA = gpuChildShapes[childShapeIndexA].m_childOrientation;
+				float4 newPosA = b3QuatRotate(ornA,childPosA)+posA;
+				b3Quat newOrnA = b3QuatMul(ornA,childOrnA);
+				posA = newPosA;
+				ornA = newOrnA;
+			} else
+			{
+				collidableIndexA = rigidBodies[bodyIndexA].m_collidableIdx;
+			}
+			
+			if (childShapeIndexB>=0)
+			{
+				collidableIndexB = gpuChildShapes[childShapeIndexB].m_shapeIndex;
+				float4 childPosB = gpuChildShapes[childShapeIndexB].m_childPosition;
+				b3Quat  childOrnB = gpuChildShapes[childShapeIndexB].m_childOrientation;
+				float4 newPosB = b3QuatRotate(ornB,childPosB)+posB;
+				b3Quat  newOrnB = b3QuatMul(ornB,childOrnB);
+				posB = newPosB;
+				ornB = newOrnB;
+			} else
+			{
+				collidableIndexB = rigidBodies[bodyIndexB].m_collidableIdx;	
+			}
+			
+			int shapeIndexA = collidables[collidableIndexA].m_shapeIndex;
+			int shapeIndexB = collidables[collidableIndexB].m_shapeIndex;
+		
+			int numLocalContactsOut = clipHullAgainstHull(gpuCompoundSepNormalsOut[i],
+														convexShapes[shapeIndexA], convexShapes[shapeIndexB],
+														posA,ornA,
+													  posB,ornB,
+													  worldVertsB1,worldVertsB2,capacityWorldVerts,
+														minDist, maxDist,
+														vertices,faces,indices,
+														vertices,faces,indices,
+														localContactsOut,localContactCapacity);
+												
+		if (numLocalContactsOut>0)
+		{
+				float4 normal = -gpuCompoundSepNormalsOut[i];
+				int nPoints = numLocalContactsOut;
+				float4* pointsIn = localContactsOut;
+				b3Int4 contactIdx;// = {-1,-1,-1,-1};
+
+				contactIdx.s[0] = 0;
+				contactIdx.s[1] = 1;
+				contactIdx.s[2] = 2;
+				contactIdx.s[3] = 3;
+
+				int nReducedContacts = extractManifoldSequentialGlobal(pointsIn, nPoints, normal, &contactIdx);
+		
+				int dstIdx;
+				dstIdx = b3AtomicInc( nGlobalContactsOut);
+				if ((dstIdx+nReducedContacts) < maxContactCapacity)
+				{
+					__global struct b3Contact4Data* c = globalContactsOut+ dstIdx;
+					c->m_worldNormalOnB = -normal;
+					c->m_restituitionCoeffCmp = (0.f*0xffff);c->m_frictionCoeffCmp = (0.7f*0xffff);
+					c->m_batchIdx = pairIndex;
+					int bodyA = gpuCompoundPairs[pairIndex].x;
+					int bodyB = gpuCompoundPairs[pairIndex].y;
+					c->m_bodyAPtrAndSignBit = rigidBodies[bodyA].m_invMass==0?-bodyA:bodyA;
+					c->m_bodyBPtrAndSignBit = rigidBodies[bodyB].m_invMass==0?-bodyB:bodyB;
+					c->m_childIndexA = childShapeIndexA;
+					c->m_childIndexB = childShapeIndexB;
+					for (int i=0;i<nReducedContacts;i++)
+					{
+						c->m_worldPosB[i] = pointsIn[contactIdx.s[i]];
+					}
+					b3Contact4Data_setNumPoints(c,nReducedContacts);
+				}
+				
+			}//		if (numContactsOut>0)
+		}//		if (gpuHasCompoundSepNormalsOut[i])
+	}//	if (i<numCompoundPairs)
+
+}
+
+
+void computeContactCompoundCompound(int pairIndex,
+																int bodyIndexA, int bodyIndexB, 
+																int collidableIndexA, int collidableIndexB, 
+																const b3RigidBodyCL* rigidBodies, 
+																const b3Collidable* collidables,
+																const b3ConvexPolyhedronData* convexShapes,
+																const b3GpuChildShape* cpuChildShapes,
+																const b3AlignedObjectArray<b3Aabb>& hostAabbsWorldSpace,
+																const b3AlignedObjectArray<b3Aabb>& hostAabbsLocalSpace,
+
+																const b3AlignedObjectArray<b3Vector3>& convexVertices,
+																const b3AlignedObjectArray<b3Vector3>& hostUniqueEdges,
+																const b3AlignedObjectArray<int>& convexIndices,
+																const b3AlignedObjectArray<b3GpuFace>& faces,
+																
+																b3Contact4* globalContactsOut,
+																int& nGlobalContactsOut,
+																int maxContactCapacity,
+																b3AlignedObjectArray<b3QuantizedBvhNode>&	treeNodesCPU,
+																b3AlignedObjectArray<b3BvhSubtreeInfo>&	subTreesCPU,
+																b3AlignedObjectArray<b3BvhInfo>&	bvhInfoCPU
+																)
+{
+
+	int shapeTypeB = collidables[collidableIndexB].m_shapeType;
+	b3Assert(shapeTypeB == SHAPE_COMPOUND_OF_CONVEX_HULLS);
+
+	b3AlignedObjectArray<b3Int4> cpuCompoundPairsOut;
+	int numCompoundPairsOut=0;
+	int maxNumCompoundPairsCapacity = 8192;//1024;
+	cpuCompoundPairsOut.resize(maxNumCompoundPairsCapacity);
+
+	// work-in-progress
+	findCompoundPairsKernel( 
+							pairIndex,
+							bodyIndexA,bodyIndexB,
+							collidableIndexA,collidableIndexB,
+							rigidBodies, 
+							collidables,
+							convexShapes, 
+							convexVertices,
+							hostAabbsWorldSpace,
+							hostAabbsLocalSpace,
+							cpuChildShapes,
+							&cpuCompoundPairsOut[0],
+							&numCompoundPairsOut,
+							maxNumCompoundPairsCapacity	,
+							treeNodesCPU,
+							subTreesCPU,
+							bvhInfoCPU
+							);
+
+	printf("maxNumAabbChecks=%d\n",maxNumAabbChecks);
+	if (numCompoundPairsOut>maxNumCompoundPairsCapacity)
+	{
+		b3Error("numCompoundPairsOut exceeded maxNumCompoundPairsCapacity (%d)\n",maxNumCompoundPairsCapacity);
+		numCompoundPairsOut=maxNumCompoundPairsCapacity;
+	}
+	b3AlignedObjectArray<b3Float4> cpuCompoundSepNormalsOut;
+	b3AlignedObjectArray<int> cpuHasCompoundSepNormalsOut;
+	cpuCompoundSepNormalsOut.resize(numCompoundPairsOut);
+	cpuHasCompoundSepNormalsOut.resize(numCompoundPairsOut);
+
+	for (int i=0;i<numCompoundPairsOut;i++)
+	{
+
+		processCompoundPairsKernel(&cpuCompoundPairsOut[0],rigidBodies,collidables,convexShapes,convexVertices,hostUniqueEdges,faces,convexIndices,0,cpuChildShapes,
+			cpuCompoundSepNormalsOut,cpuHasCompoundSepNormalsOut,numCompoundPairsOut,i);
+	}
+
+	for (int i=0;i<numCompoundPairsOut;i++)
+	{
+		clipCompoundsHullHullKernel(&cpuCompoundPairsOut[0],rigidBodies,collidables,convexShapes,convexVertices,hostUniqueEdges,faces,convexIndices,cpuChildShapes,
+			cpuCompoundSepNormalsOut,cpuHasCompoundSepNormalsOut,globalContactsOut,&nGlobalContactsOut,numCompoundPairsOut,maxContactCapacity,i);
+	}
+		/*
+		int childColIndexA = gpuChildShapes[childShapeIndexA].m_shapeIndex;
+
+					float4 posA = rigidBodies[bodyIndexA].m_pos;
+					b3Quat ornA = rigidBodies[bodyIndexA].m_quat;
+					float4 childPosA = gpuChildShapes[childShapeIndexA].m_childPosition;
+					b3Quat childOrnA = gpuChildShapes[childShapeIndexA].m_childOrientation;
+					float4 newPosA = b3QuatRotate(ornA,childPosA)+posA;
+					b3Quat newOrnA = b3QuatMul(ornA,childOrnA);
+
+					int shapeIndexA = collidables[childColIndexA].m_shapeIndex;
+
+
+			bool foundSepAxis = findSeparatingAxis(hullA,hullB,
+							posA,
+							ornA,
+							posB,
+							ornB,
+
+							convexVertices,uniqueEdges,faces,convexIndices,
+							convexVertices,uniqueEdges,faces,convexIndices,
+							
+							sepNormalWorldSpace
+							);
+							*/
+
+	
+	/*
+	if (foundSepAxis)
+	{
+		
+		
+		contactIndex = clipHullHullSingle(
+			bodyIndexA, bodyIndexB,
+						   posA,ornA,
+						   posB,ornB,
+			collidableIndexA, collidableIndexB,
+			&rigidBodies, 
+			&globalContactsOut,
+			nGlobalContactsOut,
+			
+			convexShapes,
+			convexShapes,
+	
+			convexVertices, 
+			uniqueEdges, 
+			faces,
+			convexIndices,
+	
+			convexVertices,
+			uniqueEdges,
+			faces,
+			convexIndices,
+
+			collidables,
+			collidables,
+			sepNormalWorldSpace,
+			maxContactCapacity);
+			
+	}
+	*/
+
+//	return contactIndex;
+	
+	/*
+
+	int numChildrenB = collidables[collidableIndexB].m_numChildShapes;
+	for (int c=0;c<numChildrenB;c++)
+	{
+		int childShapeIndexB = collidables[collidableIndexB].m_shapeIndex+c;
+		int childColIndexB = cpuChildShapes[childShapeIndexB].m_shapeIndex;
+
+		float4 rootPosB = rigidBodies[bodyIndexB].m_pos;
+		b3Quaternion rootOrnB = rigidBodies[bodyIndexB].m_quat;
+		b3Vector3 childPosB = cpuChildShapes[childShapeIndexB].m_childPosition;
+		b3Quaternion childOrnB = cpuChildShapes[childShapeIndexB].m_childOrientation;
+		float4  posB = b3QuatRotate(rootOrnB,childPosB)+rootPosB;
+		b3Quaternion ornB = b3QuatMul(rootOrnB,childOrnB);//b3QuatMul(ornB,childOrnB);
+
+		int shapeIndexB = collidables[childColIndexB].m_shapeIndex;
+
+		const b3ConvexPolyhedronCL* hullB = &convexShapes[shapeIndexB];
+
+	}
+	*/
+
+}
+
+void computeContactPlaneCompound(int pairIndex,
+																int bodyIndexA, int bodyIndexB, 
+																int collidableIndexA, int collidableIndexB, 
+																const b3RigidBodyCL* rigidBodies, 
+																const b3Collidable* collidables,
+																const b3ConvexPolyhedronCL* convexShapes,
+																const b3GpuChildShape* cpuChildShapes,
+																const b3Vector3* convexVertices,
+																const int* convexIndices,
+																const b3GpuFace* faces,
+																
+																b3Contact4* globalContactsOut,
+																int& nGlobalContactsOut,
+																int maxContactCapacity)
+{
+
+	int shapeTypeB = collidables[collidableIndexB].m_shapeType;
+	b3Assert(shapeTypeB == SHAPE_COMPOUND_OF_CONVEX_HULLS);
+
+
+	int numChildrenB = collidables[collidableIndexB].m_numChildShapes;
+	for (int c=0;c<numChildrenB;c++)
+	{
+		int childShapeIndexB = collidables[collidableIndexB].m_shapeIndex+c;
+		int childColIndexB = cpuChildShapes[childShapeIndexB].m_shapeIndex;
+
+		float4 rootPosB = rigidBodies[bodyIndexB].m_pos;
+		b3Quaternion rootOrnB = rigidBodies[bodyIndexB].m_quat;
+		b3Vector3 childPosB = cpuChildShapes[childShapeIndexB].m_childPosition;
+		b3Quaternion childOrnB = cpuChildShapes[childShapeIndexB].m_childOrientation;
+		float4  posB = b3QuatRotate(rootOrnB,childPosB)+rootPosB;
+		b3Quaternion ornB = rootOrnB*childOrnB;//b3QuatMul(ornB,childOrnB);
+
+		int shapeIndexB = collidables[childColIndexB].m_shapeIndex;
+
+		const b3ConvexPolyhedronCL* hullB = &convexShapes[shapeIndexB];
+	
+		
+		b3Vector3 posA = rigidBodies[bodyIndexA].m_pos;
+		b3Quaternion ornA = rigidBodies[bodyIndexA].m_quat;
+
+		int numContactsOut = 0;
+		int numWorldVertsB1= 0;
+
+		b3Vector3 planeEq = faces[collidables[collidableIndexA].m_shapeIndex].m_plane;
+		b3Vector3 planeNormal=b3MakeVector3(planeEq.x,planeEq.y,planeEq.z);
+		b3Vector3 planeNormalWorld = b3QuatRotate(ornA,planeNormal);
+		float planeConstant = planeEq.w;
+		b3Transform convexWorldTransform;
+		convexWorldTransform.setIdentity();
+		convexWorldTransform.setOrigin(posB);
+		convexWorldTransform.setRotation(ornB);
+		b3Transform planeTransform;
+		planeTransform.setIdentity();
+		planeTransform.setOrigin(posA);
+		planeTransform.setRotation(ornA);
+
+		b3Transform planeInConvex;
+		planeInConvex= convexWorldTransform.inverse() * planeTransform;
+		b3Transform convexInPlane;
+		convexInPlane = planeTransform.inverse() * convexWorldTransform;
+	
+		b3Vector3 planeNormalInConvex = planeInConvex.getBasis()*-planeNormal;
+		float maxDot = -1e30;
+		int hitVertex=-1;
+		b3Vector3 hitVtx;
+
+	#define MAX_PLANE_CONVEX_POINTS 64
+
+		b3Vector3 contactPoints[MAX_PLANE_CONVEX_POINTS];
+		int numPoints = 0;
+
+		b3Int4 contactIdx;
+		contactIdx.s[0] = 0;
+		contactIdx.s[1] = 1;
+		contactIdx.s[2] = 2;
+		contactIdx.s[3] = 3;
+	
+		for (int i=0;i<hullB->m_numVertices;i++)
+		{
+			b3Vector3 vtx = convexVertices[hullB->m_vertexOffset+i];
+			float curDot = vtx.dot(planeNormalInConvex);
+
+
+			if (curDot>maxDot)
+			{
+				hitVertex=i;
+				maxDot=curDot;
+				hitVtx = vtx;
+				//make sure the deepest points is always included
+				if (numPoints==MAX_PLANE_CONVEX_POINTS)
+					numPoints--;
+			}
+
+			if (numPoints<MAX_PLANE_CONVEX_POINTS)
+			{
+				b3Vector3 vtxWorld = convexWorldTransform*vtx;
+				b3Vector3 vtxInPlane = planeTransform.inverse()*vtxWorld;
+				float dist = planeNormal.dot(vtxInPlane)-planeConstant;
+				if (dist<0.f)
+				{
+					vtxWorld.w = dist;
+					contactPoints[numPoints] = vtxWorld;
+					numPoints++;
+				}
+			}
+
+		}
+
+		int numReducedPoints  = 0;
+
+		numReducedPoints = numPoints;
+	
+		if (numPoints>4)
+		{
+			numReducedPoints = extractManifoldSequentialGlobal( contactPoints, numPoints, planeNormalInConvex, &contactIdx);
+		}
+		int dstIdx;
+	//    dstIdx = nGlobalContactsOut++;//AppendInc( nGlobalContactsOut, dstIdx );
+		
+		if (numReducedPoints>0)
+		{
+			if (nGlobalContactsOut < maxContactCapacity)
+			{
+				dstIdx=nGlobalContactsOut;
+				nGlobalContactsOut++;
+
+				b3Contact4* c = &globalContactsOut[dstIdx];
+				c->m_worldNormalOnB = -planeNormalWorld;
+				c->setFrictionCoeff(0.7);
+				c->setRestituitionCoeff(0.f);
+
+				c->m_batchIdx = pairIndex;
+				c->m_bodyAPtrAndSignBit = rigidBodies[bodyIndexA].m_invMass==0?-bodyIndexA:bodyIndexA;
+				c->m_bodyBPtrAndSignBit = rigidBodies[bodyIndexB].m_invMass==0?-bodyIndexB:bodyIndexB;
+				for (int i=0;i<numReducedPoints;i++)
+				{
+					b3Vector3 pOnB1 = contactPoints[contactIdx.s[i]];
+					c->m_worldPosB[i] = pOnB1;
+				}
+				c->m_worldNormalOnB.w = (b3Scalar)numReducedPoints;
+			}//if (dstIdx < numPairs)
+		}	
+		
+	}
+
+	
+}
+
+
+
+
+
+void	computeContactSphereConvex(int pairIndex,
+																int bodyIndexA, int bodyIndexB, 
+																int collidableIndexA, int collidableIndexB, 
+																const b3RigidBodyCL* rigidBodies, 
+																const b3Collidable* collidables,
+																const b3ConvexPolyhedronCL* convexShapes,
+																const b3Vector3* convexVertices,
+																const int* convexIndices,
+																const b3GpuFace* faces,
+																b3Contact4* globalContactsOut,
+																int& nGlobalContactsOut,
+																int maxContactCapacity)
+{
+
+	float radius = collidables[collidableIndexA].m_radius;
+	float4 spherePos1 = rigidBodies[bodyIndexA].m_pos;
+	b3Quaternion sphereOrn = rigidBodies[bodyIndexA].m_quat;
+
+
+
+	float4 pos = rigidBodies[bodyIndexB].m_pos;
+	
+
+	b3Quaternion quat = rigidBodies[bodyIndexB].m_quat;
+
+	b3Transform tr;
+	tr.setIdentity();
+	tr.setOrigin(pos);
+	tr.setRotation(quat);
+	b3Transform trInv = tr.inverse();
+
+	float4 spherePos = trInv(spherePos1);
+
+	int collidableIndex = rigidBodies[bodyIndexB].m_collidableIdx;
+	int shapeIndex = collidables[collidableIndex].m_shapeIndex;
+	int numFaces = convexShapes[shapeIndex].m_numFaces;
+	float4 closestPnt = b3MakeVector3(0, 0, 0, 0);
+	float4 hitNormalWorld = b3MakeVector3(0, 0, 0, 0);
+	float minDist = -1000000.f; // TODO: What is the largest/smallest float?
+	bool bCollide = true;
+	int region = -1;
+	float4 localHitNormal;
+	for ( int f = 0; f < numFaces; f++ )
+	{
+		b3GpuFace face = faces[convexShapes[shapeIndex].m_faceOffset+f];
+		float4 planeEqn;
+		float4 localPlaneNormal = b3MakeVector3(face.m_plane.x,face.m_plane.y,face.m_plane.z,0.f);
+		float4 n1 = localPlaneNormal;//quatRotate(quat,localPlaneNormal);
+		planeEqn = n1;
+		planeEqn[3] = face.m_plane.w;
+
+		float4 pntReturn;
+		float dist = signedDistanceFromPointToPlane(spherePos, planeEqn, &pntReturn);
+
+		if ( dist > radius)
+		{
+			bCollide = false;
+			break;
+		}
+
+		if ( dist > 0 )
+		{
+			//might hit an edge or vertex
+			b3Vector3 out;
+
+			bool isInPoly = IsPointInPolygon(spherePos,
+					&face,
+					&convexVertices[convexShapes[shapeIndex].m_vertexOffset],
+					convexIndices,
+                    &out);
+			if (isInPoly)
+			{
+				if (dist>minDist)
+				{
+					minDist = dist;
+					closestPnt = pntReturn;
+					localHitNormal = planeEqn;
+					region=1;
+				}
+			} else
+			{
+				b3Vector3 tmp = spherePos-out;
+				b3Scalar l2 = tmp.length2();
+				if (l2<radius*radius)
+				{
+					dist  = b3Sqrt(l2);
+					if (dist>minDist)
+					{
+						minDist = dist;
+						closestPnt = out;
+						localHitNormal = tmp/dist;
+						region=2;
+					}
+					
+				} else
+				{
+					bCollide = false;
+					break;
+				}
+			}
+		}
+		else
+		{
+			if ( dist > minDist )
+			{
+				minDist = dist;
+				closestPnt = pntReturn;
+				localHitNormal = planeEqn;
+				region=3;
+			}
+		}
+	}
+	static int numChecks = 0;
+	numChecks++;
+
+	if (bCollide && minDist > -10000)
+	{
+		
+		float4 normalOnSurfaceB1 = tr.getBasis()*localHitNormal;//-hitNormalWorld;
+		float4 pOnB1 = tr(closestPnt);
+		//printf("dist ,%f,",minDist);
+		float actualDepth = minDist-radius;
+		if (actualDepth<0)
+		{
+		//printf("actualDepth = ,%f,", actualDepth);
+		//printf("normalOnSurfaceB1 = ,%f,%f,%f,", normalOnSurfaceB1.x,normalOnSurfaceB1.y,normalOnSurfaceB1.z);
+		//printf("region=,%d,\n", region);
+		pOnB1[3] = actualDepth;
+
+		int dstIdx;
+//    dstIdx = nGlobalContactsOut++;//AppendInc( nGlobalContactsOut, dstIdx );
+		
+		if (nGlobalContactsOut < maxContactCapacity)
+		{
+			dstIdx=nGlobalContactsOut;
+			nGlobalContactsOut++;
+
+			b3Contact4* c = &globalContactsOut[dstIdx];
+			c->m_worldNormalOnB = normalOnSurfaceB1;
+			c->setFrictionCoeff(0.7);
+			c->setRestituitionCoeff(0.f);
+
+			c->m_batchIdx = pairIndex;
+			c->m_bodyAPtrAndSignBit = rigidBodies[bodyIndexA].m_invMass==0?-bodyIndexA:bodyIndexA;
+			c->m_bodyBPtrAndSignBit = rigidBodies[bodyIndexB].m_invMass==0?-bodyIndexB:bodyIndexB;
+			c->m_worldPosB[0] = pOnB1;
+			int numPoints = 1;
+			c->m_worldNormalOnB.w = (b3Scalar)numPoints;
+		}//if (dstIdx < numPairs)
+		}
+	}//if (hasCollision)
+	
+}
+
+
+
+#include "b3GjkPairDetector.h"
+#include "b3GjkEpa.h"
+#include "b3VoronoiSimplexSolver.h"
+
+int computeContactConvexConvex( b3AlignedObjectArray<b3Int4>& pairs,
+																int pairIndex,
 																int bodyIndexA, int bodyIndexB, 
 																int collidableIndexA, int collidableIndexB, 
 																const b3AlignedObjectArray<b3RigidBodyCL>& rigidBodies, 
@@ -1560,43 +2508,144 @@ void computeContactConvexConvex(
 																const b3AlignedObjectArray<b3GpuFace>& faces,
 																b3AlignedObjectArray<b3Contact4>& globalContactsOut,
 																int& nGlobalContactsOut,
-																int maxContactCapacity)
-{
+																int maxContactCapacity,
+																const b3AlignedObjectArray<b3Contact4>& oldContacts
+																)
+{	
+	int contactIndex = -1;
+	b3VoronoiSimplexSolver simplexSolver;
+	b3GjkEpaSolver2 epaSolver;
+			
+	b3GjkPairDetector gjkDetector(&simplexSolver,&epaSolver);
 
+	b3Transform transA;
+	transA.setOrigin(rigidBodies[bodyIndexA].m_pos);
+	transA.setRotation(rigidBodies[bodyIndexA].m_quat);
+
+	b3Transform transB;
+	transB.setOrigin(rigidBodies[bodyIndexB].m_pos);
+	transB.setRotation(rigidBodies[bodyIndexB].m_quat);
+	float maximumDistanceSquared = 1e30f;
+					
+	b3Vector3 resultPointOnBWorld;
+	b3Vector3 sepAxis2=b3MakeVector3(0,1,0);
+	b3Scalar distance2 = 1e30f;
+	
+	int shapeIndexA = collidables[collidableIndexA].m_shapeIndex;
+	int shapeIndexB = collidables[collidableIndexB].m_shapeIndex;
+
+	int sz = sizeof(b3Contact4);
+
+	bool result2 = getClosestPoints(&gjkDetector, transA, transB,
+		convexShapes[shapeIndexA], convexShapes[shapeIndexB],
+		convexVertices,convexVertices,
+		maximumDistanceSquared,
+		sepAxis2,
+		distance2,
+		resultPointOnBWorld);
+	
+	
+	if (result2)
+	{
+		if (nGlobalContactsOut<maxContactCapacity)
+		{
+			contactIndex = nGlobalContactsOut;
+			globalContactsOut.expand();
+			b3Contact4& newContact = globalContactsOut.at(nGlobalContactsOut);
+			newContact.m_batchIdx = 0;//i;
+			newContact.m_bodyAPtrAndSignBit = (rigidBodies.at(bodyIndexA).m_invMass==0)? -bodyIndexA:bodyIndexA;
+			newContact.m_bodyBPtrAndSignBit = (rigidBodies.at(bodyIndexB).m_invMass==0)? -bodyIndexB:bodyIndexB;
+
+			newContact.m_frictionCoeffCmp = 45874;
+			newContact.m_restituitionCoeffCmp = 0;
+					
+			
+			int numPoints = 0;
+			if (pairs[pairIndex].z>=0)
+			{
+				//printf("add existing points?\n");
+				//refresh
+				
+				int numOldPoints = oldContacts[pairs[pairIndex].z].getNPoints();
+				if (numOldPoints)
+				{
+					newContact = oldContacts[pairs[pairIndex].z];
+#ifdef PERSISTENT_CONTACTS_HOST
+					b3ContactCache::refreshContactPoints(transA,transB,newContact);
+#endif //PERSISTENT_CONTACTS_HOST
+				}
+				numPoints = b3Contact4Data_getNumPoints(&newContact);
+
+			}
+
+			/*
+			int insertIndex = m_manifoldPtr->getCacheEntry(newPt);
+				if (insertIndex >= 0)
+				{
+					//const btManifoldPoint& oldPoint = m_manifoldPtr->getContactPoint(insertIndex);
+					m_manifoldPtr->replaceContactPoint(newPt,insertIndex);
+				} else
+				{
+					insertIndex = m_manifoldPtr->addManifoldPoint(newPt);
+				}
+			*/
+			
+			int p=numPoints;
+			if (numPoints<4)
+			{
+				numPoints++;
+			} else
+			{
+				p=3;
+			}
+
+			{
+				resultPointOnBWorld.w = distance2;
+				newContact.m_worldPosB[p] = resultPointOnBWorld;
+				b3Vector3 resultPointOnAWorld = resultPointOnBWorld+distance2*sepAxis2;
+#ifdef PERSISTENT_CONTACTS_HOST
+				newContact.m_localPosA[p] = transA.inverse()*resultPointOnAWorld;
+				newContact.m_localPosB[p] = transB.inverse()*resultPointOnBWorld;
+#endif
+				newContact.m_worldNormalOnB = sepAxis2; 
+			}
+			//printf("bodyIndexA %d,bodyIndexB %d,normal=%f,%f,%f numPoints %d\n",bodyIndexA,bodyIndexB,normalOnSurfaceB.x,normalOnSurfaceB.y,normalOnSurfaceB.z,numPoints);
+			newContact.m_worldNormalOnB.w = (b3Scalar)numPoints;
+
+			
+			nGlobalContactsOut++;
+		} else
+		{
+			b3Error("Error: exceeding contact capacity (%d/%d)\n", nGlobalContactsOut,maxContactCapacity);
+		}
+	}
+	
+	return contactIndex;
+}
+
+int computeContactConvexConvex2(
+																int pairIndex,
+																int bodyIndexA, int bodyIndexB, 
+																int collidableIndexA, int collidableIndexB, 
+																const b3AlignedObjectArray<b3RigidBodyCL>& rigidBodies, 
+																const b3AlignedObjectArray<b3Collidable>& collidables,
+																const b3AlignedObjectArray<b3ConvexPolyhedronCL>& convexShapes,
+																const b3AlignedObjectArray<b3Vector3>& convexVertices,
+																const b3AlignedObjectArray<b3Vector3>& uniqueEdges,
+																const b3AlignedObjectArray<int>& convexIndices,
+																const b3AlignedObjectArray<b3GpuFace>& faces,
+																b3AlignedObjectArray<b3Contact4>& globalContactsOut,
+																int& nGlobalContactsOut,
+																int maxContactCapacity,
+																const b3AlignedObjectArray<b3Contact4>& oldContacts
+																)
+{
+	int contactIndex = -1;
 	b3Vector3 posA = rigidBodies[bodyIndexA].m_pos;
 	b3Quaternion ornA = rigidBodies[bodyIndexA].m_quat;
 	b3Vector3 posB = rigidBodies[bodyIndexB].m_pos;
 	b3Quaternion ornB = rigidBodies[bodyIndexB].m_quat;
 	
-			/*int bodyIndexA, int bodyIndexB,
-		  const float4& posA,
-		  const float4& ornA,
-		  const float4& posB,
-		  const float4& ornB,
-			int collidableIndexA, int collidableIndexB,
-
-			const b3AlignedObjectArray<b3RigidBodyCL>* bodyBuf, 
-			b3AlignedObjectArray<b3Contact4>* contactOut,
-															  int& nContacts,
-
-			const b3AlignedObjectArray<b3ConvexPolyhedronCL>& hostConvexDataA,
-			const b3AlignedObjectArray<b3ConvexPolyhedronCL>& hostConvexDataB,
-	
-			const b3AlignedObjectArray<b3Vector3>& verticesA, 
-			const b3AlignedObjectArray<b3Vector3>& uniqueEdgesA, 
-			const b3AlignedObjectArray<b3GpuFace>& facesA,
-			const b3AlignedObjectArray<int>& indicesA,
-	
-			const b3AlignedObjectArray<b3Vector3>& verticesB,
-			const b3AlignedObjectArray<b3Vector3>& uniqueEdgesB,
-			const b3AlignedObjectArray<b3GpuFace>& facesB,
-			const b3AlignedObjectArray<int>& indicesB,
-
-			const b3AlignedObjectArray<b3Collidable>& hostCollidablesA,
-			const b3AlignedObjectArray<b3Collidable>& hostCollidablesB
-			)
-			*/
-
 
 	b3ConvexPolyhedronCL hullA, hullB;
     
@@ -1641,7 +2690,7 @@ void computeContactConvexConvex(
 	{
 		
 		
-		clipHullHullSingle(
+		contactIndex = clipHullHullSingle(
 			bodyIndexA, bodyIndexB,
 						   posA,ornA,
 						   posB,ornB,
@@ -1665,18 +2714,21 @@ void computeContactConvexConvex(
 
 			collidables,
 			collidables,
-			sepNormalWorldSpace);
+			sepNormalWorldSpace,
+			maxContactCapacity);
 			
 	}
 
-
+	return contactIndex;
 }
 
 
-void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3Int2>* pairs, int nPairs,
+void GpuSatCollision::computeConvexConvexContactsGPUSAT( b3OpenCLArray<b3Int4>* pairs, int nPairs,
 			const b3OpenCLArray<b3RigidBodyCL>* bodyBuf,
 			b3OpenCLArray<b3Contact4>* contactOut, int& nContacts,
+			const b3OpenCLArray<b3Contact4>* oldContacts,
 			int maxContactCapacity,
+			int compoundPairCapacity,
 			const b3OpenCLArray<b3ConvexPolyhedronCL>& convexData,
 			const b3OpenCLArray<b3Vector3>& gpuVertices,
 			const b3OpenCLArray<b3Vector3>& gpuUniqueEdges,
@@ -1685,13 +2737,15 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 			const b3OpenCLArray<b3Collidable>& gpuCollidables,
 			const b3OpenCLArray<b3GpuChildShape>& gpuChildShapes,
 
-			const b3OpenCLArray<b3YetAnotherAabb>& clAabbsWS,
+			const b3OpenCLArray<b3Aabb>& clAabbsWorldSpace,
+			const b3OpenCLArray<b3Aabb>& clAabbsLocalSpace,
+
             b3OpenCLArray<b3Vector3>& worldVertsB1GPU,
             b3OpenCLArray<b3Int4>& clippingFacesOutGPU,
             b3OpenCLArray<b3Vector3>& worldNormalsAGPU,
             b3OpenCLArray<b3Vector3>& worldVertsA1GPU,
             b3OpenCLArray<b3Vector3>& worldVertsB2GPU,    
-			b3AlignedObjectArray<class b3OptimizedBvh*>& bvhData,
+			b3AlignedObjectArray<class b3OptimizedBvh*>& bvhDataUnused,
 			b3OpenCLArray<b3QuantizedBvhNode>*	treeNodesGPU,
 			b3OpenCLArray<b3BvhSubtreeInfo>*	subTreesGPU,
 			b3OpenCLArray<b3BvhInfo>*	bvhInfo,
@@ -1706,11 +2760,26 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 		return;
 
 
-//#define CHECK_ON_HOST
+
 #ifdef CHECK_ON_HOST
-	b3AlignedObjectArray<b3YetAnotherAabb> hostAabbs;
-	clAabbsWS.copyToHost(hostAabbs);
-	b3AlignedObjectArray<b3Int2> hostPairs;
+
+
+	b3AlignedObjectArray<b3QuantizedBvhNode>	treeNodesCPU;
+	treeNodesGPU->copyToHost(treeNodesCPU);
+
+	b3AlignedObjectArray<b3BvhSubtreeInfo>	subTreesCPU;
+	subTreesGPU->copyToHost(subTreesCPU);
+
+	b3AlignedObjectArray<b3BvhInfo>	bvhInfoCPU;
+	bvhInfo->copyToHost(bvhInfoCPU);
+
+	b3AlignedObjectArray<b3Aabb> hostAabbsWorldSpace;
+	clAabbsWorldSpace.copyToHost(hostAabbsWorldSpace);
+
+	b3AlignedObjectArray<b3Aabb> hostAabbsLocalSpace;
+	clAabbsLocalSpace.copyToHost(hostAabbsLocalSpace);
+
+	b3AlignedObjectArray<b3Int4> hostPairs;
 	pairs->copyToHost(hostPairs);
 
 	b3AlignedObjectArray<b3RigidBodyCL> hostBodyBuf;
@@ -1745,7 +2814,14 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 		contactOut->copyToHost(hostContacts);
 	}
 
-	hostContacts.resize(nPairs);
+	b3AlignedObjectArray<b3Contact4> oldHostContacts;
+	if (oldContacts->size())
+	{
+		oldContacts->copyToHost(oldHostContacts);
+	}
+
+
+	hostContacts.resize(maxContactCapacity);
 
 	for (int i=0;i<nPairs;i++)
 	{
@@ -1788,12 +2864,22 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 			
 		}
 
+			if (hostCollidables[collidableIndexA].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS &&
+			hostCollidables[collidableIndexB].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
+		{
+			computeContactCompoundCompound(i,bodyIndexB,bodyIndexA,collidableIndexB,collidableIndexA,&hostBodyBuf[0],
+			&hostCollidables[0],&hostConvexData[0],&cpuChildShapes[0], hostAabbsWorldSpace,hostAabbsLocalSpace,hostVertices,hostUniqueEdges,hostIndices,hostFaces,&hostContacts[0],
+			nContacts,maxContactCapacity,treeNodesCPU,subTreesCPU,bvhInfoCPU);	
+//			printf("convex-plane\n");
+			
+		}
+
 
 				if (hostCollidables[collidableIndexA].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS &&
 			hostCollidables[collidableIndexB].m_shapeType == SHAPE_PLANE)
 		{
 			computeContactPlaneCompound(i,bodyIndexB,bodyIndexA,collidableIndexB,collidableIndexA,&hostBodyBuf[0],
-			&hostCollidables[0],&hostConvexData[0],&hostVertices[0],&hostIndices[0],&hostFaces[0],&hostContacts[0],nContacts,maxContactCapacity);
+			&hostCollidables[0],&hostConvexData[0],&cpuChildShapes[0], &hostVertices[0],&hostIndices[0],&hostFaces[0],&hostContacts[0],nContacts,maxContactCapacity);
 //			printf("convex-plane\n");
 			
 		}
@@ -1802,7 +2888,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 			hostCollidables[collidableIndexB].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
 		{
 			computeContactPlaneCompound(i,bodyIndexA,bodyIndexB,collidableIndexA,collidableIndexB,&hostBodyBuf[0],
-			&hostCollidables[0],&hostConvexData[0],&hostVertices[0],&hostIndices[0],&hostFaces[0],&hostContacts[0],nContacts,maxContactCapacity);
+			&hostCollidables[0],&hostConvexData[0],&cpuChildShapes[0],&hostVertices[0],&hostIndices[0],&hostFaces[0],&hostContacts[0],nContacts,maxContactCapacity);
 //			printf("plane-convex\n");
 			
 		}
@@ -1810,8 +2896,18 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 		if (hostCollidables[collidableIndexA].m_shapeType == SHAPE_CONVEX_HULL &&
 			hostCollidables[collidableIndexB].m_shapeType == SHAPE_CONVEX_HULL)
 		{
-			computeContactConvexConvex(i,bodyIndexA,bodyIndexB,collidableIndexA,collidableIndexB,hostBodyBuf,
-			hostCollidables,hostConvexData,hostVertices,hostUniqueEdges,hostIndices,hostFaces,hostContacts,nContacts,maxContactCapacity);
+			//printf("hostPairs[i].z=%d\n",hostPairs[i].z);
+			int contactIndex = computeContactConvexConvex2(i,bodyIndexA,bodyIndexB,collidableIndexA,collidableIndexB,hostBodyBuf,
+					hostCollidables,hostConvexData,hostVertices,hostUniqueEdges,hostIndices,hostFaces,hostContacts,nContacts,maxContactCapacity,oldHostContacts);
+			//int contactIndex = computeContactConvexConvex(hostPairs,i,bodyIndexA,bodyIndexB,collidableIndexA,collidableIndexB,hostBodyBuf,
+			//		hostCollidables,hostConvexData,hostVertices,hostUniqueEdges,hostIndices,hostFaces,hostContacts,nContacts,maxContactCapacity,
+			//		oldHostContacts);
+
+
+			if (contactIndex>=0)
+			{
+				hostPairs[i].z = contactIndex;
+			}
 //			printf("plane-convex\n");
 			
 		}
@@ -1819,9 +2915,16 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 
 	}
 
+	if (hostPairs.size())
+	{
+		pairs->copyFromHost(hostPairs);
+	}
+
+	hostContacts.resize(nContacts);
+
 	if (nContacts)
 		{
-			hostContacts.resize(nContacts);
+			
 			contactOut->copyFromHost(hostContacts);
 		}
 
@@ -1866,31 +2969,26 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 	B3_PROFILE("computeConvexConvexContactsGPUSAT");
    // printf("nContacts = %d\n",nContacts);
     
-	b3OpenCLArray<b3Vector3> sepNormals(m_context,m_queue);
-	sepNormals.resize(nPairs);
-	b3OpenCLArray<int> hasSeparatingNormals(m_context,m_queue);
-	hasSeparatingNormals.resize(nPairs);
+	
+	m_sepNormals.resize(nPairs);
+	m_hasSeparatingNormals.resize(nPairs);
 	
 	int concaveCapacity=maxTriConvexPairCapacity;
-	b3OpenCLArray<b3Vector3> concaveSepNormals(m_context,m_queue);
-	concaveSepNormals.resize(concaveCapacity);
+	m_concaveSepNormals.resize(concaveCapacity);
 
-	b3OpenCLArray<int> numConcavePairsOut(m_context,m_queue);
-	numConcavePairsOut.push_back(0);
+	m_numConcavePairsOut.resize(0);
+	m_numConcavePairsOut.push_back(0);
 
-	int compoundPairCapacity=65536*10;
-	b3OpenCLArray<b3CompoundOverlappingPair> gpuCompoundPairs(m_context,m_queue);
-	gpuCompoundPairs.resize(compoundPairCapacity);
+	
+	m_gpuCompoundPairs.resize(compoundPairCapacity);
 
-	b3OpenCLArray<b3Vector3> gpuCompoundSepNormals(m_context,m_queue);
-	gpuCompoundSepNormals.resize(compoundPairCapacity);
+	m_gpuCompoundSepNormals.resize(compoundPairCapacity);
 	
 	
-	b3OpenCLArray<int> gpuHasCompoundSepNormals(m_context,m_queue);
-	gpuHasCompoundSepNormals.resize(compoundPairCapacity);
+	m_gpuHasCompoundSepNormals.resize(compoundPairCapacity);
 	
-	b3OpenCLArray<int> numCompoundPairsOut(m_context,m_queue);
-	numCompoundPairsOut.push_back(0);
+	m_numCompoundPairsOut.resize(0);
+	m_numCompoundPairsOut.push_back(0);
 
 	int numCompoundPairs = 0;
 
@@ -1913,9 +3011,9 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 					b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
 					b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 					b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-					b3BufferInfoCL( clAabbsWS.getBufferCL(),true),
-					b3BufferInfoCL( sepNormals.getBufferCL()),
-					b3BufferInfoCL( hasSeparatingNormals.getBufferCL())
+					b3BufferInfoCL( clAabbsWorldSpace.getBufferCL(),true),
+					b3BufferInfoCL( m_sepNormals.getBufferCL()),
+					b3BufferInfoCL( m_hasSeparatingNormals.getBufferCL())
 				};
 
 				b3LauncherCL launcher(m_queue, m_findSeparatingAxisKernel);
@@ -1937,14 +3035,17 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 					if (treeNodesGPU->size() && treeNodesGPU->size())
 					{
 						B3_PROFILE("m_bvhTraversalKernel");
-						numConcavePairs = numConcavePairsOut.at(0);
+						
+						
+						numConcavePairs = m_numConcavePairsOut.at(0);
+						
 						b3LauncherCL launcher(m_queue, m_bvhTraversalKernel);
 						launcher.setBuffer( pairs->getBufferCL());
 						launcher.setBuffer(  bodyBuf->getBufferCL());
 						launcher.setBuffer( gpuCollidables.getBufferCL());
-						launcher.setBuffer( clAabbsWS.getBufferCL());
+						launcher.setBuffer( clAabbsWorldSpace.getBufferCL());
 						launcher.setBuffer( triangleConvexPairsOut.getBufferCL());
-						launcher.setBuffer( numConcavePairsOut.getBufferCL());
+						launcher.setBuffer( m_numConcavePairsOut.getBufferCL());
 						launcher.setBuffer( subTreesGPU->getBufferCL());
 						launcher.setBuffer( treeNodesGPU->getBufferCL());
 						launcher.setBuffer( bvhInfo->getBufferCL());
@@ -1954,12 +3055,12 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 						int num = nPairs;
 						launcher.launch1D( num);
 						clFinish(m_queue);
-						numConcavePairs = numConcavePairsOut.at(0);
+						numConcavePairs = m_numConcavePairsOut.at(0);
 						
 						if (numConcavePairs > maxTriConvexPairCapacity)
 						{
 							static int exceeded_maxTriConvexPairCapacity_count = 0;
-							printf("Rxceeded %d times the maxTriConvexPairCapacity (found %d but max is %d)\n", exceeded_maxTriConvexPairCapacity_count++,
+							b3Error("Rxceeded %d times the maxTriConvexPairCapacity (found %d but max is %d)\n", exceeded_maxTriConvexPairCapacity_count++,
 								numConcavePairs,maxTriConvexPairCapacity);
 							numConcavePairs = maxTriConvexPairCapacity;
 						}
@@ -1978,8 +3079,8 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 								b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 								b3BufferInfoCL( gpuIndices.getBufferCL(),true),
 								b3BufferInfoCL( gpuChildShapes.getBufferCL(),true),
-								b3BufferInfoCL( clAabbsWS.getBufferCL(),true),
-								b3BufferInfoCL( concaveSepNormals.getBufferCL())
+								b3BufferInfoCL( clAabbsWorldSpace.getBufferCL(),true),
+								b3BufferInfoCL( m_concaveSepNormals.getBufferCL())
 							};
 
 							b3LauncherCL launcher(m_queue, m_findConcaveSeparatingAxisKernel);
@@ -1992,7 +3093,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 							clFinish(m_queue);
 
 //							b3AlignedObjectArray<b3Vector3> cpuCompoundSepNormals;
-	//						concaveSepNormals.copyToHost(cpuCompoundSepNormals);
+	//						m_concaveSepNormals.copyToHost(cpuCompoundSepNormals);
 		//					b3AlignedObjectArray<b3Int4> cpuConcavePairs;
 			//				triangleConvexPairsOut.copyToHost(cpuConcavePairs);
 
@@ -2002,9 +3103,9 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				}
 			}
 			
-			numCompoundPairs = numCompoundPairsOut.at(0);
-
-			if (1)
+			numCompoundPairs = m_numCompoundPairsOut.at(0);
+			bool useGpuFindCompoundPairs=true;
+			if (useGpuFindCompoundPairs)
 			{
 				B3_PROFILE("findCompoundPairsKernel");
 				b3BufferInfoCL bInfo[] = 
@@ -2017,10 +3118,13 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 					b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
 					b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 					b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-					b3BufferInfoCL( clAabbsWS.getBufferCL(),true),
+					b3BufferInfoCL( clAabbsLocalSpace.getBufferCL(),true),
 					b3BufferInfoCL( gpuChildShapes.getBufferCL(),true),
-					b3BufferInfoCL( gpuCompoundPairs.getBufferCL()),
-					b3BufferInfoCL( numCompoundPairsOut.getBufferCL())
+					b3BufferInfoCL( m_gpuCompoundPairs.getBufferCL()),
+					b3BufferInfoCL( m_numCompoundPairsOut.getBufferCL()),
+					b3BufferInfoCL(subTreesGPU->getBufferCL()),
+					b3BufferInfoCL(treeNodesGPU->getBufferCL()),
+					b3BufferInfoCL(bvhInfo->getBufferCL())
 				};
 
 				b3LauncherCL launcher(m_queue, m_findCompoundPairsKernel);
@@ -2031,17 +3135,107 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				int num = nPairs;
 				launcher.launch1D( num);
 				clFinish(m_queue);
+
+				numCompoundPairs = m_numCompoundPairsOut.at(0);
+				//printf("numCompoundPairs =%d\n",numCompoundPairs );
+				if (numCompoundPairs)
+				{
+					//printf("numCompoundPairs=%d\n",numCompoundPairs);
+				}
+				
+
+			} else
+			{
+
+
+				b3AlignedObjectArray<b3QuantizedBvhNode>	treeNodesCPU;
+				treeNodesGPU->copyToHost(treeNodesCPU);
+
+				b3AlignedObjectArray<b3BvhSubtreeInfo>	subTreesCPU;
+				subTreesGPU->copyToHost(subTreesCPU);
+
+				b3AlignedObjectArray<b3BvhInfo>	bvhInfoCPU;
+				bvhInfo->copyToHost(bvhInfoCPU);
+
+				b3AlignedObjectArray<b3Aabb> hostAabbsWorldSpace;
+				clAabbsWorldSpace.copyToHost(hostAabbsWorldSpace);
+
+				b3AlignedObjectArray<b3Aabb> hostAabbsLocalSpace;
+				clAabbsLocalSpace.copyToHost(hostAabbsLocalSpace);
+
+				b3AlignedObjectArray<b3Int4> hostPairs;
+				pairs->copyToHost(hostPairs);
+
+				b3AlignedObjectArray<b3RigidBodyCL> hostBodyBuf;
+				bodyBuf->copyToHost(hostBodyBuf);
+
+				int numCompoundPairsOut=0;
+
+				b3AlignedObjectArray<b3Int4> cpuCompoundPairsOut;
+				cpuCompoundPairsOut.resize(compoundPairCapacity);
+
+				b3AlignedObjectArray<b3Collidable> hostCollidables;
+				gpuCollidables.copyToHost(hostCollidables);
+	
+				b3AlignedObjectArray<b3GpuChildShape> cpuChildShapes;
+				gpuChildShapes.copyToHost(cpuChildShapes);
+	
+				b3AlignedObjectArray<b3ConvexPolyhedronCL> hostConvexData;
+				convexData.copyToHost(hostConvexData);
+
+				b3AlignedObjectArray<b3Vector3> hostVertices;
+				gpuVertices.copyToHost(hostVertices);
+
+	
+
+
+				for (int pairIndex=0;pairIndex<nPairs;pairIndex++)
+				{
+					int bodyIndexA = hostPairs[pairIndex].x;
+					int bodyIndexB = hostPairs[pairIndex].y;
+					int collidableIndexA = hostBodyBuf[bodyIndexA].m_collidableIdx;
+					int collidableIndexB = hostBodyBuf[bodyIndexB].m_collidableIdx;
+
+					findCompoundPairsKernel( 
+								pairIndex,
+								bodyIndexA,
+								bodyIndexB,
+								collidableIndexA,
+								collidableIndexB,
+								&hostBodyBuf[0],
+								&hostCollidables[0],
+								&hostConvexData[0],
+								hostVertices,
+								hostAabbsWorldSpace,
+								hostAabbsLocalSpace,
+								&cpuChildShapes[0],
+								&cpuCompoundPairsOut[0],
+								&numCompoundPairsOut,
+								compoundPairCapacity,
+								treeNodesCPU,
+								subTreesCPU,
+								bvhInfoCPU
+								);
+				}
+				if (numCompoundPairsOut)
+				{
+					printf("numCompoundPairsOut=%d\n",numCompoundPairsOut);
+				}
+				
+
 			}
 
-
-			numCompoundPairs = numCompoundPairsOut.at(0);
-			//printf("numCompoundPairs =%d\n",numCompoundPairs );
 			if (numCompoundPairs > compoundPairCapacity)
+			{
+				b3Error("Exceeded compound pair capacity (%d/%d)\n", numCompoundPairs,  compoundPairCapacity);
 				numCompoundPairs = compoundPairCapacity;
+			}
 
-			gpuCompoundPairs.resize(numCompoundPairs);
-			gpuHasCompoundSepNormals.resize(numCompoundPairs);
-			gpuCompoundSepNormals.resize(numCompoundPairs);
+			
+
+			m_gpuCompoundPairs.resize(numCompoundPairs);
+			m_gpuHasCompoundSepNormals.resize(numCompoundPairs);
+			m_gpuCompoundSepNormals.resize(numCompoundPairs);
 			
 
 			if (numCompoundPairs)
@@ -2050,7 +3244,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				B3_PROFILE("processCompoundPairsPrimitivesKernel");
 				b3BufferInfoCL bInfo[] = 
 				{ 
-					b3BufferInfoCL( gpuCompoundPairs.getBufferCL(), true ), 
+					b3BufferInfoCL( m_gpuCompoundPairs.getBufferCL(), true ), 
 					b3BufferInfoCL( bodyBuf->getBufferCL(),true), 
 					b3BufferInfoCL( gpuCollidables.getBufferCL(),true), 
 					b3BufferInfoCL( convexData.getBufferCL(),true),
@@ -2058,7 +3252,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 					b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
 					b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 					b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-					b3BufferInfoCL( clAabbsWS.getBufferCL(),true),
+					b3BufferInfoCL( clAabbsWorldSpace.getBufferCL(),true),
 					b3BufferInfoCL( gpuChildShapes.getBufferCL(),true),
 					b3BufferInfoCL( contactOut->getBufferCL()),
 					b3BufferInfoCL( m_totalContactsOut.getBufferCL())	
@@ -2073,6 +3267,12 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				launcher.launch1D( num);
 				clFinish(m_queue);
 				nContacts = m_totalContactsOut.at(0);
+				if (nContacts>maxContactCapacity)
+				{
+					
+					b3Error("Error: contacts exceeds capacity (%d/%d)\n", nContacts, maxContactCapacity);
+					nContacts = maxContactCapacity;
+				}
 #endif
 			}
 			
@@ -2083,7 +3283,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				B3_PROFILE("processCompoundPairsKernel");
 				b3BufferInfoCL bInfo[] = 
 				{ 
-					b3BufferInfoCL( gpuCompoundPairs.getBufferCL(), true ), 
+					b3BufferInfoCL( m_gpuCompoundPairs.getBufferCL(), true ), 
 					b3BufferInfoCL( bodyBuf->getBufferCL(),true), 
 					b3BufferInfoCL( gpuCollidables.getBufferCL(),true), 
 					b3BufferInfoCL( convexData.getBufferCL(),true),
@@ -2091,10 +3291,10 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 					b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
 					b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 					b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-					b3BufferInfoCL( clAabbsWS.getBufferCL(),true),
+					b3BufferInfoCL( clAabbsWorldSpace.getBufferCL(),true),
 					b3BufferInfoCL( gpuChildShapes.getBufferCL(),true),
-					b3BufferInfoCL( gpuCompoundSepNormals.getBufferCL()),
-					b3BufferInfoCL( gpuHasCompoundSepNormals.getBufferCL())
+					b3BufferInfoCL( m_gpuCompoundSepNormals.getBufferCL()),
+					b3BufferInfoCL( m_gpuHasCompoundSepNormals.getBufferCL())
 				};
 
 				b3LauncherCL launcher(m_queue, m_processCompoundPairsKernel);
@@ -2138,7 +3338,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
 				b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 				b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-				b3BufferInfoCL( clAabbsWS.getBufferCL(),true),
+				b3BufferInfoCL( clAabbsWorldSpace.getBufferCL(),true),
 				b3BufferInfoCL( contactOut->getBufferCL()),
 				b3BufferInfoCL( m_totalContactsOut.getBufferCL())
 			};
@@ -2153,6 +3353,11 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 			launcher.launch1D( num);
 			clFinish(m_queue);
 			nContacts = m_totalContactsOut.at(0);
+			if (nContacts >= maxContactCapacity)
+			{
+				b3Error("Error: contacts exceeds capacity (%d/%d)\n", nContacts, maxContactCapacity);
+				nContacts = maxContactCapacity;
+			}
 		}
 		
 	}
@@ -2192,7 +3397,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 				b3BufferInfoCL( gpuIndices.getBufferCL(),true),
 				b3BufferInfoCL( gpuChildShapes.getBufferCL(),true),
-				b3BufferInfoCL( concaveSepNormals.getBufferCL()),
+				b3BufferInfoCL( m_concaveSepNormals.getBufferCL()),
 				b3BufferInfoCL( contactOut->getBufferCL()),
 				b3BufferInfoCL( m_totalContactsOut.getBufferCL())	
 			};
@@ -2256,8 +3461,8 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
                 b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
                 b3BufferInfoCL( gpuFaces.getBufferCL(),true), 
                 b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-                b3BufferInfoCL( sepNormals.getBufferCL()),
-                b3BufferInfoCL( hasSeparatingNormals.getBufferCL()),
+                b3BufferInfoCL( m_sepNormals.getBufferCL()),
+                b3BufferInfoCL( m_hasSeparatingNormals.getBufferCL()),
                 b3BufferInfoCL( clippingFacesOutGPU.getBufferCL()),
                 b3BufferInfoCL( worldVertsA1GPU.getBufferCL()),
                 b3BufferInfoCL( worldNormalsAGPU.getBufferCL()),
@@ -2283,13 +3488,13 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
             {
 				B3_PROFILE("clipFacesAndContactReductionKernel");
 				//nContacts = m_totalContactsOut.at(0);
-				//int h = hasSeparatingNormals.at(0);
+				//int h = m_hasSeparatingNormals.at(0);
 				//int4 p = clippingFacesOutGPU.at(0);
                 b3BufferInfoCL bInfo[] = {
                     b3BufferInfoCL( pairs->getBufferCL(), true ),
                     b3BufferInfoCL( bodyBuf->getBufferCL(),true),
-                    b3BufferInfoCL( sepNormals.getBufferCL()),
-                    b3BufferInfoCL( hasSeparatingNormals.getBufferCL()),
+                    b3BufferInfoCL( m_sepNormals.getBufferCL()),
+                    b3BufferInfoCL( m_hasSeparatingNormals.getBufferCL()),
 					b3BufferInfoCL( contactOut->getBufferCL()),
                     b3BufferInfoCL( clippingFacesOutGPU.getBufferCL()),
                     b3BufferInfoCL( worldVertsA1GPU.getBufferCL()),
@@ -2334,8 +3539,8 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
                         {
                             b3BufferInfoCL( pairs->getBufferCL(), true ),
                             b3BufferInfoCL( bodyBuf->getBufferCL(),true),
-                            b3BufferInfoCL( sepNormals.getBufferCL()),
-                            b3BufferInfoCL( hasSeparatingNormals.getBufferCL()),
+                            b3BufferInfoCL( m_sepNormals.getBufferCL()),
+                            b3BufferInfoCL( m_hasSeparatingNormals.getBufferCL()),
                             b3BufferInfoCL( contactOut->getBufferCL()),
                             b3BufferInfoCL( clippingFacesOutGPU.getBufferCL()),
                             b3BufferInfoCL( worldVertsB2GPU.getBufferCL()),
@@ -2359,7 +3564,7 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
                 }
             }
 	}            
-	else
+	else//breakupKernel
 	{
 	 
 		if (nPairs)
@@ -2373,28 +3578,35 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				b3BufferInfoCL( gpuUniqueEdges.getBufferCL(),true),
 				b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 				b3BufferInfoCL( gpuIndices.getBufferCL(),true),
-				b3BufferInfoCL( sepNormals.getBufferCL()),
-				b3BufferInfoCL( hasSeparatingNormals.getBufferCL()),
+				b3BufferInfoCL( m_sepNormals.getBufferCL()),
+				b3BufferInfoCL( m_hasSeparatingNormals.getBufferCL()),
 				b3BufferInfoCL( contactOut->getBufferCL()),
 				b3BufferInfoCL( m_totalContactsOut.getBufferCL())	
 			};
 			b3LauncherCL launcher(m_queue, m_clipHullHullKernel);
 			launcher.setBuffers( bInfo, sizeof(bInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst( nPairs  );
+			launcher.setConst(maxContactCapacity);
+			
 			int num = nPairs;
 			launcher.launch1D( num);
 			clFinish(m_queue);
 		
 			nContacts = m_totalContactsOut.at(0);
+			if (nContacts >= maxContactCapacity)
+			{
+				b3Error("Exceeded contact capacity (%d/%d)\n",nContacts,maxContactCapacity);
+				nContacts = maxContactCapacity;
+			}
 			contactOut->resize(nContacts);
 		}
 
-		int nCompoundsPairs = gpuCompoundPairs.size();
+		int nCompoundsPairs = m_gpuCompoundPairs.size();
 
 		if (nCompoundsPairs)
 		{
 				b3BufferInfoCL bInfo[] = {
-				b3BufferInfoCL( gpuCompoundPairs.getBufferCL(), true ), 
+				b3BufferInfoCL( m_gpuCompoundPairs.getBufferCL(), true ), 
 				b3BufferInfoCL( bodyBuf->getBufferCL(),true), 
 				b3BufferInfoCL( gpuCollidables.getBufferCL(),true), 
 				b3BufferInfoCL( convexData.getBufferCL(),true),
@@ -2403,8 +3615,8 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 				b3BufferInfoCL( gpuFaces.getBufferCL(),true),
 				b3BufferInfoCL( gpuIndices.getBufferCL(),true),
 				b3BufferInfoCL( gpuChildShapes.getBufferCL(),true),
-				b3BufferInfoCL( gpuCompoundSepNormals.getBufferCL(),true),
-				b3BufferInfoCL( gpuHasCompoundSepNormals.getBufferCL(),true),
+				b3BufferInfoCL( m_gpuCompoundSepNormals.getBufferCL(),true),
+				b3BufferInfoCL( m_gpuHasCompoundSepNormals.getBufferCL(),true),
 				b3BufferInfoCL( contactOut->getBufferCL()),
 				b3BufferInfoCL( m_totalContactsOut.getBufferCL())	
 			};
@@ -2418,6 +3630,12 @@ void GpuSatCollision::computeConvexConvexContactsGPUSAT( const b3OpenCLArray<b3I
 			clFinish(m_queue);
 		
 			nContacts = m_totalContactsOut.at(0);
+			if (nContacts>maxContactCapacity)
+			{
+					
+				b3Error("Error: contacts exceeds capacity (%d/%d)\n", nContacts, maxContactCapacity);
+				nContacts = maxContactCapacity;
+			}
 			contactOut->resize(nContacts);
 		}
 		}

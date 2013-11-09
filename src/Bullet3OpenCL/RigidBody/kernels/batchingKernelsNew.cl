@@ -13,6 +13,7 @@ subject to the following restrictions:
 */
 //Originally written by Erwin Coumans
 
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Contact4Data.h"
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 #pragma OPENCL EXTENSION cl_khr_local_int32_base_atomics : enable
@@ -65,16 +66,7 @@ typedef unsigned char u8;
 
 
 
-typedef struct 
-{
-	float4 m_worldPos[4];
-	float4 m_worldNormal;
-	u32 m_coeffs;
-	int m_batchIdx;
 
-	int m_bodyAPtrAndSignBit;//sign bit set for fixed objects
-	int m_bodyBPtrAndSignBit;
-}Contact4;
 
 typedef struct 
 {
@@ -96,7 +88,7 @@ typedef struct
 
 
 //	batching on the GPU
-__kernel void CreateBatchesBruteForce( __global Contact4* gConstraints, 	__global const u32* gN, __global const u32* gStart, int m_staticIdx )
+__kernel void CreateBatchesBruteForce( __global struct b3Contact4Data* gConstraints, 	__global const u32* gN, __global const u32* gStart, int m_staticIdx )
 {
 	int wgIdx = GET_GROUP_IDX;
 	int lIdx = GET_LOCAL_IDX;
@@ -149,13 +141,13 @@ u32 tryWrite(__local u32* buff, int idx)
 
 
 //	batching on the GPU
-__kernel void CreateBatchesNew( __global Contact4* gConstraints, __global const u32* gN, __global const u32* gStart, int staticIdx )
+__kernel void CreateBatchesNew( __global struct b3Contact4Data* gConstraints, __global const u32* gN, __global const u32* gStart, int staticIdx )
 {
 	int wgIdx = GET_GROUP_IDX;
 	int lIdx = GET_LOCAL_IDX;
 	const int numConstraints = gN[wgIdx];
 	const int m_start = gStart[wgIdx];
-		
+	b3Contact4Data_t tmp;
 	
 	__local u32 ldsFixedBuffer[CHECK_SIZE];
 		
@@ -167,7 +159,7 @@ __kernel void CreateBatchesNew( __global Contact4* gConstraints, __global const 
 	{
 	
 		
-		__global Contact4* cs = &gConstraints[m_start];	
+		__global struct b3Contact4Data* cs = &gConstraints[m_start];	
 	
 		
 		int numValidConstraints = 0;
@@ -208,12 +200,12 @@ __kernel void CreateBatchesNew( __global Contact4* gConstraints, __global const 
 
 					if (i!=numValidConstraints)
 					{
-						//btSwap(cs[i],cs[numValidConstraints]);
-						
-						Contact4 tmp = cs[i];
+
+						tmp = cs[i];
 						cs[i] = cs[numValidConstraints];
-						cs[numValidConstraints] = tmp;
-						
+						cs[numValidConstraints]  = tmp;
+
+
 					}
 
 					numValidConstraints++;

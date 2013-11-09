@@ -16,7 +16,7 @@ subject to the following restrictions:
 #ifndef B3_SOLVER_CONSTRAINT_H
 #define B3_SOLVER_CONSTRAINT_H
 
-class	b3RigidBody;
+struct b3RigidBody;
 #include "Bullet3Common/b3Vector3.h"
 #include "Bullet3Common/b3Matrix3x3.h"
 //#include "b3JacobianEntry.h"
@@ -42,7 +42,8 @@ B3_ATTRIBUTE_ALIGNED16 (struct)	b3SolverConstraint
 	
 	mutable b3SimdScalar	m_appliedPushImpulse;
 	mutable b3SimdScalar	m_appliedImpulse;
-
+	int m_padding1;
+	int m_padding2;
 	b3Scalar	m_friction;
 	b3Scalar	m_jacDiagABInv;
 	b3Scalar		m_rhs;

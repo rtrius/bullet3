@@ -128,7 +128,7 @@ public:
 	*  @param i Column number 0 indexed */
 	B3_FORCE_INLINE b3Vector3 getColumn(int i) const
 	{
-		return b3Vector3(m_el[0][i],m_el[1][i],m_el[2][i]);
+		return b3MakeVector3(m_el[0][i],m_el[1][i],m_el[2][i]);
 	}
 
 
@@ -255,9 +255,9 @@ public:
         V2 = V2 + b3v0100;
         V3 = V3 + b3v0010;
         
-        m_el[0] = V1; 
-        m_el[1] = V2;
-        m_el[2] = V3;
+        m_el[0] = b3MakeVector3(V1); 
+        m_el[1] = b3MakeVector3(V2);
+        m_el[2] = b3MakeVector3(V3);
     #else    
 		b3Scalar xs = q.getX() * s,   ys = q.getY() * s,   zs = q.getZ() * s;
 		b3Scalar wx = q.getW() * xs,  wy = q.getW() * ys,  wz = q.getW() * zs;
@@ -312,9 +312,9 @@ public:
 	void setIdentity()
 	{ 
 #if (defined(B3_USE_SSE_IN_API)&& defined (B3_USE_SSE)) || defined(B3_USE_NEON)
-			m_el[0] = b3v1000; 
-			m_el[1] = b3v0100;
-			m_el[2] = b3v0010;
+			m_el[0] = b3MakeVector3(b3v1000); 
+			m_el[1] = b3MakeVector3(b3v0100);
+			m_el[2] = b3MakeVector3(b3v0010);
 #else
 		setValue(b3Scalar(1.0), b3Scalar(0.0), b3Scalar(0.0), 
 			b3Scalar(0.0), b3Scalar(1.0), b3Scalar(0.0), 
@@ -1019,7 +1019,7 @@ b3Matrix3x3::adjoint() const
 B3_FORCE_INLINE b3Matrix3x3 
 b3Matrix3x3::inverse() const
 {
-	b3Vector3 co(cofac(1, 1, 2, 2), cofac(1, 2, 2, 0), cofac(1, 0, 2, 1));
+	b3Vector3 co = b3MakeVector3(cofac(1, 1, 2, 2), cofac(1, 2, 2, 0), cofac(1, 0, 2, 1));
 	b3Scalar det = (*this)[0].dot(co);
 	b3FullAssert(det != b3Scalar(0.0));
 	b3Scalar s = b3Scalar(1.0) / det;
@@ -1143,7 +1143,7 @@ operator*(const b3Matrix3x3& m, const b3Vector3& v)
 #if (defined (B3_USE_SSE_IN_API) && defined (B3_USE_SSE))|| defined (B3_USE_NEON)
     return v.dot3(m[0], m[1], m[2]);
 #else
-	return b3Vector3(m[0].dot(v), m[1].dot(v), m[2].dot(v));
+	return b3MakeVector3(m[0].dot(v), m[1].dot(v), m[2].dot(v));
 #endif
 }
 
@@ -1164,7 +1164,7 @@ operator*(const b3Vector3& v, const b3Matrix3x3& m)
     c0 = _mm_add_ps(c0, c1);
     c2 = _mm_mul_ps(c2, _mm_and_ps(m[2].mVec128, b3vFFF0fMask) );
     
-    return b3Vector3(_mm_add_ps(c0, c2));
+    return b3MakeVector3(_mm_add_ps(c0, c2));
 #elif defined(B3_USE_NEON)
     const float32x4_t vv = v.mVec128;
     const float32x2_t vlo = vget_low_f32(vv);
@@ -1182,9 +1182,9 @@ operator*(const b3Vector3& v, const b3Matrix3x3& m)
     c0 = vaddq_f32(c0, c1);
     c0 = vaddq_f32(c0, c2);
     
-    return b3Vector3(c0);
+    return b3MakeVector3(c0);
 #else
-	return b3Vector3(m.tdotx(v), m.tdoty(v), m.tdotz(v));
+	return b3MakeVector3(m.tdotx(v), m.tdoty(v), m.tdotz(v));
 #endif
 }
 
