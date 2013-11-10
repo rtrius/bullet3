@@ -17,7 +17,7 @@ subject to the following restrictions:
 
 #include "b3FluidSph.h"
 
-#include "Bullet3Common/b3Quickprof.h"		//B3_PROFILE(name) macro
+#include "Bullet3Common/b3Logging.h"		//B3_PROFILE(name) macro
 #include "Bullet3Common/b3Random.h"			//b3rand(), B3_RAND_MAX
 #include "Bullet3Geometry/b3AabbUtil.h"		//b3TestPointAgainstAabb2()
 
@@ -88,7 +88,7 @@ b3Scalar b3FluidSph::getValue(b3Scalar x, b3Scalar y, b3Scalar z) const
 	const b3Scalar R2 = worldSphRadius * worldSphRadius;
 	
 	b3FluidSortingGrid::FoundCells foundCells;
-	m_grid.findCells( b3Vector3(x,y,z), foundCells );
+	m_grid.findCells( b3MakeVector3(x,y,z), foundCells );
 		
 	b3Scalar sum = 0.0;
 	for(int cell = 0; cell < b3FluidSortingGrid::NUM_FOUND_CELLS; cell++) 
@@ -115,9 +115,9 @@ b3Vector3 b3FluidSph::getGradient(b3Scalar x, b3Scalar y, b3Scalar z) const
 	const b3Scalar R2 = worldSphRadius*worldSphRadius;
 	
 	b3FluidSortingGrid::FoundCells foundCells;
-	m_grid.findCells( b3Vector3(x,y,z), foundCells );
+	m_grid.findCells( b3MakeVector3(x,y,z), foundCells );
 	
-	b3Vector3 normal(0,0,0);
+	b3Vector3 normal = b3MakeVector3(0,0,0);
 	for(int cell = 0; cell < b3FluidSortingGrid::NUM_FOUND_CELLS; cell++)
 	{
 		b3FluidGridIterator& FI = foundCells.m_iterators[cell];
@@ -134,7 +134,7 @@ b3Vector3 b3FluidSph::getGradient(b3Scalar x, b3Scalar y, b3Scalar z) const
 			{
 				distanceSquared = b3Scalar(2.0)*R2 / (distanceSquared*distanceSquared);
 				
-				b3Vector3 particleNorm(dx * distanceSquared, dy * distanceSquared, dz * distanceSquared);
+				b3Vector3 particleNorm = b3MakeVector3(dx * distanceSquared, dy * distanceSquared, dz * distanceSquared);
 				normal += particleNorm;
 			}
 		}
@@ -203,11 +203,11 @@ void b3FluidEmitter::emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing)
 		b3Scalar ang_rand = ( static_cast<b3Scalar>(b3rand()*b3Scalar(2.0)/B3_RAND_MAX) - b3Scalar(1.0) ) * m_yawSpread;
 		b3Scalar tilt_rand = ( static_cast<b3Scalar>(b3rand()*b3Scalar(2.0)/B3_RAND_MAX) - b3Scalar(1.0) ) * m_pitchSpread;
 		
-		b3Vector3 dir( 	b3Cos((m_yaw + ang_rand) * B3_RADS_PER_DEG) * b3Sin((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity,
-						b3Cos((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity,
-						b3Sin((m_yaw + ang_rand) * B3_RADS_PER_DEG) * b3Sin((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity );
+		b3Vector3 dir = b3MakeVector3( 	b3Cos((m_yaw + ang_rand) * B3_RADS_PER_DEG) * b3Sin((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity,
+										b3Cos((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity,
+										b3Sin((m_yaw + ang_rand) * B3_RADS_PER_DEG) * b3Sin((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity );
 		
-		b3Vector3 position( spacing*(i/x), spacing*(i%x), 0 );
+		b3Vector3 position = b3MakeVector3( spacing*(i/x), spacing*(i%x), 0 );
 		position += m_position;
 		
 		int index = fluid->addParticle(position);
@@ -228,7 +228,7 @@ void b3FluidEmitter::addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3
 		for(b3Scalar y = min.getY(); y <= max.getY(); y += spacing) 
 			for(b3Scalar x = min.getX(); x <= max.getX(); x += spacing) 
 			{
-				fluid->addParticle( b3Vector3(x,y,z) );
+				fluid->addParticle( b3MakeVector3(x,y,z) );
 			}
 }
 

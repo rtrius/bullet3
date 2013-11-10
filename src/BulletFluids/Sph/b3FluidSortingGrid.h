@@ -17,7 +17,7 @@ subject to the following restrictions:
 
 #include "Bullet3Common/b3Vector3.h"
 #include "Bullet3Common/b3AlignedObjectArray.h"
-#include "Bullet3Common/b3Quickprof.h"
+#include "Bullet3Common/b3Logging.h"
 
 #include "b3FluidParticles.h"
 
@@ -172,7 +172,12 @@ private:
 	b3AlignedObjectArray<void*> m_tempBufferVoid;
 	
 public:
-	b3FluidSortingGrid() : m_pointMin(0,0,0), m_pointMax(0,0,0), m_gridCellSize(1) {}
+	b3FluidSortingGrid()
+	{
+		m_pointMin.setValue(0,0,0);
+		m_pointMax.setValue(0,0,0); 
+		m_gridCellSize = b3Scalar(1.0);
+	}
 
 	void insertParticles(b3FluidParticles& fluids);
 	

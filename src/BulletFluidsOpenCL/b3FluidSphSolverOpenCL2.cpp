@@ -14,7 +14,7 @@ subject to the following restrictions:
 */
 #include "b3FluidSphSolverOpenCL2.h"
 
-#include "Bullet3Common/b3Quickprof.h"		//B3_PROFILE(name) macro
+#include "Bullet3Common/b3Logging.h"		//B3_PROFILE(name) macro
 
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
@@ -98,12 +98,12 @@ void accumulateBoundaryImpulse(const b3FluidSphParametersGlobal& FG, b3Scalar si
 	const b3Vector3& vel = particles.m_vel[i];
 	
 	b3Vector3& impulse = out_accumulatedImpulse;
-	resolveAabbCollision_impulse( FG, FL, vel, b3Vector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3Vector3(-1.0, 0.0, 0.0), ( boundaryMax.getX() - pos.getX() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3Vector3(0.0,  1.0, 0.0), ( pos.getY() - boundaryMin.getY() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3Vector3(0.0, -1.0, 0.0), ( boundaryMax.getY() - pos.getY() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3Vector3(0.0, 0.0,  1.0), ( pos.getZ() - boundaryMin.getZ() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3Vector3(0.0, 0.0, -1.0), ( boundaryMax.getZ() - pos.getZ() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(-1.0, 0.0, 0.0), ( boundaryMax.getX() - pos.getX() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0,  1.0, 0.0), ( pos.getY() - boundaryMin.getY() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0, -1.0, 0.0), ( boundaryMax.getY() - pos.getY() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0, 0.0,  1.0), ( pos.getZ() - boundaryMin.getZ() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0, 0.0, -1.0), ( boundaryMax.getZ() - pos.getZ() )*simScale - radius, impulse );
 }
 void applyAabbImpulsesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid)
 {
@@ -116,7 +116,7 @@ void applyAabbImpulsesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidS
 	
 	for(int i = 0; i < particles.size(); ++i)
 	{
-		b3Vector3 aabbImpulse(0, 0, 0);
+		b3Vector3 aabbImpulse = b3MakeVector3(0, 0, 0);
 		accumulateBoundaryImpulse(FG, simScaleParticleRadius, FL, particles, i, aabbImpulse);
 		
 		b3Vector3& vel = particles.m_vel[i];

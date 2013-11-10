@@ -2,8 +2,8 @@
 #define B3_FLUID_SPH_RIGID_INTERACTOR_CL_H
 
 #include "Bullet3Collision/NarrowPhaseCollision/b3RigidBodyCL.h"
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3Collidable.h"
 
-#include "Bullet3OpenCL/NarrowPhaseCollision/b3Collidable.h"
 #include "Bullet3OpenCL/NarrowphaseCollision/b3ConvexPolyhedronCL.h"
 #include "Bullet3OpenCL/BroadphaseCollision/b3SapAabb.h"
 #include "Bullet3OpenCL/BroadphaseCollision/b3GpuSapBroadphase.h"
@@ -372,6 +372,7 @@ public:
 			launcher.setConst(numRigidBodies);
 			
 			launcher.launch1D(numRigidBodies);
+			clFinish(m_commandQueue);
 		}
 		else if(moduloGridData)
 		{
@@ -398,12 +399,12 @@ public:
 			launcher.setConst(numRigidBodies);
 			
 			launcher.launch1D(numRigidBodies);
+			clFinish(m_commandQueue);
 		}
 		else
 		{
 			b3Assert(0);	//No grid data
 		}
-			clFinish(m_commandQueue);
 	
 		//Midphase - for triangle mesh and compound shapes
 		{

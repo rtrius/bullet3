@@ -15,7 +15,7 @@ subject to the following restrictions:
 #include "b3FluidSortingGrid.h"
 
 #include "Bullet3Common/b3Vector3.h"
-#include "Bullet3Common/b3Quickprof.h"		//B3_PROFILE(name) macro
+#include "Bullet3Common/b3Logging.h"		//B3_PROFILE(name) macro
 
 #include "b3FluidParticles.h"
 

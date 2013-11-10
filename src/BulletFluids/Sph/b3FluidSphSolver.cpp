@@ -203,9 +203,9 @@ void computeForceNeighborTableSymmetric(const b3FluidSphParametersGlobal& FG, co
 		
 		b3Scalar dterm = c * sphData.m_invDensity[i] * sphData.m_invDensity[n];
 
-		b3Vector3 force(  (pterm * difference.getX() + vterm * (particles.m_vel_eval[n].getX() - particles.m_vel_eval[i].getX())) * dterm,
-						  (pterm * difference.getY() + vterm * (particles.m_vel_eval[n].getY() - particles.m_vel_eval[i].getY())) * dterm,
-						  (pterm * difference.getZ() + vterm * (particles.m_vel_eval[n].getZ() - particles.m_vel_eval[i].getZ())) * dterm );
+		b3Vector3 force = b3MakeVector3(  (pterm * difference.getX() + vterm * (particles.m_vel_eval[n].getX() - particles.m_vel_eval[i].getX())) * dterm,
+										(pterm * difference.getY() + vterm * (particles.m_vel_eval[n].getY() - particles.m_vel_eval[i].getY())) * dterm,
+										(pterm * difference.getZ() + vterm * (particles.m_vel_eval[n].getZ() - particles.m_vel_eval[i].getZ())) * dterm );
 		
 		sphData.m_sphForce[i] += force;
 		sphData.m_sphForce[n] += -force;

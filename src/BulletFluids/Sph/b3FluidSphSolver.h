@@ -17,7 +17,7 @@ subject to the following restrictions:
 #ifndef B3_FLUID_SPH_SOLVER_H
 #define B3_FLUID_SPH_SOLVER_H
 
-#include "Bullet3Common/b3Quickprof.h"		//B3_PROFILE(name) macro
+#include "Bullet3Common/b3Logging.h"		//B3_PROFILE(name) macro
 
 #include "b3FluidSph.h"
 

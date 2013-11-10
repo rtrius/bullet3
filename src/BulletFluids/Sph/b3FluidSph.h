@@ -167,7 +167,7 @@ public:
 		m_grid.getPointAabb(aabbMin, aabbMax);
 		
 		b3Scalar radius = m_localParameters.m_particleRadius;
-		b3Vector3 extent(radius, radius, radius);
+		b3Vector3 extent = b3MakeVector3(radius, radius, radius);
 		
 		aabbMin -= extent;
 		aabbMax += extent;
@@ -205,9 +205,16 @@ struct b3FluidEmitter
 	
 	bool m_useRandomIfAllParticlesAllocated;
 	
-	b3FluidEmitter() : m_position(0,0,0), m_yaw(0), m_pitch(0), 
-					 m_velocity(0), m_yawSpread(0), m_pitchSpread(0),
-					 m_useRandomIfAllParticlesAllocated(true) {}
+	b3FluidEmitter()
+	{
+		m_position.setValue(0,0,0);
+		m_yaw = b3Scalar(0);
+		m_pitch = b3Scalar(0); 
+		m_velocity = b3Scalar(0);
+		m_yawSpread = b3Scalar(0);
+		m_pitchSpread = b3Scalar(0);
+		m_useRandomIfAllParticlesAllocated = true;
+	}
 	
 	void emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing);
 
@@ -223,7 +230,11 @@ struct b3FluidAbsorber
 	//int m_maxParticlesRemoved;
 	//	add velocity limit / max particles removed, etc.?
 	
-	b3FluidAbsorber() : m_min(0,0,0), m_max(0,0,0) {}
+	b3FluidAbsorber()
+	{
+		m_min.setValue(0,0,0);
+		m_max.setValue(0,0,0);
+	}
 	
 	void absorb(b3FluidSph* fluid);
 };
