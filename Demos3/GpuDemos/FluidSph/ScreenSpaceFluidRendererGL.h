@@ -32,7 +32,6 @@ class ScreenSpaceFluidRendererGL
 	int m_windowHeight;
 
 	GLuint m_positionVertexBuffer;
-	GLfloat m_depthProjectionMatrix[16];	//Projection matrix when m_generateDepthProgram is run
 	
 	GLuint m_generateDepthProgram;
 	GLuint m_blurDepthProgram;
@@ -66,7 +65,8 @@ public:
 	ScreenSpaceFluidRendererGL(int screenWidth, int screenHeight);
 	~ScreenSpaceFluidRendererGL();
 
-	void render(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius, 
+	void render(const float* projectionMatrix, const float* modelviewMatrix, const float* modelviewProjectionMatrix,
+				const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius, 
 				float r, float g, float b, float absorptionR, float absorptionG, float absorptionB, bool copyVboFromCpuBuffer);
 	
 	//Use to load the Vertex Buffer Object(VBO) containing particle positions with OpenCL-OpenGL interop
@@ -95,13 +95,16 @@ public:
 private:
 	void initializeGlew();
 	
-	void render_stage1_generateDepthTexture(int numParticles, float sphereRadius);
-	void render_stage2_blurDepthTextureCurvatureFlow();
-	void render_stage2_blurDepthTextureBilateral();
-	void render_stage3_generateThickTexture(int numParticles, float sphereRadius);
-	void render_stage4_blurThickTexture();
-	void render_stage5_generateAbsorptionAndTransparencyTexture(float absorptionR, float absorptionG, float absorptionB);
-	void render_stage6_generateSurfaceTexture(bool useBlurredDepthTexture);
+	void render_stage1_generateDepthTexture(const float* projectionMatrix, const float* modelviewMatrix, 
+											const float* modelviewProjectionMatrix,
+											int numParticles, float sphereRadius);
+	void render_stage2_blurDepthTextureCurvatureFlow(const float* modelviewProjectionMatrix);
+	void render_stage2_blurDepthTextureBilateral(const float* modelviewProjectionMatrix);
+	void render_stage3_generateThickTexture(const float* modelviewProjectionMatrix, int numParticles, float sphereRadius);
+	void render_stage4_blurThickTexture(const float* modelviewProjectionMatrix);
+	void render_stage5_generateAbsorptionAndTransparencyTexture(const float* modelviewProjectionMatrix, 
+																float absorptionR, float absorptionG, float absorptionB);
+	void render_stage6_generateSurfaceTexture(const float* projectionMatrix, const float* modelviewProjectionMatrix, bool useBlurredDepthTexture);
 	
 	void renderFullScreenTexture(GLuint texture2d_0, GLuint texture2d_1, GLuint texture2d_2);
 	

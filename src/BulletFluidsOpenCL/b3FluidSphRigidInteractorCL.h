@@ -238,6 +238,9 @@ public:
 	void interact(const b3OpenCLArray<b3FluidSphParametersGlobal>& globalFluidParams, b3FluidSphOpenCL* fluidData, 
 					b3FluidSortingGridOpenCL* gridData, b3FluidHashGridOpenCL* moduloGridData, RigidBodyGpuData& rigidBodyData)
 	{
+		//	rigid body interaction currently not working; need to update kernels/data structures
+		return;
+	
 		b3Assert(gridData || moduloGridData);
 		b3Assert( !(gridData && moduloGridData));
 	
@@ -495,71 +498,74 @@ public:
 			clFinish(m_commandQueue);
 		}
 		
-		
-		//Map fluid contacts to rigid bodies
-		//Since applying impulses simultaneously(in 1 kernel) to both fluid and rigid body would require
-		//syncronization between threads, we instead run 2 kernels - the first iterates through all contacts with
-		//1 thread per fluid particle, and the second does the same with 1 thread per rigid body.
+		const bool APPLY_IMPULSES_TO_RIGID_BODIES = false;
+		if(APPLY_IMPULSES_TO_RIGID_BODIES)
 		{
-			//Clear rigid side contacts
+			//Map fluid contacts to rigid bodies
+			//Since applying impulses simultaneously(in 1 kernel) to both fluid and rigid body would require
+			//syncronization between threads, we instead run 2 kernels - the first iterates through all contacts with
+			//1 thread per fluid particle, and the second does the same with 1 thread per rigid body.
 			{
-				B3_PROFILE("m_clearRigidFluidContactsKernel");
+				//Clear rigid side contacts
+				{
+					B3_PROFILE("m_clearRigidFluidContactsKernel");
+				
+					b3BufferInfoCL bufferInfo[] = 
+					{ 
+						b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+					};
+					
+					b3LauncherCL launcher(m_commandQueue, m_clearRigidFluidContactsKernel);
+					launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+					launcher.setConst(numRigidBodies);
+					
+					launcher.launch1D(numRigidBodies);
+					clFinish(m_commandQueue);
+				}
+				
+				//Map fluid to rigid
+				{
+					B3_PROFILE("m_mapRigidFluidContactsKernel");
+					
+					b3BufferInfoCL bufferInfo[] = 
+					{ 
+						b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
+						b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+					};
+					
+					b3LauncherCL launcher(m_commandQueue, m_mapRigidFluidContactsKernel);
+					launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+					launcher.setConst(numFluidParticles);
+					
+					launcher.launch1D(numFluidParticles);
+					clFinish(m_commandQueue);
+				}
+			}
 			
+			//Resolve Collisions - apply impulses to rigid bodies
+			{
+				B3_PROFILE("m_resolveRigidFluidCollisionsKernel");
+					
 				b3BufferInfoCL bufferInfo[] = 
 				{ 
-					b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+					b3BufferInfoCL( globalFluidParams.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					
+					b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
+					b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
+					b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
+					b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() ),
+					
+					b3BufferInfoCL( m_fluidVelocities.getBufferCL() )
 				};
 				
-				b3LauncherCL launcher(m_commandQueue, m_clearRigidFluidContactsKernel);
+				b3LauncherCL launcher(m_commandQueue, m_resolveRigidFluidCollisionsKernel);
 				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 				launcher.setConst(numRigidBodies);
 				
 				launcher.launch1D(numRigidBodies);
 				clFinish(m_commandQueue);
 			}
-			
-			//Map fluid to rigid
-			{
-				B3_PROFILE("m_mapRigidFluidContactsKernel");
-				
-				b3BufferInfoCL bufferInfo[] = 
-				{ 
-					b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
-					b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
-				};
-				
-				b3LauncherCL launcher(m_commandQueue, m_mapRigidFluidContactsKernel);
-				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-				launcher.setConst(numFluidParticles);
-				
-				launcher.launch1D(numFluidParticles);
-				clFinish(m_commandQueue);
-			}
-		}
-		
-		//Resolve Collisions - apply impulses to rigid bodies
-		{
-			B3_PROFILE("m_resolveRigidFluidCollisionsKernel");
-				
-			b3BufferInfoCL bufferInfo[] = 
-			{ 
-				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
-				
-				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
-				b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
-				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
-				b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() ),
-				
-				b3BufferInfoCL( m_fluidVelocities.getBufferCL() )
-			};
-			
-			b3LauncherCL launcher(m_commandQueue, m_resolveRigidFluidCollisionsKernel);
-			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst(numRigidBodies);
-			
-			launcher.launch1D(numRigidBodies);
-			clFinish(m_commandQueue);
 		}
 		
 		clFinish(m_commandQueue);

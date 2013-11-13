@@ -1715,15 +1715,6 @@ void GLInstancingRenderer::renderSceneInternal(int renderMode)
 	err = glGetError();
 	
 	b3Assert(err==GL_NO_ERROR);
-
-	//ScreenSpaceFluidRendererGL uses OpenGL 2.x and will not work unless the matrices are loaded here
-	//Remove this after updating it to OpenGL 3.x
-	{
-		glMatrixMode(GL_PROJECTION);
-		glLoadMatrixf(projectionMatrix);
-		glMatrixMode(GL_MODELVIEW);
-		glLoadMatrixf(modelviewMatrix);
-	}
 }
 
 
@@ -1739,3 +1730,6 @@ void GLInstancingRenderer::enableShadowMap()
 	//glBindTexture(GL_TEXTURE_2D, m_data->m_defaultTexturehandle);
 
 }
+
+const float* GLInstancingRenderer::getProjectionMatrix() { return projectionMatrix; }
+const float* GLInstancingRenderer::getModelviewMatrix() { return modelviewMatrix; }

@@ -20,9 +20,16 @@
 #include "../rigidbody/GpuCompoundScene.h"
 
 //#define BASE_DEMO_CLASS ConcaveScene
-//#define BASE_DEMO_CLASS GpuBoxPlaneScene
-#define BASE_DEMO_CLASS GpuCompoundPlaneScene
+#define BASE_DEMO_CLASS GpuBoxPlaneScene
+//#define BASE_DEMO_CLASS GpuCompoundPlaneScene
 const bool CONCAVE_SCENE = false;
+
+void b3Matrix4x4Mul16(const float aIn[16], const float bIn[16], float result[16])
+{
+	for (int j=0;j<4;j++)
+		for (int i=0;i<4;i++)
+			result[j*4+i] = aIn[0*4+i] * bIn[j*4+0] + aIn[1*4+i] * bIn[j*4+1] + aIn[2*4+i] * bIn[j*4+2] + aIn[3*4+i] * bIn[j*4+3];
+}
 
 class GpuBoxPlaneFluidScene : public BASE_DEMO_CLASS
 {
@@ -49,8 +56,8 @@ public:
 		b3Scalar EXTENT(100.0);
 		if(CONCAVE_SCENE) EXTENT = b3Scalar(400.0);
 		
-		FL.m_aabbBoundaryMin = b3Vector3(-EXTENT, -EXTENT, -EXTENT);
-		FL.m_aabbBoundaryMax = b3Vector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
+		FL.m_aabbBoundaryMin = b3MakeVector3(-EXTENT, 0, -EXTENT);	//b3MakeVector3(-EXTENT, -EXTENT, -EXTENT);
+		FL.m_aabbBoundaryMax = b3MakeVector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
 		
 		FL.m_particleMass = b3Scalar(0.005);
@@ -101,17 +108,17 @@ public:
 #endif
 		
 		{
-			b3Vector3 OFFSET(0, 0, 0);
+			b3Vector3 OFFSET = b3MakeVector3(0, 0, 0);
 			b3Scalar EXTENT(90.0);
 			
 			if(CONCAVE_SCENE)
 			{
-				OFFSET = b3Vector3(125, 0, 0);
+				OFFSET = b3MakeVector3(125, 0, 0);
 				EXTENT = b3Scalar(45.0);
 			}
 			
-			b3Vector3 MIN(-EXTENT, b3Scalar(0.0), -EXTENT);
-			b3Vector3 MAX(EXTENT, EXTENT, EXTENT);
+			b3Vector3 MIN = b3MakeVector3(-EXTENT, b3Scalar(0.0), -EXTENT);
+			b3Vector3 MAX = b3MakeVector3(EXTENT, EXTENT, EXTENT);
 			b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3) );
 		}
 	}
@@ -168,8 +175,15 @@ public:
 			}
 			
 			
-			//m_fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.75f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
-			m_fluidRenderer->render(m_sphFluid->getParticles().m_pos, 1.2f, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
+			const float* projectionMatrix = m_instancingRenderer->getProjectionMatrix();
+			const float* modelviewMatrix = m_instancingRenderer->getModelviewMatrix();
+			float modelviewProjectionMatrix[16];
+			b3Matrix4x4Mul16(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix);
+			
+			//const float SPHERE_SIZE(1.75);
+			const float SPHERE_SIZE(1.2);
+			m_fluidRenderer->render(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix,
+									m_sphFluid->getParticles().m_pos, SPHERE_SIZE, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
 		}
 	}
 	

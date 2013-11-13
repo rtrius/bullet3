@@ -127,6 +127,8 @@ public:
 	}
 	void enableShadowMap();
 
+	static const float* getProjectionMatrix();		//Actually returns const GLfloat*
+	static const float* getModelviewMatrix();		//Actually returns const GLfloat*
 };
 
 #endif //GL_INSTANCING_RENDERER_H

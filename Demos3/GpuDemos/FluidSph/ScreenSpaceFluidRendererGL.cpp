@@ -21,28 +21,29 @@ subject to the following restrictions:
 #define STRINGIFY(A) #A
 
 const char generateDepthVertexShader[] = STRINGIFY(
+	uniform mat4 projectionMatrix;
+	uniform mat4 modelviewMatrix;
+	uniform mat4 modelviewProjectionMatrix;
+
 	uniform float pointRadius;  	//Point size in world space
 	uniform float pointScale;  	 	//Scale to calculate size in pixels
 	varying vec3 eyePosition;
-	varying mat4 projectionMatrix;
 	void main()
 	{
 		 //Calculate window-space point size
-		eyePosition = ( gl_ModelViewMatrix * vec4(gl_Vertex.xyz, 1.0) ).xyz;
+		eyePosition = ( modelviewMatrix * vec4(gl_Vertex.xyz, 1.0) ).xyz;
 		float distance = length(eyePosition);
 		gl_PointSize = pointRadius * (pointScale / distance);
-
-		projectionMatrix = gl_ProjectionMatrix;
 		
 		gl_TexCoord[0] = gl_MultiTexCoord0;
-		gl_Position = gl_ModelViewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
+		gl_Position = modelviewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
 		gl_FrontColor = gl_Color;
 	}
 );
 const char generateDepthFragmentShader[] = STRINGIFY(
+	uniform mat4 projectionMatrix;
 	uniform float pointRadius;  	//Point size in world space
 	varying vec3 eyePosition;       //Position of sphere center in eye space
-	varying mat4 projectionMatrix;
 	void main()
 	{
 		vec3 normal;
@@ -84,9 +85,10 @@ const char generateDepthFragmentShader[] = STRINGIFY(
 );
 
 const char fullScreenTextureVertexShader[] = STRINGIFY(
+	uniform mat4 modelviewProjectionMatrix;
 	void main()
 	{
-		gl_Position = gl_ModelViewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
+		gl_Position = modelviewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
 		gl_TexCoord[0] = gl_MultiTexCoord0;
 		gl_FrontColor = gl_Color;
 	}
@@ -441,9 +443,22 @@ ScreenSpaceFluidRendererGL::~ScreenSpaceFluidRendererGL()
 	m_frameBuffer.deactivate();
 }
 	
-void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius, 
+void ScreenSpaceFluidRendererGL::render(const float* projectionMatrix, const float* modelviewMatrix, const float* modelviewProjectionMatrix,
+										const b3AlignedObjectArray<b3Vector3>& particlePositions, float sphereRadius, 
 										float r, float g, float b, float absorptionR, float absorptionG, float absorptionB, bool copyVboFromCpuBuffer)
-{
+{		
+	//Column major order; this is the modelview projection matrix
+	//that results from calling(OpenGL 2.0):
+	//	glMatrixMode(GL_MODELVIEW);	
+	//	glLoadIdentity();
+	//	glMatrixMode(GL_PROJECTION);
+	//	glLoadIdentity();
+	//	glOrtho(0, 1, 0, 1, -1, 1);
+	const GLfloat renderFullScreenTextureMatrix[16] = {  2,  0,  0,  0,
+														 0,  2,  0,  0,
+														 0,  0, -1,  0,
+														-1, -1,  0,  1	};
+
 	b3Assert( sizeof(b3Vector3) == 16 );
 	
 	int numParticles = particlePositions.size();
@@ -463,24 +478,24 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	bool renderingResolutionDiffers = ( m_windowWidth != m_frameBuffer.getWidth() || m_windowHeight != m_frameBuffer.getHeight() );
 	if(renderingResolutionDiffers) glViewport( 0, 0, m_frameBuffer.getWidth(), m_frameBuffer.getHeight() );
 	
-	render_stage1_generateDepthTexture(numParticles, sphereRadius);
+	render_stage1_generateDepthTexture( projectionMatrix, modelviewMatrix, modelviewProjectionMatrix, numParticles, sphereRadius);
 	
 	const bool BLUR_DEPTH_TEXTURE = 0;
 	if(BLUR_DEPTH_TEXTURE)
 	{
 		const bool USE_CURVATURE_FLOW = 0;
-		if(USE_CURVATURE_FLOW) render_stage2_blurDepthTextureCurvatureFlow();
-		else render_stage2_blurDepthTextureBilateral();
+		if(USE_CURVATURE_FLOW) render_stage2_blurDepthTextureCurvatureFlow(renderFullScreenTextureMatrix);
+		else render_stage2_blurDepthTextureBilateral(renderFullScreenTextureMatrix);
 	}
 	
-	render_stage3_generateThickTexture(numParticles, sphereRadius);
+	render_stage3_generateThickTexture(renderFullScreenTextureMatrix, numParticles, sphereRadius);
 	
-	render_stage4_blurThickTexture();
+	render_stage4_blurThickTexture(renderFullScreenTextureMatrix);
 	
-	render_stage5_generateAbsorptionAndTransparencyTexture(absorptionR, absorptionG, absorptionB);
+	render_stage5_generateAbsorptionAndTransparencyTexture(renderFullScreenTextureMatrix, absorptionR, absorptionG, absorptionB);
 	
 	glColor4f(r, g, b, 1.0f);
-	render_stage6_generateSurfaceTexture(BLUR_DEPTH_TEXTURE);
+	render_stage6_generateSurfaceTexture(projectionMatrix, renderFullScreenTextureMatrix, BLUR_DEPTH_TEXTURE);
 	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	
 	//Blit results to the main/window frame buffer
@@ -488,6 +503,7 @@ void ScreenSpaceFluidRendererGL::render(const b3AlignedObjectArray<b3Vector3>& p
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glUseProgram(m_blitProgram);
+	glUniformMatrix4fv( glGetUniformLocation(m_blitProgram, "modelviewProjectionMatrix"), 1, false, renderFullScreenTextureMatrix );
 	glUniform1i( glGetUniformLocation(m_blitProgram, "rgbaTexture"), 0 );
 	glUniform1i( glGetUniformLocation(m_blitProgram, "depthTexture"), 1 );
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -540,10 +556,11 @@ void ScreenSpaceFluidRendererGL::initializeGlew()
 #endif
 }
 
-void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(int numParticles, float sphereRadius)
+void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(const float* projectionMatrix, const float* modelviewMatrix, 
+																	const float* modelviewProjectionMatrix,
+																	int numParticles, float sphereRadius)
 {
-	glGetFloatv(GL_PROJECTION_MATRIX, m_depthProjectionMatrix); 	//Used to reconstruct positions from depth values
-
+	glActiveTexture(GL_TEXTURE0);
 	glEnable(GL_POINT_SPRITE);
 	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
 	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
@@ -553,6 +570,9 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(int numParti
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
 		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
+		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "projectionMatrix"), 1, false, projectionMatrix );
+		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "modelviewMatrix"), 1, false, modelviewMatrix );
+		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointScale"), lesserDistance );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointRadius"), sphereRadius );
 
@@ -572,7 +592,7 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(int numParti
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
+void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow(const float* modelviewProjectionMatrix)
 {
 	glDepthFunc(GL_ALWAYS);
 	glUseProgram(m_curvatureFlowProgram);
@@ -593,6 +613,7 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
 	float texelSizeX = 1.0f / static_cast<float>( m_frameBuffer.getWidth() );
 	float texelSizeY = 1.0f / static_cast<float>( m_frameBuffer.getHeight() );
 	
+	glUniformMatrix4fv( glGetUniformLocation(m_curvatureFlowProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 	glUniform2f( glGetUniformLocation(m_curvatureFlowProgram, "focalLength"), FOCAL_LENGTH_X, FOCAL_LENGTH_Y );
 	glUniform2f( glGetUniformLocation(m_curvatureFlowProgram, "texelSize"), texelSizeX, texelSizeY );
 	glUniform1f( glGetUniformLocation(m_curvatureFlowProgram, "timeStep"), 0.001f );
@@ -618,11 +639,13 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureCurvatureFlow()
 	glDepthFunc(GL_LESS);
 	glUseProgram(0);
 }
-void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral()
+void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral(const float* modelviewProjectionMatrix)
 {
 	glDepthFunc(GL_ALWAYS);
 	glUseProgram(m_blurDepthProgram);
 	
+	glUniformMatrix4fv( glGetUniformLocation(m_blurDepthProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
+		
 	//First pass blurs along the x-axis
 	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
 	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 32.0f );
@@ -650,8 +673,9 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral()
 	glDepthFunc(GL_LESS);
 	glUseProgram(0);
 }
-void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParticles, float sphereRadius)
+void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(const float* modelviewProjectionMatrix, int numParticles, float sphereRadius)
 {	
+	glActiveTexture(GL_TEXTURE0);
 	glEnable(GL_POINT_SPRITE);
 	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
 	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
@@ -664,6 +688,8 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParti
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
 		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
+		
+		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointScale"), lesserDistance );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointRadius"), sphereRadius );
 
@@ -684,10 +710,12 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(int numParti
 	glDisable(GL_POINT_SPRITE);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
-void ScreenSpaceFluidRendererGL::render_stage4_blurThickTexture()
+void ScreenSpaceFluidRendererGL::render_stage4_blurThickTexture(const float* modelviewProjectionMatrix)
 {	
 	glDepthFunc(GL_ALWAYS);
 	glUseProgram(m_blurThickProgram);
+	
+	glUniformMatrix4fv( glGetUniformLocation(m_blurThickProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 	
 	//First pass blurs along the x-axis
 	glUniform1f( glGetUniformLocation(m_blurThickProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
@@ -716,11 +744,13 @@ void ScreenSpaceFluidRendererGL::render_stage4_blurThickTexture()
 	glDepthFunc(GL_LESS);
 	glUseProgram(0);
 }
-void ScreenSpaceFluidRendererGL::render_stage5_generateAbsorptionAndTransparencyTexture(float absorptionR, float absorptionG, float absorptionB)
+void ScreenSpaceFluidRendererGL::render_stage5_generateAbsorptionAndTransparencyTexture(const float* modelviewProjectionMatrix, 
+																						float absorptionR, float absorptionG, float absorptionB)
 {
 	glDepthFunc(GL_ALWAYS);
 	glUseProgram(m_absorptionAndTransparencyProgram);
 	
+	glUniformMatrix4fv( glGetUniformLocation(m_absorptionAndTransparencyProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 	glUniform3f( glGetUniformLocation(m_absorptionAndTransparencyProgram, "absorption"), absorptionR, absorptionG, absorptionB);
 	glUniform1i( glGetUniformLocation(m_absorptionAndTransparencyProgram, "thicknessTexture"), 0 );
 	
@@ -732,13 +762,15 @@ void ScreenSpaceFluidRendererGL::render_stage5_generateAbsorptionAndTransparency
 	glUseProgram(0);
 }
 
-void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture(bool useBlurredDepthTexture)
+void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture(const float* projectionMatrix, const float* modelviewProjectionMatrix, 
+																		bool useBlurredDepthTexture)
 {
 	float texelSize_x = 1.0f / static_cast<float>( m_frameBuffer.getWidth() );
 	float texelSize_y = 1.0f / static_cast<float>( m_frameBuffer.getHeight() );
 
 	glUseProgram(m_generateSurfaceProgram);
-	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceProgram, "depthProjectionMatrix"), 1, false, m_depthProjectionMatrix );
+	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceProgram, "depthProjectionMatrix"), 1, false, projectionMatrix );
+	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 	glUniform2f( glGetUniformLocation(m_generateSurfaceProgram, "texelSize"), texelSize_x, texelSize_y );
 	glUniform1i( glGetUniformLocation(m_generateSurfaceProgram, "depthTextureBlurred"), 0 );
 	glUniform1i( glGetUniformLocation(m_generateSurfaceProgram, "absorptionAndTransparencyTexture"), 1 );
@@ -759,16 +791,6 @@ void ScreenSpaceFluidRendererGL::renderFullScreenTexture(GLuint texture2d_0, GLu
 	glEnable(GL_TEXTURE_2D);
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-	
-	//Configure matrices
-	glMatrixMode(GL_MODELVIEW);	
-	glPushMatrix();
-	glLoadIdentity();
-	
-	glMatrixMode(GL_PROJECTION);	
-	glPushMatrix();
-	glLoadIdentity();
-	glOrtho(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f);
 	
 	//
 	glActiveTexture(GL_TEXTURE2);
@@ -793,12 +815,6 @@ void ScreenSpaceFluidRendererGL::renderFullScreenTexture(GLuint texture2d_0, GLu
 	glDisable(GL_TEXTURE_2D);
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-	
-	//Reset matrices
-	glMatrixMode(GL_MODELVIEW);	
-	glPopMatrix();
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
 	
 	//
 	glActiveTexture(GL_TEXTURE2);

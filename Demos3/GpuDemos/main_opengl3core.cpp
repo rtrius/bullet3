@@ -36,6 +36,7 @@
 #include "rigidbody/GpuSphereScene.h"
 #include "rigidbody/Bullet2FileDemo.h"
 #include "softbody/GpuSoftBodyDemo.h"
+#include "FluidSph/GpuBoxPlaneFluidScene.h"
 #include "../btgui/Timing/b3Quickprof.h"
 
 #include "../btgui/OpenGLWindow/GLRenderToTexture.h"
@@ -146,6 +147,8 @@ GpuDemo::CreateFunc* allDemos[]=
 
 	//GpuCompoundDemo::CreateFunc,
 	//EmptyDemo::CreateFunc,
+	
+	GpuBoxPlaneFluidScene::MyCreateFunc
 };
 
 
