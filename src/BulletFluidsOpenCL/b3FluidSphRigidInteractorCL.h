@@ -93,6 +93,7 @@ struct RigidBodyGpuData
 		if(0)
 		{
 			printf("RigidBodyGpuData::load()\n");
+			printf( "narrowPhase->getNumRigidBodies(): %d \n", narrowPhase->getNumRigidBodies() );
 			printf("m_numRigidBodies: %d \n", m_numRigidBodies);
 			printf("m_numRigidBodyInertias: %d \n", m_numRigidBodyInertias);
 			printf("m_numWorldSpaceAabbs: %d \n", m_numWorldSpaceAabbs);
@@ -238,9 +239,6 @@ public:
 	void interact(const b3OpenCLArray<b3FluidSphParametersGlobal>& globalFluidParams, b3FluidSphOpenCL* fluidData, 
 					b3FluidSortingGridOpenCL* gridData, b3FluidHashGridOpenCL* moduloGridData, RigidBodyGpuData& rigidBodyData)
 	{
-		//	rigid body interaction currently not working; need to update kernels/data structures
-		return;
-	
 		b3Assert(gridData || moduloGridData);
 		b3Assert( !(gridData && moduloGridData));
 	
@@ -281,7 +279,6 @@ public:
 	
 		//Broadphase - large AABB rigids
 		{
-			
 			const int reset = 0;
 			m_numLargeAabbRigid.copyFromHostPointer(&reset, 1);
 			
@@ -408,7 +405,7 @@ public:
 		{
 			b3Assert(0);	//No grid data
 		}
-	
+
 		//Midphase - for triangle mesh and compound shapes
 		{
 			B3_PROFILE("m_fluidRigidMidphaseKernel");
@@ -498,7 +495,7 @@ public:
 			clFinish(m_commandQueue);
 		}
 		
-		const bool APPLY_IMPULSES_TO_RIGID_BODIES = false;
+		const bool APPLY_IMPULSES_TO_RIGID_BODIES = true;
 		if(APPLY_IMPULSES_TO_RIGID_BODIES)
 		{
 			//Map fluid contacts to rigid bodies

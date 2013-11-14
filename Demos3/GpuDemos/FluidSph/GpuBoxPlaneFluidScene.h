@@ -56,7 +56,7 @@ public:
 		b3Scalar EXTENT(100.0);
 		if(CONCAVE_SCENE) EXTENT = b3Scalar(400.0);
 		
-		FL.m_aabbBoundaryMin = b3MakeVector3(-EXTENT, 0, -EXTENT);	//b3MakeVector3(-EXTENT, -EXTENT, -EXTENT);
+		FL.m_aabbBoundaryMin = b3MakeVector3(-EXTENT, -EXTENT, -EXTENT);
 		FL.m_aabbBoundaryMax = b3MakeVector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
 		FL.m_enableAabbBoundary = 1;
 		

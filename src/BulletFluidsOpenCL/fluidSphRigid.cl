@@ -5,6 +5,7 @@
 
 typedef float b3Scalar;
 typedef float4 b3Vector3;
+#define b3Sqrt sqrt
 #define b3Max max
 #define b3Min min
 
@@ -273,8 +274,6 @@ float4 mtMul3(float4 a, Matrix3x3 b)
 	return ans;
 }
 
-
-///keep this in sync with btCollidable.h
 typedef struct
 {
 	int m_numChildShapes;
@@ -1090,6 +1089,7 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  
 	
 	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
+	b3Scalar rigidAabbCornerDistance = b3Sqrt( b3Vector3_length2(expandedRigidAabbMax - expandedRigidAabbMin) );
 	
 	BodyData rigidBody = rigidBodies[i];
 	int collidableIndex = rigidBody.m_collidableIdx;
@@ -1101,6 +1101,7 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  
 	 || fabs(expandedRigidAabbMax.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.y) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent
+	 || rigidAabbCornerDistance > maxAabbExtent * 0.05f
 	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH )
 	{
 		int largeRigidIndex = atomic_inc(out_numLargeAabbRigids);	//out_numLargeAabbRigids is assumed to be 0 before the kernel is executed
@@ -1173,13 +1174,13 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	
 	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
+	b3Scalar rigidAabbCornerDistance = b3Sqrt( b3Vector3_length2(expandedRigidAabbMax - expandedRigidAabbMin) );
 	
 	BodyData rigidBody = rigidBodies[i];
 	int collidableIndex = rigidBody.m_collidableIdx;
 	
 	bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
 						|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
-						
 	__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
 	
 	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;
@@ -1189,11 +1190,12 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	 || fabs(expandedRigidAabbMax.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.y) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent 
+	 || rigidAabbCornerDistance > maxAabbExtent * 0.05f
 	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH ) return;
 						
 	b3FluidGridPosition quantizedAabbMin = getDiscretePosition( gridCellSize, expandedRigidAabbMin );
 	b3FluidGridPosition quantizedAabbMax = getDiscretePosition( gridCellSize, expandedRigidAabbMax );
-	
+						
 	for(int z = quantizedAabbMin.z; z <= quantizedAabbMax.z; ++z)
 		for(int y = quantizedAabbMin.y; y <= quantizedAabbMax.y; ++y)
 			for(int x = quantizedAabbMin.x; x <= quantizedAabbMax.x; ++x)
@@ -1223,9 +1225,9 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 						}
 					}
 				}
+			
 				
 			}
-	
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -1264,6 +1266,7 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParametersGlo
 	
 	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
+	b3Scalar rigidAabbCornerDistance = b3Sqrt( b3Vector3_length2(expandedRigidAabbMax - expandedRigidAabbMin) );
 	
 	BodyData rigidBody = rigidBodies[i];
 	int collidableIndex = rigidBody.m_collidableIdx;
@@ -1281,6 +1284,7 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParametersGlo
 	 || fabs(expandedRigidAabbMax.x) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.y) > maxAabbExtent
 	 || fabs(expandedRigidAabbMax.z) > maxAabbExtent 
+	 || rigidAabbCornerDistance > maxAabbExtent * 0.05f
 	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH ) return;
 						
 	b3FluidGridPosition quantizedAabbMin = getDiscretePosition( gridCellSize, expandedRigidAabbMin );
