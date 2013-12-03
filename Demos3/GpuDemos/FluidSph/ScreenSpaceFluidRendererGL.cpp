@@ -21,106 +21,133 @@ subject to the following restrictions:
 #define STRINGIFY(A) #A
 
 const char generateDepthVertexShader[] = STRINGIFY(
+	#version 330 core \n
+
+	layout (location = 0) in vec4 position;
+
 	uniform mat4 projectionMatrix;
 	uniform mat4 modelviewMatrix;
 	uniform mat4 modelviewProjectionMatrix;
-
+	
+	uniform vec2 screenDimensions;
 	uniform float pointRadius;  	//Point size in world space
-	uniform float pointScale;  	 	//Scale to calculate size in pixels
-	varying vec3 eyePosition;
+	out vec3 eyePosition;
+	
 	void main()
 	{
-		 //Calculate window-space point size
-		eyePosition = ( modelviewMatrix * vec4(gl_Vertex.xyz, 1.0) ).xyz;
-		float distance = length(eyePosition);
-		gl_PointSize = pointRadius * (pointScale / distance);
+		eyePosition = ( modelviewMatrix * vec4(position.xyz, 1.0) ).xyz;
 		
-		gl_TexCoord[0] = gl_MultiTexCoord0;
-		gl_Position = modelviewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
-		gl_FrontColor = gl_Color;
+		vec4 projectedWidthHeight = projectionMatrix * vec4(pointRadius, pointRadius, eyePosition.z, 1.0);
+		gl_PointSize = screenDimensions.x * projectedWidthHeight.x / projectedWidthHeight.w;
+		//gl_PointSize = screenDimensions.y *  projectedWidthHeight.y / projectedWidthHeight.w;
+		
+		//If USE_RAY_SPHERE_INTERSECTION is true, the square is not large enough to fit the sphere and needs to be expanded
+		const float SCALING = 1.6;
+		gl_PointSize *= SCALING;
+		
+		gl_Position = modelviewProjectionMatrix * vec4(position.xyz, 1.0);
 	}
 );
 const char generateDepthFragmentShader[] = STRINGIFY(
+	#version 330 core \n
+	
 	uniform mat4 projectionMatrix;
 	uniform float pointRadius;  	//Point size in world space
-	varying vec3 eyePosition;       //Position of sphere center in eye space
+	in vec3 eyePosition;      		//Position of sphere center in eye space
+	
+	out vec4 fragColor;
 	void main()
 	{
-		vec3 normal;
-		normal.xy = gl_TexCoord[0].xy*2.0 - 1.0;
-		float r2 = dot(normal.xy, normal.xy);
-		if(r2 > 1.0) discard;
+		const float INV_SCALING_SQUARED = (1.0/1.6) * (1.0/1.6);	//If gl_PointSize is scaled by N, then this should be (1/N)^2
+		const int USE_RAY_SPHERE_INTERSECTION = 1;
 		
-		float nearness = sqrt(1.0 - r2);
-		normal.z = nearness;
+		vec3 normalAtPointOnSphere;
+		normalAtPointOnSphere.xy = gl_PointCoord.xy*2.0 - 1.0;
+		float r2 = dot(normalAtPointOnSphere.xy, normalAtPointOnSphere.xy);
+		if(!USE_RAY_SPHERE_INTERSECTION && r2 > 1.0*INV_SCALING_SQUARED) discard;
 		
-		const int USE_NOISY_SURFACE = 0;
-		if(USE_NOISY_SURFACE)
+		float nearness = (USE_RAY_SPHERE_INTERSECTION) ? sqrt(1.0 - r2) : sqrt(1.0*INV_SCALING_SQUARED - r2);
+		normalAtPointOnSphere.z = nearness;
+		normalAtPointOnSphere = normalize(normalAtPointOnSphere);
+		
+		vec4 pointOnSphere = vec4(eyePosition + normalAtPointOnSphere*pointRadius, 1.0);
+		
+		if(USE_RAY_SPHERE_INTERSECTION)
 		{
-			const float PI = 3.141;
-			const float FREQUENCY = 4.0;
-		
-			float rCos = sqrt(r2);
-			float ringsFromCenter = (cos(rCos*PI*FREQUENCY)+1.0)*0.5;
-			float alongX = (sin(normal.x*PI*FREQUENCY)+1.0)*0.5;
-			float alongY = (sin(normal.y*PI*FREQUENCY)+1.0)*0.5;
+			vec3 rayDirection = normalize( eyePosition + vec3(gl_PointCoord.xy*2.0 - 1.0, 0.0)*pointRadius );
+			//vec3 rayDirection = normalize(pointOnSphere.xyz);
+			vec3 sphereCenter = eyePosition;
 			
-			float alongX2 = (sin(normal.x*PI*FREQUENCY)+1.0)*0.5;
-			float alongY2 = (sin(normal.y*PI*FREQUENCY)+1.0)*0.5;
+			float b = -2.0 * dot(rayDirection, sphereCenter);
+			float c = dot(sphereCenter, sphereCenter) - pointRadius * pointRadius * INV_SCALING_SQUARED;	//	determine cause of scaling
 			
-			normal.z = nearness*0.5 + alongX*alongY*ringsFromCenter*0.5 + alongX2*alongY2*0.5;
+			float discriminant = b*b - 4.0 * c;
+			if(discriminant < 0.0) discard;
+			
+			float discriminant_sqrt = sqrt(discriminant);
+			float t1 = (-b + discriminant_sqrt) * 0.5;
+			float t2 = (-b - discriminant_sqrt) * 0.5;
+			
+			pointOnSphere = vec4(rayDirection * min(t1, t2), 1.0);
 		}
 		
+		vec4 clipSpacePosition = projectionMatrix * pointOnSphere;
 		
-		vec4 pixelPosition = vec4(eyePosition + normal*pointRadius, 1.0);
-		vec4 clipSpacePosition = projectionMatrix * pixelPosition;
-
+		float thickness = 1.0;	//nearness * 0.03;	
 		float depth = clipSpacePosition.z / clipSpacePosition.w;
 		
-		float thickness = nearness * 0.03;	
-		
-		gl_FragColor = vec4( vec3(1.0), thickness );
+		fragColor = vec4( vec3(1.0), thickness );
 		gl_FragDepth = depth;
 	}
 );
 
 const char fullScreenTextureVertexShader[] = STRINGIFY(
+	#version 330 core \n
+	
+	layout (location = 0) in vec2 positionAndTexcoord;
+
 	uniform mat4 modelviewProjectionMatrix;
+	
+	out vec2 texcoord;
 	void main()
 	{
-		gl_Position = modelviewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
-		gl_TexCoord[0] = gl_MultiTexCoord0;
-		gl_FrontColor = gl_Color;
+		gl_Position = modelviewProjectionMatrix * vec4(positionAndTexcoord, 0, 1);
+		texcoord = positionAndTexcoord;
 	}
 );
 
 const char curvatureFlowShader[] = STRINGIFY(
+	#version 330 core \n
+	
 	uniform vec2 focalLength;
 	uniform vec2 texelSize;
 	
 	uniform float timeStep;
 	uniform sampler2D depthTexture;
 	
+	in vec2 texcoord;
+	out vec4 fragColor;
+	
 	//See "Screen Space Fluid Rendering with Curvature Flow"
 	//by W. J. Van Der Laan, S. Green, M. Sainz. 
 	void main()
 	{
-		float depth = texture(depthTexture, gl_TexCoord[0]).x;
+		float depth = texture(depthTexture, texcoord).x;
 		
 		const bool WRITE_CURVATURE_TO_COLOR_TEXTURE = false;
 		if(WRITE_CURVATURE_TO_COLOR_TEXTURE && depth == gl_DepthRange.far)
 		{
 			gl_FragDepth = depth;
-			gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+			fragColor = vec4(0.0, 0.0, 0.0, 1.0);
 			return;
 		}
 		
 		if(depth == gl_DepthRange.far) discard;
 		
-		vec2 upTexel = gl_TexCoord[0].xy + vec2(0, texelSize.y);
-		vec2 downTexel = gl_TexCoord[0].xy + vec2(0, -texelSize.y);
-		vec2 leftTexel = gl_TexCoord[0].xy + vec2(texelSize.x, 0);
-		vec2 rightTexel = gl_TexCoord[0].xy + vec2(-texelSize.x, 0);
+		vec2 upTexel = texcoord + vec2(0, texelSize.y);
+		vec2 downTexel = texcoord + vec2(0, -texelSize.y);
+		vec2 leftTexel = texcoord + vec2(texelSize.x, 0);
+		vec2 rightTexel = texcoord + vec2(-texelSize.x, 0);
 
 		float upDepth = texture(depthTexture, upTexel).x;
 		float downDepth = texture(depthTexture, downTexel).x;
@@ -145,10 +172,10 @@ const char curvatureFlowShader[] = STRINGIFY(
 		float dD_dx;
 		float dD_dy;
 		{
-			vec2 upLeftTexel = gl_TexCoord[0].xy + vec2(texelSize.x, texelSize.y);
-			vec2 upRightTexel = gl_TexCoord[0].xy + vec2(-texelSize.x, texelSize.y);
-			vec2 downLeftTexel = gl_TexCoord[0].xy + vec2(texelSize.x, -texelSize.y);
-			vec2 downRightTexel = gl_TexCoord[0].xy + vec2(-texelSize.x, -texelSize.y);
+			vec2 upLeftTexel = texcoord + vec2(texelSize.x, texelSize.y);
+			vec2 upRightTexel = texcoord + vec2(-texelSize.x, texelSize.y);
+			vec2 downLeftTexel = texcoord + vec2(texelSize.x, -texelSize.y);
+			vec2 downRightTexel = texcoord + vec2(-texelSize.x, -texelSize.y);
 		
 			float upLeftDepth = texture(depthTexture, upLeftTexel).x;
 			float upRightDepth = texture(depthTexture, upRightTexel).x;
@@ -182,30 +209,34 @@ const char curvatureFlowShader[] = STRINGIFY(
 				float r = (curvature < 0) ? abs(curvature) : 0.0;
 				float g = (curvature > 0) ? abs(curvature) : 0.0;
 					
-				gl_FragColor = vec4( vec3(r, g, 0.0), 1.0 );
+				fragColor = vec4( vec3(r, g, 0.0), 1.0 );
 			}
-			else gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+			else fragColor = vec4(0.0, 0.0, 0.0, 1.0);
 		}
 	}
 );
 
 const char bilateralFilter1dFragmentShader_depth[] = STRINGIFY(
+	#version 330 core \n
+	
 	uniform float texelSize;
 	uniform float filterRadiusPixels;
 	uniform float blurScale;			//blurScale: Lower values increase blur
 	uniform float blurDepthFalloff;		//blurDepthFalloff: Higher values decrease blurring between pixels of differing intensity
 	uniform vec2 blurDirection;
 	uniform sampler2D depthTexture;
+	
+	in vec2 texcoord;
 	void main()
 	{
-		float depth = texture(depthTexture, gl_TexCoord[0]).x;
+		float depth = texture(depthTexture, texcoord).x;
 		if(depth == gl_DepthRange.far) discard;
 		
 		float sum = 0.0;
 		float wsum = 0.0;
 		for(float x = -filterRadiusPixels; x <= filterRadiusPixels; x += 1.0)
 		{	
-			float neighborDepth = texture(depthTexture, gl_TexCoord[0].xy + blurDirection*texelSize*x).x;
+			float neighborDepth = texture(depthTexture, texcoord + blurDirection*texelSize*x).x;
 
 			//Spatial domain
 			float r = x * blurScale;
@@ -224,21 +255,26 @@ const char bilateralFilter1dFragmentShader_depth[] = STRINGIFY(
 	}
 );
 const char bilateralFilter1dFragmentShader_alpha[] = STRINGIFY(
+	#version 330 core \n
+	
 	uniform float texelSize;
 	uniform float filterRadiusPixels;
 	uniform float blurScale;			//blurScale: Lower values increase blur
 	uniform float blurDepthFalloff;		//blurDepthFalloff: Higher values decrease blurring between pixels of differing intensity
 	uniform vec2 blurDirection;
 	uniform sampler2D alphaTexture;
+	
+	in vec2 texcoord;
+	out vec4 fragColor;
 	void main()
 	{
-		float depth = texture(alphaTexture, gl_TexCoord[0]).a;
+		float depth = texture(alphaTexture, texcoord).a;
 		
 		float sum = 0.0;
 		float wsum = 0.0;
 		for(float x = -filterRadiusPixels; x <= filterRadiusPixels; x += 1.0)
 		{	
-			float neighborDepth = texture(alphaTexture, gl_TexCoord[0].xy + blurDirection*texelSize*x).a;
+			float neighborDepth = texture(alphaTexture, texcoord + blurDirection*texelSize*x).a;
 
 			//Spatial domain
 			float r = x * blurScale;
@@ -253,27 +289,31 @@ const char bilateralFilter1dFragmentShader_alpha[] = STRINGIFY(
 		}
 
 		if(wsum > 0.0) sum /= wsum;
-		gl_FragColor = vec4( vec3(1.0), sum );
+		fragColor = vec4( vec3(1.0), sum );
 	}
 );
 
 const char absorptionAndTransparencyFragmentShader[] = STRINGIFY(
+	#version 330 core \n
 
 	//Beer's law / absorption constants(xyz == rgb)
 	//Controls the darkening of the fluid's color based on its thickness
 	//For a constant k, (k > 1) == darkens faster; (k < 1) == darkens slower; (k == 0) == disable
 	uniform vec3 absorption;
-	
 	uniform sampler2D thicknessTexture;
 	
+	in vec2 texcoord;
+	out vec4 fragColor;
 	void main()
 	{
-		float thickness = texture(thicknessTexture, gl_TexCoord[0]).a;
-		gl_FragColor = vec4( exp(-absorption.x * thickness), exp(-absorption.y * thickness), exp(-absorption.z * thickness), thickness );
+		float thickness = texture(thicknessTexture, texcoord).a;
+		fragColor = vec4( exp(-absorption.x * thickness), exp(-absorption.y * thickness), exp(-absorption.z * thickness), thickness );
 	}
 );
 
 const char generateSurfaceFragmentShader[] = STRINGIFY(
+	#version 330 core \n
+	
 	vec3 getEyePos(sampler2D depthTexture, vec2 texCoord, mat4 projectionMatrix)
 	{
 		float depth = texture(depthTexture, texCoord).x;
@@ -286,22 +326,26 @@ const char generateSurfaceFragmentShader[] = STRINGIFY(
 	
 	uniform mat4 depthProjectionMatrix;		//Projection matrix used to generate depth values
 	uniform vec2 texelSize;
+	uniform vec4 baseColor;
 	uniform sampler2D depthTexture;
 	uniform sampler2D absorptionAndTransparencyTexture;
+	
+	in vec2 texcoord;
+	out vec4 fragColor;
 	void main()
 	{
-		float depth = texture(depthTexture, gl_TexCoord[0]).x;
+		float depth = texture(depthTexture, texcoord).x;
 		if(depth == gl_DepthRange.far) discard;
 		
 		//Calculate normal using texCoords, depth, and projection matrix 
-		vec3 eyePosition = getEyePos(depthTexture, gl_TexCoord[0].xy, depthProjectionMatrix);
+		vec3 eyePosition = getEyePos(depthTexture, texcoord, depthProjectionMatrix);
 
-		vec3 ddx = getEyePos(depthTexture, gl_TexCoord[0].xy + vec2(texelSize.x, 0), depthProjectionMatrix) - eyePosition;
-		vec3 ddx2 = eyePosition - getEyePos(depthTexture, gl_TexCoord[0].xy + vec2(-texelSize.x, 0), depthProjectionMatrix);
+		vec3 ddx = getEyePos(depthTexture, texcoord + vec2(texelSize.x, 0), depthProjectionMatrix) - eyePosition;
+		vec3 ddx2 = eyePosition - getEyePos(depthTexture, texcoord + vec2(-texelSize.x, 0), depthProjectionMatrix);
 		if( abs(ddx.z) > abs(ddx2.z) ) ddx = ddx2;
 
-		vec3 ddy = getEyePos(depthTexture, gl_TexCoord[0].xy + vec2(0, texelSize.y), depthProjectionMatrix) - eyePosition;
-		vec3 ddy2 = eyePosition - getEyePos(depthTexture, gl_TexCoord[0].xy + vec2(0, -texelSize.y), depthProjectionMatrix);
+		vec3 ddy = getEyePos(depthTexture, texcoord + vec2(0, texelSize.y), depthProjectionMatrix) - eyePosition;
+		vec3 ddy2 = eyePosition - getEyePos(depthTexture, texcoord + vec2(0, -texelSize.y), depthProjectionMatrix);
 		if( abs(ddy.z) > abs(ddy2.z) ) ddy = ddy2;
 		
 		vec3 normal = normalize( cross(ddx, ddy) );
@@ -317,14 +361,14 @@ const char generateSurfaceFragmentShader[] = STRINGIFY(
 		float specular = pow( max(0.0, dot(normal, h)), SHININESS );
 		
 		//
-		vec4 absorptionAndTransparency = texture(absorptionAndTransparencyTexture, gl_TexCoord[0]);
+		vec4 absorptionAndTransparency = texture(absorptionAndTransparencyTexture, texcoord);
 		
 		const float MINIMUM_ALPHA = 0.70;
-		vec3 color = gl_Color.xyz * absorptionAndTransparency.xyz * diffuse + specular;
+		vec3 color = baseColor.xyz * absorptionAndTransparency.xyz * diffuse + specular;
 		float alpha = MINIMUM_ALPHA + absorptionAndTransparency.w * (1.0 - MINIMUM_ALPHA);
 		
-		gl_FragColor = vec4(color, alpha);
-		//gl_FragColor = vec4(gl_Color.xyz * diffuse + specular, 1.0);
+		//fragColor = vec4(color, alpha);
+		fragColor = vec4(baseColor.xyz * diffuse + specular, 1.0);
 		
 		//Convert depth from Normalized Device Coordinates(NDC) to Window/Screen coordinates
 		gl_FragDepth = (gl_DepthRange.diff*depth + gl_DepthRange.near + gl_DepthRange.far) * 0.5;
@@ -342,25 +386,25 @@ const char generateSurfaceFragmentShader[] = STRINGIFY(
 		switch(DISPLAY_MODE)
 		{
 			case DISPLAY_DEPTH:
-				gl_FragColor = vec4( vec3(depth), 1.0 );
+				fragColor = vec4( vec3(depth), 1.0 );
 				break;
 			case DISPLAY_LINEAR_DEPTH:	
 				float linearDepth = min(1.0, -eyePosition.z / 10000.0);		//10000.0 == far z value
-				gl_FragColor = vec4( vec3(linearDepth), 1.0 );
+				fragColor = vec4( vec3(linearDepth), 1.0 );
 				break;
 			case DISPLAY_NORMAL:
-				gl_FragColor = vec4( (normal + 1.0) * 0.5, 1.0 );
+				fragColor = vec4( (normal + 1.0) * 0.5, 1.0 );
 				break;
 			case DISPLAY_THICKNESS:
 				float thickness = absorptionAndTransparency.a;
-				gl_FragColor = vec4( vec3(thickness), 1.0 );
+				fragColor = vec4( vec3(thickness), 1.0 );
 				break;
 			case DISPLAY_ABSORPTION:
-				gl_FragColor = vec4(absorptionAndTransparency.xyz, 1.0);
+				fragColor = vec4(absorptionAndTransparency.xyz, 1.0);
 				break;
 			case DISPLAY_CURVATURE:
 				//Use m_tempColorTexture for absorptionAndTransparencyTexture when enabling this
-				gl_FragColor = texture(absorptionAndTransparencyTexture, gl_TexCoord[0]);
+				fragColor = texture(absorptionAndTransparencyTexture, texcoord);
 				gl_FragDepth = 0.0;
 				break;
 				
@@ -373,12 +417,17 @@ const char generateSurfaceFragmentShader[] = STRINGIFY(
 );
 
 const char blitFragmentShader[] = STRINGIFY(
+	#version 330 core \n
+	
 	uniform sampler2D rgbaTexture;
 	uniform sampler2D depthTexture;
+	
+	in vec2 texcoord;
+	out vec4 fragColor;
 	void main()
 	{
-		gl_FragColor = texture(rgbaTexture, gl_TexCoord[0]);
-		gl_FragDepth = texture(depthTexture, gl_TexCoord[0]).x;
+		fragColor = texture(rgbaTexture, texcoord);
+		gl_FragDepth = texture(depthTexture, texcoord).x;
 	}
 );
 
@@ -402,8 +451,20 @@ ScreenSpaceFluidRendererGL::ScreenSpaceFluidRendererGL(int screenWidth, int scre
 	m_generateSurfaceProgram = compileProgram(fullScreenTextureVertexShader, generateSurfaceFragmentShader);
 	m_blitProgram = compileProgram(fullScreenTextureVertexShader, blitFragmentShader);
 	
-	//
+	//Generate vertex buffer for particle positions
 	glGenBuffers(1, &m_positionVertexBuffer);
+	
+	//Generate vertex buffer for rendering full screen rectangle
+	{
+		//Arranged for GL_TRIANGLE_STRIP; order: Upper Left, Upper Right, Lower Left, Lower Right
+		const GLfloat SQUARE_VERTICES[4 * 2] = { 0.0f,1.0f, 1.0f,1.0f, 0.0f,0.0f, 1.0f,0.0f };
+		
+		glGenBuffers(1, &m_squareVertexTexcoordBuffer);
+		
+		glBindBuffer(GL_ARRAY_BUFFER, m_squareVertexTexcoordBuffer);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(SQUARE_VERTICES), SQUARE_VERTICES, GL_STATIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
 	
 	//
 	m_frameBuffer.initialize(screenWidth, screenHeight);
@@ -438,6 +499,7 @@ ScreenSpaceFluidRendererGL::~ScreenSpaceFluidRendererGL()
 	
 	//
 	glDeleteBuffers(1, &m_positionVertexBuffer);
+	glDeleteBuffers(1, &m_squareVertexTexcoordBuffer);
 	
 	//
 	m_frameBuffer.deactivate();
@@ -494,9 +556,7 @@ void ScreenSpaceFluidRendererGL::render(const float* projectionMatrix, const flo
 	
 	render_stage5_generateAbsorptionAndTransparencyTexture(renderFullScreenTextureMatrix, absorptionR, absorptionG, absorptionB);
 	
-	glColor4f(r, g, b, 1.0f);
-	render_stage6_generateSurfaceTexture(projectionMatrix, renderFullScreenTextureMatrix, BLUR_DEPTH_TEXTURE);
-	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	render_stage6_generateSurfaceTexture(projectionMatrix, renderFullScreenTextureMatrix, r, g, b, BLUR_DEPTH_TEXTURE);
 	
 	//Blit results to the main/window frame buffer
 	if(renderingResolutionDiffers) glViewport(0, 0, m_windowWidth, m_windowHeight);
@@ -511,8 +571,8 @@ void ScreenSpaceFluidRendererGL::render(const float* projectionMatrix, const flo
 	glDisable(GL_BLEND);
 	glUseProgram(0);
 	
-	//Default clear color for Bullet demos, set in DemoApplication::myinit()
-	glClearColor(0.7f, 0.7f, 0.7f, 0.0f);
+	//Default clear color for Bullet demos
+	glClearColor(1.0f, 1.0, 1.0f, 1.0f);
 }
 	
 void ScreenSpaceFluidRendererGL::initializeGlew()
@@ -524,11 +584,11 @@ void ScreenSpaceFluidRendererGL::initializeGlew()
 		printf( "GLEW error: %s(%d) \n", glewGetErrorString(errorCode), errorCode );
 	}
 	
-	const int NUM_REQUIRED_EXTENSIONS = 5;
+	const int NUM_REQUIRED_EXTENSIONS = 6;
 	const char* requiredExtensions[NUM_REQUIRED_EXTENSIONS] =
 	{
 		//"GL_VERSION_4_2",
-		//"GL_VERSION_3_0",
+		"GL_VERSION_3_3",
 		"GL_VERSION_2_0",
 		"GL_ARB_multitexture",
 		"GL_ARB_vertex_buffer_object",
@@ -564,30 +624,33 @@ void ScreenSpaceFluidRendererGL::render_stage1_generateDepthTexture(const float*
 	glEnable(GL_POINT_SPRITE);
 	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
 	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
+	glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_LOWER_LEFT);
+
 	glUseProgram(m_generateDepthProgram);
 	
 	{
 		float screenWidth = static_cast<float>( m_frameBuffer.getWidth() );
 		float screenHeight = static_cast<float>( m_frameBuffer.getHeight() );
-		float lesserDistance = (screenWidth > screenHeight) ?  screenHeight : screenWidth;
 		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "projectionMatrix"), 1, false, projectionMatrix );
 		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "modelviewMatrix"), 1, false, modelviewMatrix );
 		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
-		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointScale"), lesserDistance );
+		glUniform2f( glGetUniformLocation(m_generateDepthProgram, "screenDimensions"), screenWidth, screenHeight );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointRadius"), sphereRadius );
-
+		
 		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
-		glVertexPointer(4, GL_FLOAT, 0, 0);
-		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);
 		
 		m_frameBuffer.attachAndSetRenderTargets(m_tempColorTexture, m_depthTexture);
 			glDrawArrays(GL_POINTS, 0, numParticles);
 		m_frameBuffer.detachAndUseDefaultFrameBuffer();
 		
-		glDisableClientState(GL_VERTEX_ARRAY);
+		glDisableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 	
 	glUseProgram(0);
+	glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_UPPER_LEFT);	//Reset to default, GL_UPPER_LEFT
 	glDisable(GL_POINT_SPRITE);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -681,6 +744,8 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(const float*
 	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
 	glUseProgram(m_generateDepthProgram);
 
+	glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_LOWER_LEFT);
+	
 	glDepthFunc(GL_ALWAYS);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE);
@@ -692,21 +757,23 @@ void ScreenSpaceFluidRendererGL::render_stage3_generateThickTexture(const float*
 		glUniformMatrix4fv( glGetUniformLocation(m_generateDepthProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointScale"), lesserDistance );
 		glUniform1f( glGetUniformLocation(m_generateDepthProgram, "pointRadius"), sphereRadius );
-
+		
 		glBindBuffer(GL_ARRAY_BUFFER, m_positionVertexBuffer);
-		glVertexPointer(4, GL_FLOAT, 0, 0);
-		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);
 		
 		m_frameBuffer.attachAndSetRenderTargets(m_thickTexture, m_tempDepthTexture);
 			glDrawArrays(GL_POINTS, 0, numParticles);
 		m_frameBuffer.detachAndUseDefaultFrameBuffer();
 		
-		glDisableClientState(GL_VERTEX_ARRAY);
+		glDisableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 	glDepthFunc(GL_LESS);
 	glDisable(GL_BLEND);
 	
 	glUseProgram(0);
+	glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_UPPER_LEFT);	//Reset to default, GL_UPPER_LEFT
 	glDisable(GL_POINT_SPRITE);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -763,7 +830,7 @@ void ScreenSpaceFluidRendererGL::render_stage5_generateAbsorptionAndTransparency
 }
 
 void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture(const float* projectionMatrix, const float* modelviewProjectionMatrix, 
-																		bool useBlurredDepthTexture)
+																		float r, float g, float b, bool useBlurredDepthTexture)
 {
 	float texelSize_x = 1.0f / static_cast<float>( m_frameBuffer.getWidth() );
 	float texelSize_y = 1.0f / static_cast<float>( m_frameBuffer.getHeight() );
@@ -772,6 +839,7 @@ void ScreenSpaceFluidRendererGL::render_stage6_generateSurfaceTexture(const floa
 	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceProgram, "depthProjectionMatrix"), 1, false, projectionMatrix );
 	glUniformMatrix4fv( glGetUniformLocation(m_generateSurfaceProgram, "modelviewProjectionMatrix"), 1, false, modelviewProjectionMatrix );
 	glUniform2f( glGetUniformLocation(m_generateSurfaceProgram, "texelSize"), texelSize_x, texelSize_y );
+	glUniform4f( glGetUniformLocation(m_generateSurfaceProgram, "baseColor"), r, g, b, 1.0f );
 	glUniform1i( glGetUniformLocation(m_generateSurfaceProgram, "depthTextureBlurred"), 0 );
 	glUniform1i( glGetUniformLocation(m_generateSurfaceProgram, "absorptionAndTransparencyTexture"), 1 );
 	
@@ -789,8 +857,6 @@ void ScreenSpaceFluidRendererGL::renderFullScreenTexture(GLuint texture2d_0, GLu
 {
 	//Enable states
 	glEnable(GL_TEXTURE_2D);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 	
 	//
 	glActiveTexture(GL_TEXTURE2);
@@ -802,19 +868,18 @@ void ScreenSpaceFluidRendererGL::renderFullScreenTexture(GLuint texture2d_0, GLu
 	
 	//Render
 	{
-		//Arranged for GL_TRIANGLE_STRIP; order: Upper Left, Upper Right, Lower Left, Lower Right
-		const GLfloat SQUARE_VERTICES[4 * 2] = { 0.0f,1.0f, 1.0f,1.0f, 0.0f,0.0f, 1.0f,0.0f };
-	
-		glVertexPointer(2, GL_FLOAT, 0, SQUARE_VERTICES);
-		glTexCoordPointer(2, GL_FLOAT, 0, SQUARE_VERTICES);
+		glBindBuffer(GL_ARRAY_BUFFER, m_squareVertexTexcoordBuffer);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
 		
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		
+		glDisableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 	
 	//Disable states
 	glDisable(GL_TEXTURE_2D);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 	
 	//
 	glActiveTexture(GL_TEXTURE2);
@@ -866,7 +931,6 @@ void ScreenSpaceFluidRendererGL::renderFullScreenTexture(GLuint texture2d_0, GLu
 		printf("Fragment Shader Build Log:\n");
 		printf("%s\n", stringStart);
 		
-	
 		glDeleteProgram(program);
 		program = 0;
 	}
