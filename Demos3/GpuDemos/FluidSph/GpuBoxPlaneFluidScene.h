@@ -44,8 +44,6 @@ public:
 
 	b3FluidSphParametersGlobal m_globalParameters;
 	b3FluidSph* m_sphFluid;
-
-	ScreenSpaceFluidRendererGL* m_fluidRenderer;
 	
 	GpuBoxPlaneFluidScene()
 	{
@@ -71,14 +69,12 @@ public:
 		m_sphFluid->setLocalParameters(FL);
 		
 		m_solver = 0;
-		m_fluidRenderer = 0;
 	}
 	virtual ~GpuBoxPlaneFluidScene()
 	{ 
 		delete m_sphFluid; 
 		
 		if(m_solver) delete m_solver;
-		if(m_fluidRenderer) delete m_fluidRenderer;
 	}
 	virtual const char* getName()
 	{
@@ -93,11 +89,6 @@ public:
 	
 	virtual void setupScene(const ConstructionInfo& ci)
 	{
-		b3Assert(m_window);
-		int width, height;
-		m_window->getRenderingResolution(width, height);
-		m_fluidRenderer = new ScreenSpaceFluidRendererGL(width, height);
-		
 		BASE_DEMO_CLASS::setupScene(ci);
 		
 
@@ -128,62 +119,47 @@ public:
 	{
 		BASE_DEMO_CLASS::renderScene();
 		
-		float r = 0.5f;
-		float g = 0.8f;
-		float b = 1.0f;
-				
-		//Beer's law constants
-		//Controls the darkening of the fluid's color based on its thickness
-		//For a constant k, (k > 1) == darkens faster; (k < 1) == darkens slower; (k == 0) == disable
-		float absorptionR = 0.5;	
-		float absorptionG = 0.5;
-		float absorptionB = 0.5;
+		B3_PROFILE("render fluid");
 		
-		{
-			B3_PROFILE("render fluid");
-		
-			const bool USE_MAPPED_BUFFER = false;
-			if(USE_MAPPED_BUFFER)
-			{
-				b3Assert( sizeof(b3Vector3) == 16 );
-				
-				int numParticles = m_sphFluid->numParticles();
-				int targetBufferSize = sizeof(b3Vector3) * numParticles;
-				//int currentBufferSize = 0;
-				//glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);
+		const float SPHERE_SIZE(1.2);
+		const float COLOR[4] = {0.5f, 0.8f, 1.0f, 1.0f};
 			
-				//Resize VBO
-				GLuint particlePositionVbo = m_fluidRenderer->getPositionVertexBuffer();
-				
-				glBindBuffer(GL_ARRAY_BUFFER, particlePositionVbo);
-				//if(currentBufferSize < targetBufferSize) glBufferData(GL_ARRAY_BUFFER, targetBufferSize, 0, GL_DYNAMIC_DRAW);
-				glBufferData(GL_ARRAY_BUFFER, targetBufferSize, 0, GL_DYNAMIC_DRAW);
-				b3Vector3* glBuffer = static_cast<b3Vector3*>( glMapBufferRange(GL_ARRAY_BUFFER, 0, targetBufferSize, GL_MAP_WRITE_BIT) );
-				
-				//Copy particle positions from CL to GL buffer
-				const void* sphOpenClObject = m_sphFluid->getFluidDataCL();
-				const b3FluidSphOpenCL* sphDataCL = static_cast<const b3FluidSphOpenCL*>(sphOpenClObject);
-				if(sphDataCL) sphDataCL->m_pos.copyToHostPointer( static_cast<b3Vector3*>(glBuffer), numParticles, 0 );
-				else 
-				{
-					printf("sphDataCL: %d \n", sphDataCL);
-					b3Assert(0);
-				}
-				
-				glUnmapBuffer(GL_ARRAY_BUFFER);
-				glBindBuffer(GL_ARRAY_BUFFER, 0);
+		const bool USE_BULLET3_RENDERER = true;
+		if(USE_BULLET3_RENDERER)
+		{
+			int numParticles = m_sphFluid->numParticles();
+			if(numParticles)
+				m_instancingRenderer->drawPoints(&m_sphFluid->getParticles().m_pos[0].m_floats[0], COLOR, 
+												numParticles, 4*sizeof(float), SPHERE_SIZE);
+		}
+		else
+		{
+			b3Assert(m_window);
+			int width, height;
+			m_window->getRenderingResolution(width, height);
+		
+			static ScreenSpaceFluidRendererGL* fluidRenderer = 0;
+			if(!fluidRenderer) fluidRenderer = new ScreenSpaceFluidRendererGL(width, height);
+			
+			int rendererWidth, rendererHeight;
+			fluidRenderer->getWindowResolution(rendererWidth, rendererHeight);
+			if(width != rendererWidth || height != rendererHeight)
+			{
+				fluidRenderer->setWindowResolution(width, height);
+				fluidRenderer->setRenderingResolution(width, height);
 			}
 			
+			//Beer's law constants - controls the darkening of the fluid's color based on its thickness
+			//For a constant k, (k > 1) == darkens faster; (k < 1) == darkens slower; (k == 0) == disable
+			float absorptionR = 0.5, absorptionG = 0.5, absorptionB = 0.5;
 			
 			const float* projectionMatrix = m_instancingRenderer->getProjectionMatrix();
 			const float* modelviewMatrix = m_instancingRenderer->getModelviewMatrix();
 			float modelviewProjectionMatrix[16];
 			b3Matrix4x4Mul16(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix);
 			
-			//const float SPHERE_SIZE(1.75);
-			const float SPHERE_SIZE(1.2);
-			m_fluidRenderer->render(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix,
-									m_sphFluid->getParticles().m_pos, SPHERE_SIZE, r, g, b, absorptionR, absorptionG, absorptionB, !USE_MAPPED_BUFFER);
+			fluidRenderer->render(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix, m_sphFluid->getParticles().m_pos, 
+									SPHERE_SIZE, COLOR[0], COLOR[1], COLOR[2], absorptionR, absorptionG, absorptionB, true);
 		}
 	}
 	
@@ -202,16 +178,6 @@ public:
 		}
 		
 		BASE_DEMO_CLASS::clientMoveAndDisplay();
-	}
-	
-	virtual void resize(int width, int height)
-	{
-		if(m_fluidRenderer)
-		{
-			m_fluidRenderer->setWindowResolution(width, height);
-			m_fluidRenderer->setRenderingResolution(width, height);
-			//m_fluidRenderer->setRenderingResolution(width/2, height/2);
-		}
 	}
 
 };
