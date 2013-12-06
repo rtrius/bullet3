@@ -26,7 +26,9 @@ function createProject(vendor)
 		links {
 			"gwen",
 			"Bullet2FileLoader",
-			 "Bullet3OpenCL_" .. vendor,
+			"Bullet3OpenCL_" .. vendor,
+			"BulletFluidsOpenCL_" .. vendor,
+			"BulletFluids",
 			"Bullet3Dynamics",
 			"Bullet3Collision",
 			"Bullet3Geometry",
