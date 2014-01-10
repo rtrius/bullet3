@@ -65,8 +65,6 @@ struct RigidBodyGpuData
 		m_rigidBodies = narrowPhase->getBodiesGpu();
 		m_rigidBodyInertias = narrowPhase->getBodyInertiasGpu();
 		m_worldSpaceAabbs = broadphase->getAabbBufferWS();		//if useDbvt == true in b3GpuRigidBodyPipeline.cpp this is incorrect
-		b3Assert(m_numRigidBodies == m_numRigidBodyInertias);
-		b3Assert(m_numRigidBodies == m_numWorldSpaceAabbs);
 		
 		m_numCollidables = narrowPhase->getNumCollidablesGpu();
 		m_collidables = narrowPhase->getCollidablesGpu();
@@ -104,6 +102,8 @@ struct RigidBodyGpuData
 			printf("m_numConvexVertices: %d \n", m_numConvexVertices);
 			printf("\n");
 		}
+		b3Assert(m_numRigidBodies == m_numRigidBodyInertias);
+		b3Assert(m_numRigidBodies == m_numWorldSpaceAabbs);
 	}
 };
 

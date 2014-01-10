@@ -54,6 +54,8 @@ float MOUSE_MOVE_MULTIPLIER = 0.4f;
 #include "OpenGLWindow/Shaders/useShadowMapInstancingPS.h"
 #include "OpenGLWindow/Shaders/linesPS.h"
 #include "OpenGLWindow/Shaders/linesVS.h"
+#include "OpenGLWindow/Shaders/raycastSpherePS.h"
+#include "OpenGLWindow/Shaders/raycastSphereVS.h"
 
 #include "OpenGLWindow/GLRenderToTexture.h"
 
@@ -306,6 +308,7 @@ void b3DefaultKeyboardCallback(int key, int state)
 
 
 static GLuint               linesShader;        // The line renderer
+static GLuint               raycastSphereShader;        // Similar to instancingShaderPointSprite, but uses raycasting for correct perspective
 static GLuint               useShadowMapInstancingShader;        // The shadow instancing renderer
 static GLuint               createShadowMapInstancingShader;        // The shadow instancing renderer
 static GLuint               instancingShader;        // The instancing renderer
@@ -735,7 +738,8 @@ void GLInstancingRenderer::InitShaders()
 	//glGetIntegerv(GL_ALIASED_LINE_WIDTH_RANGE, range);
 	glGetIntegerv(GL_SMOOTH_LINE_WIDTH_RANGE, lineWidthRange);
 	
-	
+	raycastSphereShader = gltLoadShaderPair(raycastSphereVertexShader, raycastSphereFragmentShader);
+	glLinkProgram(raycastSphereShader);
 
 
 	useShadowMapInstancingShader = gltLoadShaderPair(useShadowMapInstancingVertexShader,useShadowMapInstancingFragmentShader);
@@ -1323,6 +1327,63 @@ void GLInstancingRenderer::drawPoints(const float* positions, const float color[
 	glDrawArrays(GL_POINTS, 0, numPoints);
 	glBindVertexArray(0);
 	glPointSize(1);
+}
+void GLInstancingRenderer::drawSpheres(const float* positions, const float color[4], int numSpheres, int pointStrideInBytes, float sphereRadius)
+{
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D,0);
+	
+	GLint err = glGetError();
+	b3Assert(err==GL_NO_ERROR);
+	
+	glUseProgram(raycastSphereShader);
+	glUniformMatrix4fv( glGetUniformLocation(raycastSphereShader, "projectionMatrix"), 1, false, &projectionMatrix[0]);
+	glUniformMatrix4fv( glGetUniformLocation(raycastSphereShader, "modelviewMatrix"), 1, false, &modelviewMatrix[0]);
+	glUniform2f( glGetUniformLocation(raycastSphereShader, "screenDimensions"), (float)m_screenWidth, (float)m_screenHeight );
+	glUniform4f( glGetUniformLocation(raycastSphereShader, "sphereColor"), color[0], color[1], color[2], color[3] );
+	glUniform1f( glGetUniformLocation(raycastSphereShader, "sphereRadius"), sphereRadius );
+	
+	err = glGetError();
+	b3Assert(err==GL_NO_ERROR);
+	
+#ifndef __APPLE__
+	glEnable(GL_POINT_SPRITE_ARB);
+#endif
+	glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
+	glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_LOWER_LEFT);		//Needed for raycast sphere
+	
+	err = glGetError();
+	b3Assert(err==GL_NO_ERROR);
+	
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, lineVertexBufferObject);
+		glBufferData(GL_ARRAY_BUFFER, numSpheres*pointStrideInBytes, positions, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		
+		err = glGetError();
+		b3Assert(err==GL_NO_ERROR);
+	
+		int numFloats = 3;
+		glVertexAttribPointer(0, numFloats, GL_FLOAT, GL_FALSE, pointStrideInBytes, 0);
+		
+		glDrawArrays(GL_POINTS, 0, numSpheres);
+		
+		err = glGetError();
+		b3Assert(err==GL_NO_ERROR);
+	
+		glBindVertexArray(0);
+		glPointSize(1);
+	}
+	
+	err = glGetError();
+	b3Assert(err==GL_NO_ERROR);
+	
+	glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_UPPER_LEFT);		//Reset to default, GL_UPPER_LEFT
+	glUseProgram(0);
+	glPointSize(1);
+	
+	err = glGetError();
+	b3Assert(err==GL_NO_ERROR);
 }
 
 void GLInstancingRenderer::drawLine(const float from[4], const float to[4], const float color[4], float lineWidth)

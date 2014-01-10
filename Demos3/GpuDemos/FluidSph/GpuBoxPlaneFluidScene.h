@@ -123,14 +123,16 @@ public:
 		
 		const float SPHERE_SIZE(1.2);
 		const float COLOR[4] = {0.5f, 0.8f, 1.0f, 1.0f};
-			
+		
 		const bool USE_BULLET3_RENDERER = true;
 		if(USE_BULLET3_RENDERER)
 		{
 			int numParticles = m_sphFluid->numParticles();
 			if(numParticles)
-				m_instancingRenderer->drawPoints(&m_sphFluid->getParticles().m_pos[0].m_floats[0], COLOR, 
-												numParticles, 4*sizeof(float), SPHERE_SIZE);
+			{
+				const float* positions = reinterpret_cast<const float*>(&m_sphFluid->getParticles().m_pos[0]);
+				m_instancingRenderer->drawSpheres(positions, COLOR, numParticles, sizeof(float)*4, SPHERE_SIZE);
+			}
 		}
 		else
 		{
