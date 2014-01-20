@@ -56,9 +56,10 @@ struct b3FluidSphRigidContactGroup
 };
 
 class b3FluidSphSolver;
+class b3FluidSphTypedData;
 
 ///@brief Main fluid class. Coordinates a set of b3FluidParticles with material definition and grid broadphase.
-class b3FluidSph //: public b3CollisionObject
+class b3FluidSph
 {
 protected:
 	b3FluidSphParameters	m_parameters;
@@ -72,17 +73,17 @@ protected:
 	b3AlignedObjectArray<const b3CollisionObject*> m_intersectingRigidAabb;	///<Contains b3CollisionObject/b3RigidBody(not b3Softbody)
 	b3AlignedObjectArray<b3FluidSphRigidContactGroup> m_rigidContacts;
 	
-	//If either override is set, the fluid is passed separately to the solver(b3FluidSph-b3FluidSph interaction is disabled)
-	b3FluidSphSolver* m_overrideSolver;
+	b3FluidSphSolver* m_solver;
 	
+	//This pointer is assigned and managed by a CPU b3FluidSphSolver, if it is being used
+	b3FluidSphTypedData* m_solverData;
 	
 	//These pointers are assigned and managed by an OpenCL solver, if one is being used 
-	void* m_fluidDataCL;	//b3FluidSphOpenCL
-	void* m_gridDataCL;		//b3FluidSortingGridOpenCL
+	b3FluidSphTypedData* m_fluidDataCL;		//b3FluidSphOpenCL
+	b3FluidSphTypedData* m_gridDataCL;		//b3FluidSortingGridOpenCL
 	
 public:
-
-	b3FluidSph(int maxNumParticles);
+	b3FluidSph(b3FluidSphSolver* solver, int maxNumParticles);
 	virtual ~b3FluidSph();
 	
 	int	numParticles() const { return m_particles.size(); }
@@ -127,13 +128,8 @@ public:
 	void setParameters(const b3FluidSphParameters& FP) { m_parameters = FP; }
 	b3Scalar getEmitterSpacing() const { return m_parameters.m_particleDist / m_parameters.m_simulationScale; }
 	
-	///If solver is not 0, then it will be used instead of the solver specified by b3FluidRigidDynamicsWorld::getFluidSolver()
-	void setOverrideSolver(b3FluidSphSolver* solver) { m_overrideSolver = solver; }
-	b3FluidSphSolver* getOverrideSolver() const { return m_overrideSolver; }
-	
-	//Metablobs	
-	b3Scalar getValue(b3Scalar x, b3Scalar y, b3Scalar z) const;
-	b3Vector3 getGradient(b3Scalar x, b3Scalar y, b3Scalar z) const;
+	void setSolver(b3FluidSphSolver* solver) { m_solver = solver; }
+	b3FluidSphSolver* getSolver() const { return m_solver; }
 
 	const b3FluidParticles& getParticles() const { return m_particles; }
 	b3FluidParticles& internalGetParticles() { return m_particles; }
@@ -176,10 +172,16 @@ public:
 		return (colObj->getInternalType() == CO_USER_TYPE) ? (b3FluidSph*)colObj : 0;
 	}
 	
-	void setFluidDataCL(void* sphData) { m_fluidDataCL = sphData; }
-	const void* getFluidDataCL() const { return m_fluidDataCL; }
-	void setGridDataCL(void* gridData) { m_gridDataCL = gridData; }
-	const void* getGridDataCL() const { return m_gridDataCL; }
+	///@name Solver specific data is managed by the solver. Can be accessed but should not be modified.
+	///@{
+	void setFluidSolverData(b3FluidSphTypedData* solverData) { m_solverData = solverData; }
+	b3FluidSphTypedData* getSolverData() const { return m_solverData; }
+	
+	void setFluidDataCL(b3FluidSphTypedData* sphData) { m_fluidDataCL = sphData; }
+	b3FluidSphTypedData* getFluidDataCL() const { return m_fluidDataCL; }
+	void setGridDataCL(b3FluidSphTypedData* gridData) { m_gridDataCL = gridData; }
+	b3FluidSphTypedData* getGridDataCL() const { return m_gridDataCL; }
+	///@}
 };
 
 ///@brief Adds particles to a b3FluidSph.

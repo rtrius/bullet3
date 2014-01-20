@@ -24,10 +24,11 @@ subject to the following restrictions:
 #include "b3FluidSortingGrid.h"
 //#include "b3FluidSphCollisionShape.h"
 
-b3FluidSph::b3FluidSph(int maxNumParticles)
+b3FluidSph::b3FluidSph(b3FluidSphSolver* solver, int maxNumParticles)
 {
-	m_overrideSolver = 0;
+	m_solver = solver;
 
+	m_solverData = 0;
 	m_fluidDataCL = 0;
 	m_gridDataCL = 0;
 	
@@ -74,68 +75,6 @@ void b3FluidSph::removeAllParticles()
 	m_removedFluidIndicies.resize(0);
 	
 	m_grid.clear();
-}
-
-b3Scalar b3FluidSph::getValue(b3Scalar x, b3Scalar y, b3Scalar z) const
-{
-	const b3Scalar worldSphRadius = m_grid.getCellSize();	//Grid cell size == sph interaction radius, at world scale
-	const b3Scalar R2 = worldSphRadius * worldSphRadius;
-	
-	b3FluidSortingGrid::FoundCells foundCells;
-	m_grid.findCells( b3MakeVector3(x,y,z), foundCells );
-		
-	b3Scalar sum = 0.0;
-	for(int cell = 0; cell < b3FluidSortingGrid::NUM_FOUND_CELLS; cell++) 
-	{
-		b3FluidGridIterator& FI = foundCells.m_iterators[cell];
-			
-		for(int n = FI.m_firstIndex; n <= FI.m_lastIndex; ++n)
-		{
-			const b3Vector3& position = m_particles.m_pos[n];
-			b3Scalar dx = x - position.getX();
-			b3Scalar dy = y - position.getY();
-			b3Scalar dz = z - position.getZ();
-			b3Scalar distanceSquared = dx*dx + dy*dy + dz*dz;
-				
-			if(distanceSquared < R2) sum += R2 / distanceSquared;
-		}
-	}
-	
-	return sum;
-}	
-b3Vector3 b3FluidSph::getGradient(b3Scalar x, b3Scalar y, b3Scalar z) const
-{
-	const b3Scalar worldSphRadius = m_grid.getCellSize();	//Grid cell size == sph interaction radius, at world scale
-	const b3Scalar R2 = worldSphRadius*worldSphRadius;
-	
-	b3FluidSortingGrid::FoundCells foundCells;
-	m_grid.findCells( b3MakeVector3(x,y,z), foundCells );
-	
-	b3Vector3 normal = b3MakeVector3(0,0,0);
-	for(int cell = 0; cell < b3FluidSortingGrid::NUM_FOUND_CELLS; cell++)
-	{
-		b3FluidGridIterator& FI = foundCells.m_iterators[cell];
-			
-		for(int n = FI.m_firstIndex; n <= FI.m_lastIndex; ++n)
-		{
-			const b3Vector3& position = m_particles.m_pos[n];
-			b3Scalar dx = x - position.getX();
-			b3Scalar dy = y - position.getY();
-			b3Scalar dz = z - position.getZ();
-			b3Scalar distanceSquared = dx*dx + dy*dy + dz*dz;
-			
-			if( b3Scalar(0.0) < distanceSquared && distanceSquared < R2 ) 
-			{
-				distanceSquared = b3Scalar(2.0)*R2 / (distanceSquared*distanceSquared);
-				
-				b3Vector3 particleNorm = b3MakeVector3(dx * distanceSquared, dy * distanceSquared, dz * distanceSquared);
-				normal += particleNorm;
-			}
-		}
-	}
-	
-	normal.normalize();
-	return normal;
 }
 
 //Assumes that out_unique is already sorted.

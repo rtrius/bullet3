@@ -18,6 +18,71 @@ subject to the following restrictions:
 
 #include "b3FluidSortingGrid.h"
 
+inline void resolveAabbCollision_impulse(const b3FluidSphParameters& FP, const b3Vector3& velocity, 
+										const b3Vector3& normal, b3Scalar distance, b3Vector3& out_impulse)
+{
+	if( distance < b3Scalar(0.0) )	//Negative distance indicates penetration
+	{
+		b3Scalar penetratingMagnitude = velocity.dot(-normal);
+		if( penetratingMagnitude < b3Scalar(0.0) ) penetratingMagnitude = b3Scalar(0.0);
+		
+		b3Vector3 penetratingVelocity = -normal * penetratingMagnitude;
+		b3Vector3 tangentialVelocity = velocity - penetratingVelocity;
+		
+		penetratingVelocity *= b3Scalar(1.0) + FP.m_boundaryRestitution;
+		
+		b3Scalar positionError = (-distance) * (FP.m_simulationScale/FP.m_timeStep) * FP.m_boundaryErp;
+		
+		out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FP.m_boundaryFriction );
+	}
+}
+void accumulateBoundaryImpulse(const b3FluidSphParameters& FP, b3Scalar simScaleParticleRadius,
+								b3FluidParticles& particles, int particleIndex,
+								b3Vector3& out_accumulatedImpulse)
+{
+	int i = particleIndex;
+	
+	const b3Scalar radius = simScaleParticleRadius;
+	const b3Scalar simScale = FP.m_simulationScale;
+	
+	const b3Vector3& boundaryMin = FP.m_aabbBoundaryMin;
+	const b3Vector3& boundaryMax = FP.m_aabbBoundaryMax;
+	
+	const b3Vector3& pos = particles.m_pos[i];
+	const b3Vector3& vel = particles.m_vel[i];
+	
+	b3Vector3& impulse = out_accumulatedImpulse;
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(-1.0, 0.0, 0.0), ( boundaryMax.getX() - pos.getX() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0,  1.0, 0.0), ( pos.getY() - boundaryMin.getY() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, -1.0, 0.0), ( boundaryMax.getY() - pos.getY() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, 0.0,  1.0), ( pos.getZ() - boundaryMin.getZ() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, 0.0, -1.0), ( boundaryMax.getZ() - pos.getZ() )*simScale - radius, impulse );
+}
+void b3FluidSphSolver::applyAabbImpulsesSingleFluid(b3FluidSph* fluid)
+{
+	B3_PROFILE("applyAabbImpulsesSingleFluid()");
+	
+	const b3FluidSphParameters& FP = fluid->getParameters();
+	b3FluidParticles& particles = fluid->internalGetParticles();
+	
+	const b3Scalar simScaleParticleRadius = FP.m_particleRadius * FP.m_simulationScale;
+	
+	for(int i = 0; i < particles.size(); ++i)
+	{
+		b3Vector3 aabbImpulse = b3MakeVector3(0, 0, 0);
+		accumulateBoundaryImpulse(FP, simScaleParticleRadius, particles, i, aabbImpulse);
+		
+		b3Vector3& vel = particles.m_vel[i];
+		b3Vector3& vel_eval = particles.m_vel_eval[i];
+		
+		//Leapfrog integration
+		b3Vector3 velNext = vel + aabbImpulse;
+		vel_eval = (vel + velNext) * b3Scalar(0.5);
+		vel = velNext;
+	}
+}
+
 void b3FluidSphSolver::applyForcesSingleFluid(b3FluidSph* fluid)
 {
 	B3_PROFILE("b3FluidSphSolver::applyForcesSingleFluid()");

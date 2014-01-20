@@ -24,7 +24,7 @@ subject to the following restrictions:
 #include "fluidSphCL.h"
 
 b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id device, cl_command_queue queue)
-: m_sortingGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
+: m_sortingGridProgram(context, device, queue), m_hashGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
 {
 	m_context = context;
 	m_commandQueue = queue;
@@ -53,10 +53,18 @@ b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id 
 	b3Assert(m_collideAabbImpulseKernel);
 	m_integratePositionKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "integratePositions", &error, m_fluidsProgram, additionalMacros );
 	b3Assert(m_integratePositionKernel);
+	
+	m_sphComputePressureModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputePressureModulo", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_sphComputePressureModuloKernel);
+	m_sphComputeForceModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "sphComputeForceModulo", &error, m_fluidsProgram, additionalMacros );
+	b3Assert(m_sphComputeForceModuloKernel);
 }
 
 b3FluidSphSolverOpenCL::~b3FluidSphSolverOpenCL()
 {
+	clReleaseKernel(m_sphComputePressureModuloKernel);
+	clReleaseKernel(m_sphComputeForceModuloKernel);
+	
 	clReleaseKernel(m_findNeighborCellsPerCellKernel);
 	clReleaseKernel(m_findGridCellIndexPerParticleKernel);
 	clReleaseKernel(m_sphComputePressureKernel);
@@ -64,77 +72,11 @@ b3FluidSphSolverOpenCL::~b3FluidSphSolverOpenCL()
 	clReleaseKernel(m_applyForcesKernel);
 	clReleaseKernel(m_collideAabbImpulseKernel);
 	clReleaseKernel(m_integratePositionKernel);
+	
 	clReleaseProgram(m_fluidsProgram);
 }
 
-///BULLET_2_TO_3_PLACEHOLDER
-inline void resolveAabbCollision_impulse(const b3FluidSphParameters& FP, const b3Vector3& velocity, 
-										const b3Vector3& normal, b3Scalar distance, b3Vector3& out_impulse)
-{
-	if( distance < b3Scalar(0.0) )	//Negative distance indicates penetration
-	{
-		b3Scalar penetratingMagnitude = velocity.dot(-normal);
-		if( penetratingMagnitude < b3Scalar(0.0) ) penetratingMagnitude = b3Scalar(0.0);
-		
-		b3Vector3 penetratingVelocity = -normal * penetratingMagnitude;
-		b3Vector3 tangentialVelocity = velocity - penetratingVelocity;
-		
-		penetratingVelocity *= b3Scalar(1.0) + FP.m_boundaryRestitution;
-		
-		b3Scalar positionError = (-distance) * (FP.m_simulationScale/FP.m_timeStep) * FP.m_boundaryErp;
-		
-		out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FP.m_boundaryFriction );
-	}
-}
-void accumulateBoundaryImpulse(const b3FluidSphParameters& FP, b3Scalar simScaleParticleRadius,
-								b3FluidParticles& particles, int particleIndex,
-								b3Vector3& out_accumulatedImpulse)
-{
-	int i = particleIndex;
-	
-	const b3Scalar radius = simScaleParticleRadius;
-	const b3Scalar simScale = FP.m_simulationScale;
-	
-	const b3Vector3& boundaryMin = FP.m_aabbBoundaryMin;
-	const b3Vector3& boundaryMax = FP.m_aabbBoundaryMax;
-	
-	const b3Vector3& pos = particles.m_pos[i];
-	const b3Vector3& vel = particles.m_vel[i];
-	
-	b3Vector3& impulse = out_accumulatedImpulse;
-	resolveAabbCollision_impulse( FP, vel, b3MakeVector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(-1.0, 0.0, 0.0), ( boundaryMax.getX() - pos.getX() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0,  1.0, 0.0), ( pos.getY() - boundaryMin.getY() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, -1.0, 0.0), ( boundaryMax.getY() - pos.getY() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, 0.0,  1.0), ( pos.getZ() - boundaryMin.getZ() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, 0.0, -1.0), ( boundaryMax.getZ() - pos.getZ() )*simScale - radius, impulse );
-}
-void applyAabbImpulsesSingleFluid(b3FluidSph* fluid)
-{
-	B3_PROFILE("applyAabbImpulsesSingleFluid()");
-	
-	const b3FluidSphParameters& FP = fluid->getParameters();
-	b3FluidParticles& particles = fluid->internalGetParticles();
-	
-	const b3Scalar simScaleParticleRadius = FP.m_particleRadius * FP.m_simulationScale;
-	
-	for(int i = 0; i < particles.size(); ++i)
-	{
-		b3Vector3 aabbImpulse = b3MakeVector3(0, 0, 0);
-		accumulateBoundaryImpulse(FP, simScaleParticleRadius, particles, i, aabbImpulse);
-		
-		b3Vector3& vel = particles.m_vel[i];
-		b3Vector3& vel_eval = particles.m_vel_eval[i];
-		
-		//Leapfrog integration
-		b3Vector3 velNext = vel + aabbImpulse;
-		vel_eval = (vel + velNext) * b3Scalar(0.5);
-		vel = velNext;
-	}
-}
-///BULLET_2_TO_3_PLACEHOLDER
-
-void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData)
+void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData& rbData)
 {	
 	B3_PROFILE("b3FluidSphSolverOpenCL::stepSimulation()");
 	
@@ -143,29 +85,18 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph** fluids, int numFluids, 
 	return;
 #endif	
 
-	b3AlignedObjectArray<b3FluidSph*> validFluids;
-	for(int i = 0; i < numFluids; ++i) 
+	if( !fluid->numParticles() ) 
 	{
-		fluids[i]->setFluidDataCL(0);
-		fluids[i]->setGridDataCL(0);
+		//Update AABB
+		b3FluidSortingGrid& grid = fluid->internalGetGrid();
+		b3Vector3& pointAabbMin = grid.internalGetPointAabbMin();
+		b3Vector3& pointAabbMax = grid.internalGetPointAabbMax();
 		
-		if( fluids[i]->numParticles() ) 
-		{
-			validFluids.push_back( fluids[i] );
-		}
-		else
-		{
-			//Update AABB
-			b3FluidSortingGrid& grid = fluids[i]->internalGetGrid();
-			b3Vector3& pointAabbMin = grid.internalGetPointAabbMin();
-			b3Vector3& pointAabbMax = grid.internalGetPointAabbMax();
-			
-			pointAabbMin.setValue(0,0,0);
-			pointAabbMax.setValue(0,0,0);
-		}
+		pointAabbMin.setValue(0,0,0);
+		pointAabbMax.setValue(0,0,0);
+		
+		return;
 	}
-
-	int numValidFluids = validFluids.size();
 	
 //B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT is not supported when using OpenCL grid update.
 #ifdef B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT
@@ -175,89 +106,97 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph** fluids, int numFluids, 
 	const bool UPDATE_GRID_ON_GPU = true;
 #endif
 	
-	if(!UPDATE_GRID_ON_GPU)
-		for(int i = 0; i < numValidFluids; ++i) validFluids[i]->insertParticlesIntoGrid();
+	if(!UPDATE_GRID_ON_GPU) fluid->insertParticlesIntoGrid();
 	
-	//Write data from CPU to OpenCL
 	
-	//resize m_gridData to numValidFluids
+	//Allocate solver data b3FluidSphOpenCL and b3FluidSortingGridOpenCL
+	b3FluidSphOpenCL* fluidDataCL = static_cast<b3FluidSphOpenCL*>( fluid->getFluidDataCL() );
+	b3FluidSortingGridOpenCL* gridDataCL = static_cast<b3FluidSortingGridOpenCL*>( fluid->getGridDataCL() );
+	b3FluidHashGridOpenCL* hashGridDataCL = static_cast<b3FluidHashGridOpenCL*>( fluid->getGridDataCL() );
 	{
-		while(m_gridData.size() > numValidFluids)
+		if(fluidDataCL && fluidDataCL->getType() != FSDT_b3FluidSphOpenCL)
 		{
-			b3FluidSortingGridOpenCL* lastElement = m_gridData[m_gridData.size() - 1];
-			lastElement->~b3FluidSortingGridOpenCL();
-			b3AlignedFree(lastElement);
-			
-			m_gridData.pop_back();
+			b3AlignedFree(fluidDataCL);
+			fluidDataCL = 0;
 		}
-		while(m_gridData.size() < numValidFluids)
-		{
-			void* ptr = b3AlignedAlloc( sizeof(b3FluidSortingGridOpenCL), 16 );
-			b3FluidSortingGridOpenCL* newElement = new(ptr) b3FluidSortingGridOpenCL(m_context, m_commandQueue);
-			
-			m_gridData.push_back(newElement);
-		}
-	}
-	//resize m_fluidData to numValidFluids
-	{
-		while(m_fluidData.size() > numValidFluids)
-		{
-			b3FluidSphOpenCL* lastElement = m_fluidData[m_fluidData.size() - 1];
-			lastElement->~b3FluidSphOpenCL();
-			b3AlignedFree(lastElement);
-			
-			m_fluidData.pop_back();
-		}
-		while(m_fluidData.size() < numValidFluids)
+		if(!fluidDataCL)
 		{
 			void* ptr = b3AlignedAlloc( sizeof(b3FluidSphOpenCL), 16 );
-			b3FluidSphOpenCL* newElement = new(ptr) b3FluidSphOpenCL(m_context, m_commandQueue);
-			
-			m_fluidData.push_back(newElement);
+			fluidDataCL = new(ptr) b3FluidSphOpenCL(m_context, m_commandQueue);
+			fluid->setFluidDataCL(fluidDataCL);
+		}
+		
+		if(!USE_HASH_GRID)
+		{
+			if(gridDataCL && gridDataCL->getType() != FSDT_b3FluidSortingGridOpenCL)
+			{
+				b3AlignedFree(gridDataCL);
+				gridDataCL = 0;
+			}
+			if(!gridDataCL)
+			{
+				void* ptr = b3AlignedAlloc( sizeof(b3FluidSortingGridOpenCL), 16 );
+				gridDataCL = new(ptr) b3FluidSortingGridOpenCL(m_context, m_commandQueue);
+				fluid->setGridDataCL(gridDataCL);
+			}
+		}
+		else
+		{
+			if(hashGridDataCL && hashGridDataCL->getType() != FSDT_b3FluidHashGridOpenCL)
+			{
+				b3AlignedFree(hashGridDataCL);
+				gridDataCL = 0;
+			}
+			if(!hashGridDataCL)
+			{
+				void* ptr = b3AlignedAlloc( sizeof(b3FluidHashGridOpenCL), 16 );
+				hashGridDataCL = new(ptr) b3FluidHashGridOpenCL(m_context, m_commandQueue);
+				fluid->setGridDataCL(hashGridDataCL);
+			}
 		}
 	}
 	
+	//Write data from CPU to OpenCL
 	{
 		B3_PROFILE("writeToOpenCL");
-		for(int i = 0; i < numValidFluids; ++i)
-		{
-			const b3FluidSphParameters& FP = validFluids[i]->getParameters();
+		
+		const b3FluidSphParameters& FP = fluid->getParameters();
 			
-			if(!UPDATE_GRID_ON_GPU) m_gridData[i]->writeToOpenCL( m_commandQueue, validFluids[i]->internalGetGrid() );
-			m_fluidData[i]->writeToOpenCL( m_commandQueue, FP, validFluids[i]->internalGetParticles() );
-			
-			validFluids[i]->setFluidDataCL( static_cast<void*>(m_fluidData[i]) );
-			validFluids[i]->setGridDataCL( static_cast<void*>(m_gridData[i]) );
-		}
+		if(!USE_HASH_GRID && !UPDATE_GRID_ON_GPU) gridDataCL->writeToOpenCL( m_commandQueue, fluid->internalGetGrid() );
+		fluidDataCL->writeToOpenCL( m_commandQueue, FP, fluid->internalGetParticles() );
 	}
 	
 	//
 	{
 		B3_PROFILE("calculate sph force");
-	
-		for(int i = 0; i < numValidFluids; ++i)
+		
+		int numFluidParticles = fluid->numParticles();
+			
+		if(!USE_HASH_GRID)
 		{
-			b3FluidSph* fluid = validFluids[i];
-			b3FluidSortingGridOpenCL* gridData = m_gridData[i];
-			b3FluidSphOpenCL* fluidData = m_fluidData[i];
-			
 			if(UPDATE_GRID_ON_GPU)
-				m_sortingGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, fluidData, gridData);
+				m_sortingGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, fluidDataCL, gridDataCL);
 			
-			int numActiveCells = gridData->getNumActiveCells();
-			int numFluidParticles = fluid->numParticles();
+			int numActiveCells = gridDataCL->getNumActiveCells();
 			
-			findNeighborCells( numActiveCells, numFluidParticles, gridData, fluidData);
-			sphComputePressure( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
-			sphComputeForce( numFluidParticles, gridData, fluidData, fluid->getGrid().getCellSize() );
-			
-			//The previous vel(velocity at t-1/2) is needed to update vel_eval for leapfrog integration
-			//Since vel_eval(velocity at t) is used only for SPH force computation,
-			//it is possible to store the previous velocity in m_vel_eval
-			fluidData->m_vel_eval.copyFromOpenCLArray(fluidData->m_vel);
-			
-			clFinish(m_commandQueue);
+			findNeighborCells( numActiveCells, numFluidParticles, gridDataCL, fluidDataCL);
+			sphComputePressure( numFluidParticles, gridDataCL, fluidDataCL, fluid->getGrid().getCellSize() );
+			sphComputeForce( numFluidParticles, gridDataCL, fluidDataCL, fluid->getGrid().getCellSize() );
 		}
+		else
+		{
+			m_hashGridProgram.insertParticlesIntoGrid(m_context, m_commandQueue, fluid, fluidDataCL, hashGridDataCL);
+		
+			sphComputePressureModulo( numFluidParticles, hashGridDataCL, fluidDataCL, fluid->getGrid().getCellSize() );
+			sphComputeForceModulo( numFluidParticles, hashGridDataCL, fluidDataCL, fluid->getGrid().getCellSize() );
+		}
+		
+		//The previous vel(velocity at t-1/2) is needed to update vel_eval for leapfrog integration
+		//Since vel_eval(velocity at t) is used only for SPH force computation,
+		//it is possible to store the previous velocity in m_vel_eval
+		fluidDataCL->m_vel_eval.copyFromOpenCLArray(fluidDataCL->m_vel);
+		
+		clFinish(m_commandQueue);
 	}
 	
 	const bool GPU_INTEGRATE = true;
@@ -265,64 +204,60 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph** fluids, int numFluids, 
 	{
 		B3_PROFILE("apply boundary impulses, integrate");
 		
-		for(int i = 0; i < numValidFluids; ++i)
+		int numFluidParticles = fluid->numParticles();
+	
 		{
-			b3FluidSph* fluid = validFluids[i];
-			b3FluidSphOpenCL* fluidData = m_fluidData[i];
-			b3FluidSortingGridOpenCL* gridData = m_gridData[i];
-			int numFluidParticles = fluid->numParticles();
-		
-			{
-				b3BufferInfoCL bufferInfo[] = 
-				{ 
-					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_accumulatedForce.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
-				};
-				
-				b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);
-				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-				launcher.setConst(numFluidParticles);
-				
-				launcher.launch1D(numFluidParticles);
-			}
+			b3BufferInfoCL bufferInfo[] = 
+			{ 
+				b3BufferInfoCL( fluidDataCL->m_parameters.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_accumulatedForce.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_sph_force.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_vel.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_vel_eval.getBufferCL() )
+			};
 			
-			{
-				b3BufferInfoCL bufferInfo[] = 
-				{
-					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
-				};
-				
-				b3LauncherCL launcher(m_commandQueue, m_collideAabbImpulseKernel);
-				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-				launcher.setConst(numFluidParticles);
-				
-				launcher.launch1D(numFluidParticles);
-			}
+			b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst(numFluidParticles);
 			
-			m_fluidRigidInteractor.interact(fluidData, gridData, 0, rbData);
-			
-			{
-				b3BufferInfoCL bufferInfo[] = 
-				{
-					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
-				};
-				
-				b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel);
-				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-				launcher.setConst(numFluidParticles);
-				
-				launcher.launch1D(numFluidParticles);
-			}
+			launcher.launch1D(numFluidParticles);
 		}
+		
+		{
+			b3BufferInfoCL bufferInfo[] = 
+			{
+				b3BufferInfoCL( fluidDataCL->m_parameters.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_pos.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_vel.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_vel_eval.getBufferCL() )
+			};
+			
+			b3LauncherCL launcher(m_commandQueue, m_collideAabbImpulseKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst(numFluidParticles);
+			
+			launcher.launch1D(numFluidParticles);
+		}
+		
+		if(!USE_HASH_GRID) m_fluidRigidInteractor.interact(fluidDataCL, gridDataCL, 0, rbData);
+		else m_fluidRigidInteractor.interact(fluidDataCL, 0, hashGridDataCL, rbData);
+		
+		{
+			b3BufferInfoCL bufferInfo[] = 
+			{
+				b3BufferInfoCL( fluidDataCL->m_parameters.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_pos.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_vel.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_vel_eval.getBufferCL() )
+			};
+			
+			b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel);
+			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+			launcher.setConst(numFluidParticles);
+			
+			launcher.launch1D(numFluidParticles);
+		}
+		
 		
 		clFinish(m_commandQueue);
 	}
@@ -330,24 +265,24 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph** fluids, int numFluids, 
 	//Read data from OpenCL to CPU
 	{
 		B3_PROFILE("readFromOpenCL");
-		for(int i = 0; i < numValidFluids; ++i)
-		{
-			if(UPDATE_GRID_ON_GPU) m_gridData[i]->readFromOpenCL( m_commandQueue, validFluids[i]->internalGetGrid() );
 		
-			if( m_tempSphForce.size() < validFluids[i]->numParticles() ) m_tempSphForce.resize( validFluids[i]->numParticles() );
-			m_fluidData[i]->readFromOpenCL( m_commandQueue, validFluids[i]->internalGetParticles(), m_tempSphForce);
+		{
+			if(!USE_HASH_GRID && UPDATE_GRID_ON_GPU) gridDataCL->readFromOpenCL( m_commandQueue, fluid->internalGetGrid() );
+		
+			if( m_tempSphForce.size() < fluid->numParticles() ) m_tempSphForce.resize( fluid->numParticles() );
+			fluidDataCL->readFromOpenCL( m_commandQueue, fluid->internalGetParticles(), m_tempSphForce);
 			
 			if(!GPU_INTEGRATE)
 			{
-				b3FluidParticles& particles = validFluids[i]->internalGetParticles();
+				b3FluidParticles& particles = fluid->internalGetParticles();
 				particles.m_vel_eval = particles.m_vel;
 			
-				applySphForce(validFluids[i], m_tempSphForce);
+				applySphForce(fluid, m_tempSphForce);
 				
-				b3FluidSphSolver::applyForcesSingleFluid(validFluids[i]);
-				applyAabbImpulsesSingleFluid(validFluids[i]);
+				b3FluidSphSolver::applyForcesSingleFluid(fluid);
+				b3FluidSphSolver::applyAabbImpulsesSingleFluid(fluid);
 				
-				b3FluidSphSolver::integratePositionsSingleFluid( validFluids[i]->getParameters(), particles );
+				b3FluidSphSolver::integratePositionsSingleFluid( fluid->getParameters(), particles );
 			}
 		}
 	}
@@ -437,3 +372,48 @@ void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSorti
 	launcher.launch1D(numFluidParticles);
 	clFinish(m_commandQueue);
 }
+
+
+void b3FluidSphSolverOpenCL::sphComputePressureModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
+{
+	B3_PROFILE("sphComputePressureModulo");
+	
+	b3BufferInfoCL bufferInfo[] = 
+	{ 
+		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
+		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
+	};
+	
+	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureModuloKernel);
+	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+	launcher.setConst(cellSize);
+	launcher.setConst(numFluidParticles);
+	
+	launcher.launch1D(numFluidParticles);
+	clFinish(m_commandQueue);
+}
+void b3FluidSphSolverOpenCL::sphComputeForceModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize) 
+{
+	B3_PROFILE("sphComputeForceModulo");
+	
+	b3BufferInfoCL bufferInfo[] = 
+	{ 
+		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
+		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
+	};
+	
+	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceModuloKernel);
+	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+	launcher.setConst(cellSize);
+	launcher.setConst(numFluidParticles);
+	
+	launcher.launch1D(numFluidParticles);
+	clFinish(m_commandQueue);
+}
+

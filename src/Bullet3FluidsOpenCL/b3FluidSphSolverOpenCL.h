@@ -23,6 +23,7 @@ subject to the following restrictions:
 
 #include "b3FluidSphOpenCL.h"
 #include "b3FluidSortingGridOpenCL.h"
+#include "b3FluidHashGridOpenCL.h"
 
 struct b3FluidSphParameters;
 class b3FluidSph;
@@ -41,31 +42,38 @@ class b3FluidSphSolverOpenCL : public b3FluidSphSolver
 	cl_kernel m_sphComputePressureKernel;
 	cl_kernel m_sphComputeForceKernel;
 
+	cl_kernel m_sphComputePressureModuloKernel;
+	cl_kernel m_sphComputeForceModuloKernel;
+	
 	cl_kernel m_applyForcesKernel;
 	cl_kernel m_collideAabbImpulseKernel;
 	cl_kernel m_integratePositionKernel;
 	
-	b3AlignedObjectArray<b3FluidSphOpenCL*> m_fluidData;
-	b3AlignedObjectArray<b3FluidSortingGridOpenCL*> m_gridData;
-	
 	b3FluidSortingGridOpenCLProgram m_sortingGridProgram;
+	b3FluidHashGridOpenCLProgram m_hashGridProgram;
 	b3FluidSphRigidInteractorCL m_fluidRigidInteractor;
 	
 	b3AlignedObjectArray<b3Vector3> m_tempSphForce;
 	
 public:	
+	///If true, uses an infinite hashed grid with collisions, as opposed to a statically sized(1024^3) grid with no collisions
+	static const bool USE_HASH_GRID = false; 
+
 	b3FluidSphSolverOpenCL(cl_context context, cl_device_id device, cl_command_queue queue);
 	virtual ~b3FluidSphSolverOpenCL();
 	
 	//	remove/rename
 	virtual void updateGridAndCalculateSphForces(b3FluidSph** fluids, int numFluids) { b3Assert(0); }
 	
-	virtual void stepSimulation(b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData);
+	virtual void stepSimulation(b3FluidSph* fluid, RigidBodyGpuData& rbData);
 	
-private:
+protected:
 	void findNeighborCells(int numActiveGridCells, int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData);
 	void sphComputePressure(int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
 	void sphComputeForce(int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
+	
+	void sphComputePressureModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
+	void sphComputeForceModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
 };
 
 #endif

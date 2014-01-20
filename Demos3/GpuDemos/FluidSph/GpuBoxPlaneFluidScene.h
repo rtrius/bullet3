@@ -46,7 +46,7 @@ public:
 	
 	GpuBoxPlaneFluidScene()
 	{
-		m_sphFluid = new b3FluidSph(131072);
+		m_sphFluid = new b3FluidSph(0, 131072);
 		
 		b3FluidSphParameters FP = m_sphFluid->getParameters();
 		
@@ -169,7 +169,7 @@ public:
 		RigidBodyGpuData rbData;
 		rbData.load(m_data->m_bp, m_data->m_np);
 		
-		m_solver->stepSimulation(&m_sphFluid, 1, rbData);
+		m_solver->stepSimulation(m_sphFluid, rbData);
 		
 		static int counter = 0;
 		if(++counter >= 100)

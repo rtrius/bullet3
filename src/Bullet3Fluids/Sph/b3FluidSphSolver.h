@@ -30,6 +30,7 @@ class b3FluidSphSolver
 public:
 	virtual void updateGridAndCalculateSphForces(b3FluidSph** fluids, int numFluids) = 0;
 	
+	static void applyAabbImpulsesSingleFluid(b3FluidSph* fluid);
 	static void applyForcesSingleFluid(b3FluidSph* fluid);
 	static void integratePositionsSingleFluid(const b3FluidSphParameters& FP, b3FluidParticles& particles);
 	

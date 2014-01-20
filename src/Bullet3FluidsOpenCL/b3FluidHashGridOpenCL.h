@@ -20,6 +20,7 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3RadixSort32CL.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3PrefixScanCL.h"
 
+#include "Bullet3Fluids/Sph/b3FluidSphTypedData.h"
 #include "Bullet3Fluids/Sph/b3FluidSph.h"
 class b3FluidSphOpenCL;
 
@@ -27,12 +28,14 @@ class b3FluidSphOpenCL;
 #define B3_FLUID_HASH_GRID_COORD_RANGE 64
 #define B3_FLUID_HASH_GRID_NUM_CELLS B3_FLUID_HASH_GRID_COORD_RANGE * B3_FLUID_HASH_GRID_COORD_RANGE * B3_FLUID_HASH_GRID_COORD_RANGE
 
-class b3FluidHashGridOpenCL
+class b3FluidHashGridOpenCL : public b3FluidSphTypedData
 {
 public:	
 	b3OpenCLArray<b3FluidGridIterator> m_cellContents;
 	
 	b3FluidHashGridOpenCL(cl_context context, cl_command_queue queue);
+	
+	virtual b3FluidSphDataType getType() const { return FSDT_b3FluidHashGridOpenCL; }
 };
 
 class b3FluidHashGridOpenCLProgram

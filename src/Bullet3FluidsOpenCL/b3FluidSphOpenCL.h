@@ -17,12 +17,14 @@ subject to the following restrictions:
 
 #include "Bullet3OpenCL/ParallelPrimitives/b3OpenCLArray.h"
 
+#include "Bullet3Fluids/Sph/b3FluidSphTypedData.h"
+
 class b3Vector3;
 struct b3FluidSphParameters;
 struct b3FluidParticles;
 
 ///@brief Manages OpenCL buffers corresponding to b3FluidParticles and b3FluidSphParameters.
-class b3FluidSphOpenCL
+class b3FluidSphOpenCL : public b3FluidSphTypedData
 {
 public:
 	bool m_initialized;
@@ -49,6 +51,8 @@ public:
 		m_sph_force(context, queue),
 		m_density(context, queue),
 		m_cellIndex(context, queue) {}
+	
+	virtual b3FluidSphDataType getType() const { return FSDT_b3FluidSphOpenCL; }
 	
 	void writeToOpenCL(cl_command_queue queue, const b3FluidSphParameters& FP, b3FluidParticles& particles);
 	void readFromOpenCL(cl_command_queue queue, b3FluidParticles& particles, b3AlignedObjectArray<b3Vector3>& sphForce);

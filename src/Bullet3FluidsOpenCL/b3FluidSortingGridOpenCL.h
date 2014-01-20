@@ -20,6 +20,7 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3RadixSort32CL.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3PrefixScanCL.h"
 
+#include "Bullet3Fluids/Sph/b3FluidSphTypedData.h"
 #include "Bullet3Fluids/Sph/b3FluidSph.h"
 #include "Bullet3Fluids/Sph/b3FluidSortingGrid.h"
 
@@ -27,7 +28,7 @@ class b3FluidSortingGrid;
 class b3FluidSphOpenCL;
 
 ///Manages OpenCL buffers corresponding to a b3FluidSortingGrid.
-class b3FluidSortingGridOpenCL
+class b3FluidSortingGridOpenCL : public b3FluidSphTypedData
 {
 public:	
 	b3OpenCLArray<int> m_numActiveCells;
@@ -47,6 +48,8 @@ public:
 	
 	b3FluidSortingGridOpenCL(cl_context context, cl_command_queue queue);
 		
+	virtual b3FluidSphDataType getType() const { return FSDT_b3FluidSortingGridOpenCL; }
+	
 	void writeToOpenCL(cl_command_queue queue, b3FluidSortingGrid& sortingGrid);
 	void readFromOpenCL(cl_command_queue queue, b3FluidSortingGrid& sortingGrid);
 	
