@@ -24,7 +24,7 @@ subject to the following restrictions:
 #include "fluidSphCL.h"
 
 b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id device, cl_command_queue queue)
-: m_globalFluidParams(context, queue), m_sortingGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
+: m_sortingGridProgram(context, device, queue), m_fluidRigidInteractor(context, device, queue)
 {
 	m_context = context;
 	m_commandQueue = queue;
@@ -68,7 +68,7 @@ b3FluidSphSolverOpenCL::~b3FluidSphSolverOpenCL()
 }
 
 ///BULLET_2_TO_3_PLACEHOLDER
-inline void resolveAabbCollision_impulse(const b3FluidSphParametersGlobal& FG, const b3FluidSphParametersLocal& FL, const b3Vector3& velocity, 
+inline void resolveAabbCollision_impulse(const b3FluidSphParameters& FP, const b3Vector3& velocity, 
 										const b3Vector3& normal, b3Scalar distance, b3Vector3& out_impulse)
 {
 	if( distance < b3Scalar(0.0) )	//Negative distance indicates penetration
@@ -79,49 +79,49 @@ inline void resolveAabbCollision_impulse(const b3FluidSphParametersGlobal& FG, c
 		b3Vector3 penetratingVelocity = -normal * penetratingMagnitude;
 		b3Vector3 tangentialVelocity = velocity - penetratingVelocity;
 		
-		penetratingVelocity *= b3Scalar(1.0) + FL.m_boundaryRestitution;
+		penetratingVelocity *= b3Scalar(1.0) + FP.m_boundaryRestitution;
 		
-		b3Scalar positionError = (-distance) * (FG.m_simulationScale/FG.m_timeStep) * FL.m_boundaryErp;
+		b3Scalar positionError = (-distance) * (FP.m_simulationScale/FP.m_timeStep) * FP.m_boundaryErp;
 		
-		out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FL.m_boundaryFriction );
+		out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FP.m_boundaryFriction );
 	}
 }
-void accumulateBoundaryImpulse(const b3FluidSphParametersGlobal& FG, b3Scalar simScaleParticleRadius,
-								const b3FluidSphParametersLocal& FL, b3FluidParticles& particles, int particleIndex,
+void accumulateBoundaryImpulse(const b3FluidSphParameters& FP, b3Scalar simScaleParticleRadius,
+								b3FluidParticles& particles, int particleIndex,
 								b3Vector3& out_accumulatedImpulse)
 {
 	int i = particleIndex;
 	
 	const b3Scalar radius = simScaleParticleRadius;
-	const b3Scalar simScale = FG.m_simulationScale;
+	const b3Scalar simScale = FP.m_simulationScale;
 	
-	const b3Vector3& boundaryMin = FL.m_aabbBoundaryMin;
-	const b3Vector3& boundaryMax = FL.m_aabbBoundaryMax;
+	const b3Vector3& boundaryMin = FP.m_aabbBoundaryMin;
+	const b3Vector3& boundaryMax = FP.m_aabbBoundaryMax;
 	
 	const b3Vector3& pos = particles.m_pos[i];
 	const b3Vector3& vel = particles.m_vel[i];
 	
 	b3Vector3& impulse = out_accumulatedImpulse;
-	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(-1.0, 0.0, 0.0), ( boundaryMax.getX() - pos.getX() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0,  1.0, 0.0), ( pos.getY() - boundaryMin.getY() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0, -1.0, 0.0), ( boundaryMax.getY() - pos.getY() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0, 0.0,  1.0), ( pos.getZ() - boundaryMin.getZ() )*simScale - radius, impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, b3MakeVector3(0.0, 0.0, -1.0), ( boundaryMax.getZ() - pos.getZ() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(-1.0, 0.0, 0.0), ( boundaryMax.getX() - pos.getX() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0,  1.0, 0.0), ( pos.getY() - boundaryMin.getY() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, -1.0, 0.0), ( boundaryMax.getY() - pos.getY() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, 0.0,  1.0), ( pos.getZ() - boundaryMin.getZ() )*simScale - radius, impulse );
+	resolveAabbCollision_impulse( FP, vel, b3MakeVector3(0.0, 0.0, -1.0), ( boundaryMax.getZ() - pos.getZ() )*simScale - radius, impulse );
 }
-void applyAabbImpulsesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid)
+void applyAabbImpulsesSingleFluid(b3FluidSph* fluid)
 {
 	B3_PROFILE("applyAabbImpulsesSingleFluid()");
 	
-	const b3FluidSphParametersLocal& FL = fluid->getLocalParameters();
+	const b3FluidSphParameters& FP = fluid->getParameters();
 	b3FluidParticles& particles = fluid->internalGetParticles();
 	
-	const b3Scalar simScaleParticleRadius = FL.m_particleRadius * FG.m_simulationScale;
+	const b3Scalar simScaleParticleRadius = FP.m_particleRadius * FP.m_simulationScale;
 	
 	for(int i = 0; i < particles.size(); ++i)
 	{
 		b3Vector3 aabbImpulse = b3MakeVector3(0, 0, 0);
-		accumulateBoundaryImpulse(FG, simScaleParticleRadius, FL, particles, i, aabbImpulse);
+		accumulateBoundaryImpulse(FP, simScaleParticleRadius, particles, i, aabbImpulse);
 		
 		b3Vector3& vel = particles.m_vel[i];
 		b3Vector3& vel_eval = particles.m_vel_eval[i];
@@ -134,7 +134,7 @@ void applyAabbImpulsesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidS
 }
 ///BULLET_2_TO_3_PLACEHOLDER
 
-void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData)
+void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData)
 {	
 	B3_PROFILE("b3FluidSphSolverOpenCL::stepSimulation()");
 	
@@ -179,10 +179,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 		for(int i = 0; i < numValidFluids; ++i) validFluids[i]->insertParticlesIntoGrid();
 	
 	//Write data from CPU to OpenCL
-	m_globalFluidParams.resize(1);
-	m_globalFluidParams.copyFromHostPointer(&FG, 1, 0, false);
-	clFinish(m_commandQueue);
-
+	
 	//resize m_gridData to numValidFluids
 	{
 		while(m_gridData.size() > numValidFluids)
@@ -224,10 +221,10 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 		B3_PROFILE("writeToOpenCL");
 		for(int i = 0; i < numValidFluids; ++i)
 		{
-			const b3FluidSphParametersLocal& FL = validFluids[i]->getLocalParameters();
+			const b3FluidSphParameters& FP = validFluids[i]->getParameters();
 			
 			if(!UPDATE_GRID_ON_GPU) m_gridData[i]->writeToOpenCL( m_commandQueue, validFluids[i]->internalGetGrid() );
-			m_fluidData[i]->writeToOpenCL( m_commandQueue, FL, validFluids[i]->internalGetParticles() );
+			m_fluidData[i]->writeToOpenCL( m_commandQueue, FP, validFluids[i]->internalGetParticles() );
 			
 			validFluids[i]->setFluidDataCL( static_cast<void*>(m_fluidData[i]) );
 			validFluids[i]->setGridDataCL( static_cast<void*>(m_gridData[i]) );
@@ -278,8 +275,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			{
 				b3BufferInfoCL bufferInfo[] = 
 				{ 
-					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
-					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_accumulatedForce.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
@@ -296,8 +292,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 			{
 				b3BufferInfoCL bufferInfo[] = 
 				{
-					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
-					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
@@ -310,13 +305,12 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 				launcher.launch1D(numFluidParticles);
 			}
 			
-			m_fluidRigidInteractor.interact(m_globalFluidParams, fluidData, gridData, 0, rbData);
+			m_fluidRigidInteractor.interact(fluidData, gridData, 0, rbData);
 			
 			{
 				b3BufferInfoCL bufferInfo[] = 
 				{
-					b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
-					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
@@ -348,12 +342,12 @@ void b3FluidSphSolverOpenCL::stepSimulation(const b3FluidSphParametersGlobal& FG
 				b3FluidParticles& particles = validFluids[i]->internalGetParticles();
 				particles.m_vel_eval = particles.m_vel;
 			
-				applySphForce(FG, validFluids[i], m_tempSphForce);
+				applySphForce(validFluids[i], m_tempSphForce);
 				
-				b3FluidSphSolver::applyForcesSingleFluid(FG, validFluids[i]);
-				applyAabbImpulsesSingleFluid(FG, validFluids[i]);
+				b3FluidSphSolver::applyForcesSingleFluid(validFluids[i]);
+				applyAabbImpulsesSingleFluid(validFluids[i]);
 				
-				b3FluidSphSolver::integratePositionsSingleFluid( FG, validFluids[i]->getLocalParameters(), particles );
+				b3FluidSphSolver::integratePositionsSingleFluid( validFluids[i]->getParameters(), particles );
 			}
 		}
 	}
@@ -407,8 +401,7 @@ void b3FluidSphSolverOpenCL::sphComputePressure(int numFluidParticles, b3FluidSo
 	
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
-		b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
-		b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
 		b3BufferInfoCL( gridData->m_foundCells.getBufferCL() ),
@@ -428,8 +421,7 @@ void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSorti
 	
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
-		b3BufferInfoCL( m_globalFluidParams.getBufferCL() ), 
-		b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),

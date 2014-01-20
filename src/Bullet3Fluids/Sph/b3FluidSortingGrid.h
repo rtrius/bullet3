@@ -118,7 +118,7 @@ public:
 
 ///@brief Uniform grid broadphase for b3FluidSph particles.
 ///@remarks
-///A fundamental operation in SPH fluid simulations is the detection
+///A key operation in SPH fluid simulations is the detection
 ///of collisions between fluid particles.
 ///@par
 ///Since testing each fluid pair would require O(n^2) operations, a grid based 
@@ -190,7 +190,7 @@ public:
 	
 	///Returns a 3x3x3 group of b3FluidGridIterator, which is the maximum extent of cells
 	///that may interact with an AABB defined by (position - radius, position + radius). 
-	///Where radius is the SPH smoothing radius, in b3FluidSphParametersGlobal, converted to world scale.
+	///Where radius is the SPH smoothing radius, in b3FluidSphParameters, converted to world scale.
 	///@param position Center of the AABB defined by (position - radius, position + radius).
 	void findCells(const b3Vector3& position, b3FluidSortingGrid::FoundCells& out_gridCells) const
 	{

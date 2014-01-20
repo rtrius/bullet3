@@ -37,8 +37,7 @@ inline b3Vector3 b3Vector3_normalize(b3Vector3 v)
 #define INVALID_FIRST_INDEX -1
 #define INVALID_LAST_INDEX -2
 
-
-//Syncronize with 'struct b3FluidSphParametersGlobal' in b3FluidSphParameters.h
+//Syncronize with 'struct b3FluidSphParameters' in b3FluidSphParameters.h
 typedef struct
 {
 	b3Scalar m_timeStep;
@@ -49,11 +48,6 @@ typedef struct
 	b3Scalar m_spikyKernGradCoeff;
 	b3Scalar m_viscosityKernLapCoeff;
 	b3Scalar m_initialSum;
-} b3FluidSphParametersGlobal;
-
-//Syncronize with 'struct b3FluidSphParametersLocal' in b3FluidSphParameters.h
-typedef struct
-{
 	b3Vector3 m_aabbBoundaryMin;
 	b3Vector3 m_aabbBoundaryMax;
 	int m_enableAabbBoundary;
@@ -73,7 +67,7 @@ typedef struct
 	b3Scalar m_boundaryFriction;
 	b3Scalar m_boundaryRestitution;
 	b3Scalar m_boundaryErp;
-} b3FluidSphParametersLocal;
+} b3FluidSphParameters;
 
 
 //#define B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT	//Ensure that this is also #defined in b3FluidSortingGrid.h
@@ -505,14 +499,14 @@ __kernel void findGridCellIndexPerParticle(__constant int* numActiveCells, __glo
 
 //
 #define B3_EPSILON FLT_EPSILON
-__kernel void sphComputePressure(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL,
+__kernel void sphComputePressure(__constant b3FluidSphParameters* FP,
 								  __global b3Vector3* fluidPosition, __global b3Scalar* fluidDensity,
 								  __global b3FluidSortingGridFoundCellsGpu* foundCells, __global int* foundCellIndex, int numFluidParticles)
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar sum = FG->m_initialSum;
+	b3Scalar sum = FP->m_initialSum;
 	
 	for(int cell = 0; cell < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) 
 	{
@@ -520,31 +514,31 @@ __kernel void sphComputePressure(__constant b3FluidSphParametersGlobal* FG,  __c
 		
 		for(int n = foundCell.m_firstIndex; n <= foundCell.m_lastIndex; ++n)
 		{
-			b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+			b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FP->m_simulationScale;	//Simulation scale distance
 			b3Scalar distanceSquared = b3Vector3_length2(delta);
 			
-			b3Scalar c = FG->m_sphRadiusSquared - distanceSquared;
+			b3Scalar c = FP->m_sphRadiusSquared - distanceSquared;
 			sum += (c > 0.0f && i != n) ? c*c*c : 0.0f;		//If c is positive, the particle is within interaction radius(poly6 kernel radius)
 		}
 	}
 	
-	fluidDensity[i] = sum * FL->m_sphParticleMass * FG->m_poly6KernCoeff;
+	fluidDensity[i] = sum * FP->m_sphParticleMass * FP->m_poly6KernCoeff;
 }
 
 
-__kernel void sphComputeForce(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL,
+__kernel void sphComputeForce(__constant b3FluidSphParameters* FP,
 							   __global b3Vector3* fluidPosition, __global b3Vector3* fluidVelEval, 
 							   __global b3Vector3* fluidSphForce, __global b3Scalar* fluidDensity,
 							   __global b3FluidSortingGridFoundCellsGpu* foundCells, __global int* foundCellIndex, int numFluidParticles)
 {
-	b3Scalar vterm = FG->m_viscosityKernLapCoeff * FL->m_viscosity;
+	b3Scalar vterm = FP->m_viscosityKernLapCoeff * FP->m_viscosity;
 	
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
 	b3Scalar density_i = fluidDensity[i];
 	b3Scalar invDensity_i = 1.0f / density_i;
-	b3Scalar pressure_i = (density_i - FL->m_restDensity) * FL->m_stiffness;
+	b3Scalar pressure_i = (density_i - FP->m_restDensity) * FP->m_stiffness;
 	
 	b3Vector3 force = {0.0f, 0.0f, 0.0f, 0.0f};
 	
@@ -554,18 +548,18 @@ __kernel void sphComputeForce(__constant b3FluidSphParametersGlobal* FG, __const
 		
 		for(int n = foundCell.m_firstIndex; n <= foundCell.m_lastIndex; ++n)
 		{	
-			b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+			b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FP->m_simulationScale;	//Simulation scale distance
 			b3Scalar distanceSquared = b3Vector3_length2(delta);
 			
-			if(FG->m_sphRadiusSquared > distanceSquared && i != n)
+			if(FP->m_sphRadiusSquared > distanceSquared && i != n)
 			{
 				b3Scalar density_n = fluidDensity[n];
 				b3Scalar invDensity_n = 1.0f / density_n;
-				b3Scalar pressure_n = (density_n - FL->m_restDensity) * FL->m_stiffness;
+				b3Scalar pressure_n = (density_n - FP->m_restDensity) * FP->m_stiffness;
 			
 				b3Scalar distance = sqrt(distanceSquared);
-				b3Scalar c = FG->m_sphSmoothRadius - distance;
-				b3Scalar pterm = -0.5f * c * FG->m_spikyKernGradCoeff * (pressure_i + pressure_n);
+				b3Scalar c = FP->m_sphSmoothRadius - distance;
+				b3Scalar pterm = -0.5f * c * FP->m_spikyKernGradCoeff * (pressure_i + pressure_n);
 				pterm /= (distance < B3_EPSILON) ? B3_EPSILON : distance;
 				
 				b3Scalar dterm = c * invDensity_i * invDensity_n;
@@ -575,10 +569,10 @@ __kernel void sphComputeForce(__constant b3FluidSphParametersGlobal* FG, __const
 		}
 	}
 	
-	fluidSphForce[i] = force * FL->m_sphParticleMass;
+	fluidSphForce[i] = force * FP->m_sphParticleMass;
 }
 
-__kernel void applyForces(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+__kernel void applyForces(__constant b3FluidSphParameters* FP, 
 						__global b3Vector3* fluidExternalForce, __global b3Vector3* fluidSphAcceleration,
 						__global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, int numFluidParticles)
 {
@@ -589,21 +583,21 @@ __kernel void applyForces(__constant b3FluidSphParametersGlobal* FG,  __constant
 	{
 		b3Scalar accelMagnitude = sqrt( b3Vector3_length2(sphAcceleration) );
 		
-		b3Scalar simulationScaleAccelLimit = FL->m_sphAccelLimit * FG->m_simulationScale;
+		b3Scalar simulationScaleAccelLimit = FP->m_sphAccelLimit * FP->m_simulationScale;
 		if(accelMagnitude > simulationScaleAccelLimit) sphAcceleration *= simulationScaleAccelLimit / accelMagnitude;
 	}
 
-	b3Vector3 acceleration = FL->m_gravity + sphAcceleration + fluidExternalForce[i] / FL->m_particleMass;
+	b3Vector3 acceleration = FP->m_gravity + sphAcceleration + fluidExternalForce[i] / FP->m_particleMass;
 	
 	b3Vector3 vel = fluidVel[i];
 	
-	b3Vector3 vnext = vel + acceleration * FG->m_timeStep;		//v(t+1/2) = v(t-1/2) + a(t) dt	
+	b3Vector3 vnext = vel + acceleration * FP->m_timeStep;		//v(t+1/2) = v(t-1/2) + a(t) dt	
 	fluidVel[i] = vnext;
 	
 	fluidExternalForce[i] = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 }
 
-inline void resolveAabbCollision_impulse(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+inline void resolveAabbCollision_impulse(__constant b3FluidSphParameters* FP, 
 										b3Vector3 velocity, b3Vector3 normal, b3Scalar distance, b3Vector3* out_impulse)
 {
 	if( distance < 0.0f )	//Negative distance indicates penetration
@@ -614,30 +608,30 @@ inline void resolveAabbCollision_impulse(__constant b3FluidSphParametersGlobal* 
 		b3Vector3 penetratingVelocity = -normal * penetratingMagnitude;
 		b3Vector3 tangentialVelocity = velocity - penetratingVelocity;
 		
-		penetratingVelocity *= 1.0f + FL->m_boundaryRestitution;
+		penetratingVelocity *= 1.0f + FP->m_boundaryRestitution;
 		
-		b3Scalar positionError = (-distance) * (FG->m_simulationScale/FG->m_timeStep) * FL->m_boundaryErp;
+		b3Scalar positionError = (-distance) * (FP->m_simulationScale/FP->m_timeStep) * FP->m_boundaryErp;
 		
-		*out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FL->m_boundaryFriction );
+		*out_impulse += -( penetratingVelocity + (-normal*positionError) + tangentialVelocity * FP->m_boundaryFriction );
 	}
 }
-inline void accumulateBoundaryImpulse(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+inline void accumulateBoundaryImpulse(__constant b3FluidSphParameters* FP, 
 								b3Scalar simScaleParticleRadius, b3Vector3 pos, b3Vector3 vel, b3Vector3* out_impulse)
 {
 	b3Scalar radius = simScaleParticleRadius;
-	b3Scalar simScale = FG->m_simulationScale;
+	b3Scalar simScale = FP->m_simulationScale;
 	
-	b3Vector3 boundaryMin = FL->m_aabbBoundaryMin;
-	b3Vector3 boundaryMax = FL->m_aabbBoundaryMax;
+	b3Vector3 boundaryMin = FP->m_aabbBoundaryMin;
+	b3Vector3 boundaryMax = FP->m_aabbBoundaryMax;
 	
-	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){ 1.0f, 0.0f, 0.0f, 0.0f}, ( pos.x - boundaryMin.x )*simScale - radius, out_impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){-1.0f, 0.0f, 0.0f, 0.0f}, ( boundaryMax.x - pos.x )*simScale - radius, out_impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f,  1.0f, 0.0f, 0.0f}, ( pos.y - boundaryMin.y )*simScale - radius, out_impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f, -1.0f, 0.0f, 0.0f}, ( boundaryMax.y - pos.y )*simScale - radius, out_impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f, 0.0f,  1.0f, 0.0f}, ( pos.z - boundaryMin.z )*simScale - radius, out_impulse );
-	resolveAabbCollision_impulse( FG, FL, vel, (b3Vector3){0.0f, 0.0f, -1.0f, 0.0f}, ( boundaryMax.z - pos.z )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FP, vel, (b3Vector3){ 1.0f, 0.0f, 0.0f, 0.0f}, ( pos.x - boundaryMin.x )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FP, vel, (b3Vector3){-1.0f, 0.0f, 0.0f, 0.0f}, ( boundaryMax.x - pos.x )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FP, vel, (b3Vector3){0.0f,  1.0f, 0.0f, 0.0f}, ( pos.y - boundaryMin.y )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FP, vel, (b3Vector3){0.0f, -1.0f, 0.0f, 0.0f}, ( boundaryMax.y - pos.y )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FP, vel, (b3Vector3){0.0f, 0.0f,  1.0f, 0.0f}, ( pos.z - boundaryMin.z )*simScale - radius, out_impulse );
+	resolveAabbCollision_impulse( FP, vel, (b3Vector3){0.0f, 0.0f, -1.0f, 0.0f}, ( boundaryMax.z - pos.z )*simScale - radius, out_impulse );
 }
-__kernel void collideAabbImpulse(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+__kernel void collideAabbImpulse(__constant b3FluidSphParameters* FP, 
 								__global b3Vector3* fluidPosition, __global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, 
 								int numFluidParticles)
 {
@@ -647,31 +641,31 @@ __kernel void collideAabbImpulse(__constant b3FluidSphParametersGlobal* FG,  __c
 	b3Vector3 pos = fluidPosition[i];
 	b3Vector3 vel = fluidVel[i];
 	
-	b3Scalar simScaleParticleRadius = FL->m_particleRadius * FG->m_simulationScale;
+	b3Scalar simScaleParticleRadius = FP->m_particleRadius * FP->m_simulationScale;
 	
 	b3Vector3 aabbImpulse = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
-	accumulateBoundaryImpulse(FG, FL, simScaleParticleRadius, pos, vel, &aabbImpulse);
+	accumulateBoundaryImpulse(FP, simScaleParticleRadius, pos, vel, &aabbImpulse);
 	
 	//Leapfrog integration
 	b3Vector3 vnext = vel + aabbImpulse;
 	fluidVel[i] = vnext;
 }
 
-__kernel void integratePositions(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
+__kernel void integratePositions(__constant b3FluidSphParameters* FP, 
 								__global b3Vector3* fluidPosition, __global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, 
 								int numFluidParticles)
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar timeStepDivSimScale = FG->m_timeStep / FG->m_simulationScale;
+	b3Scalar timeStepDivSimScale = FP->m_timeStep / FP->m_simulationScale;
 	
 	b3Vector3 prevVelocity = fluidVelEval[i];	//Velocity at (t-1/2)
 	b3Vector3 nextVelocity = fluidVel[i];		//Velocity at (t+1/2)
 	
-	if(FL->m_speedLimit != 0.0f)
+	if(FP->m_speedLimit != 0.0f)
 	{
-		b3Scalar simulationScaleSpeedLimit = FL->m_speedLimit * FG->m_simulationScale;
+		b3Scalar simulationScaleSpeedLimit = FP->m_speedLimit * FP->m_simulationScale;
 	
 		b3Scalar speed = sqrt( b3Vector3_length2(nextVelocity) );
 		if(speed > simulationScaleSpeedLimit) 
@@ -756,14 +750,14 @@ __kernel void detectIndexRangesModulo(__global b3Vector3* fluidPosition, __globa
 	}
 }
 
-__kernel void sphComputePressureModulo(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL,
+__kernel void sphComputePressureModulo(__constant b3FluidSphParameters* FP,
 								__global b3Vector3* fluidPosition, __global b3Scalar* fluidDensity,
 								__global b3FluidGridIterator* cellContents, b3Scalar gridCellSize, int numFluidParticles)
 {
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar sum = FG->m_initialSum;
+	b3Scalar sum = FP->m_initialSum;
 	
 	b3FluidGridPosition centerCell = getDiscretePosition(gridCellSize, fluidPosition[i]);
 	centerCell.x--;
@@ -784,29 +778,29 @@ __kernel void sphComputePressureModulo(__constant b3FluidSphParametersGlobal* FG
 				
 				for(int n = gridCell.m_firstIndex; n <= gridCell.m_lastIndex; ++n)
 				{
-					b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+					b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FP->m_simulationScale;	//Simulation scale distance
 					b3Scalar distanceSquared = b3Vector3_length2(delta);
 					
-					b3Scalar c = FG->m_sphRadiusSquared - distanceSquared;
+					b3Scalar c = FP->m_sphRadiusSquared - distanceSquared;
 					sum += (c > 0.0f && i != n) ? c*c*c : 0.0f;		//If c is positive, the particle is within interaction radius(poly6 kernel radius)
 				}
 			}
 	
-	fluidDensity[i] = sum * FL->m_sphParticleMass * FG->m_poly6KernCoeff;
+	fluidDensity[i] = sum * FP->m_sphParticleMass * FP->m_poly6KernCoeff;
 }
-__kernel void sphComputeForceModulo(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL,
+__kernel void sphComputeForceModulo(__constant b3FluidSphParameters* FP,
 							__global b3Vector3* fluidPosition, __global b3Vector3* fluidVelEval, 
 							__global b3Vector3* fluidSphForce, __global b3Scalar* fluidDensity,
 							__global b3FluidGridIterator* cellContents, b3Scalar gridCellSize, int numFluidParticles)
 {
-	b3Scalar vterm = FG->m_viscosityKernLapCoeff * FL->m_viscosity;
+	b3Scalar vterm = FP->m_viscosityKernLapCoeff * FP->m_viscosity;
 	
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
 	b3Scalar density_i = fluidDensity[i];
 	b3Scalar invDensity_i = 1.0f / density_i;
-	b3Scalar pressure_i = (density_i - FL->m_restDensity) * FL->m_stiffness;
+	b3Scalar pressure_i = (density_i - FP->m_restDensity) * FP->m_stiffness;
 	
 	b3Vector3 force = {0.0f, 0.0f, 0.0f, 0.0f};
 	
@@ -829,18 +823,18 @@ __kernel void sphComputeForceModulo(__constant b3FluidSphParametersGlobal* FG, _
 				
 				for(int n = gridCell.m_firstIndex; n <= gridCell.m_lastIndex; ++n)
 				{	
-					b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FG->m_simulationScale;	//Simulation scale distance
+					b3Vector3 delta = (fluidPosition[i] - fluidPosition[n]) * FP->m_simulationScale;	//Simulation scale distance
 					b3Scalar distanceSquared = b3Vector3_length2(delta);
 					
-					if(FG->m_sphRadiusSquared > distanceSquared && i != n)
+					if(FP->m_sphRadiusSquared > distanceSquared && i != n)
 					{
 						b3Scalar density_n = fluidDensity[n];
 						b3Scalar invDensity_n = 1.0f / density_n;
-						b3Scalar pressure_n = (density_n - FL->m_restDensity) * FL->m_stiffness;
+						b3Scalar pressure_n = (density_n - FP->m_restDensity) * FP->m_stiffness;
 					
 						b3Scalar distance = sqrt(distanceSquared);
-						b3Scalar c = FG->m_sphSmoothRadius - distance;
-						b3Scalar pterm = -0.5f * c * FG->m_spikyKernGradCoeff * (pressure_i + pressure_n);
+						b3Scalar c = FP->m_sphSmoothRadius - distance;
+						b3Scalar pterm = -0.5f * c * FP->m_spikyKernGradCoeff * (pressure_i + pressure_n);
 						pterm /= (distance < B3_EPSILON) ? B3_EPSILON : distance;
 						
 						b3Scalar dterm = c * invDensity_i * invDensity_n;
@@ -850,5 +844,5 @@ __kernel void sphComputeForceModulo(__constant b3FluidSphParametersGlobal* FG, _
 				}
 			}
 	
-	fluidSphForce[i] = force * FL->m_sphParticleMass;
+	fluidSphForce[i] = force * FP->m_sphParticleMass;
 }

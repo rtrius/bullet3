@@ -236,8 +236,8 @@ public:
 	}
 	
 	//Either gridData or moduloGridData must be nonzero, but not both; it is used to determine which grid type is being used
-	void interact(const b3OpenCLArray<b3FluidSphParametersGlobal>& globalFluidParams, b3FluidSphOpenCL* fluidData, 
-					b3FluidSortingGridOpenCL* gridData, b3FluidHashGridOpenCL* moduloGridData, RigidBodyGpuData& rigidBodyData)
+	void interact(b3FluidSphOpenCL* fluidData,  b3FluidSortingGridOpenCL* gridData, 
+					b3FluidHashGridOpenCL* moduloGridData, RigidBodyGpuData& rigidBodyData)
 	{
 		b3Assert(gridData || moduloGridData);
 		b3Assert( !(gridData && moduloGridData));
@@ -288,8 +288,7 @@ public:
 				
 				b3BufferInfoCL bufferInfo[] = 
 				{
-					b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 					
 					b3BufferInfoCL( rigidBodyData.m_worldSpaceAabbs ),
 					b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
@@ -314,8 +313,7 @@ public:
 				
 				b3BufferInfoCL bufferInfo[] = 
 				{
-					b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 				
 					b3BufferInfoCL( rigidBodyData.m_worldSpaceAabbs ),
@@ -351,8 +349,7 @@ public:
 			
 			b3BufferInfoCL bufferInfo[] = 
 			{
-				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 				
 				b3BufferInfoCL( gridData->m_activeCells.getBufferCL() ),
@@ -380,8 +377,7 @@ public:
 			
 			b3BufferInfoCL bufferInfo[] = 
 			{
-				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 				
 				b3BufferInfoCL( moduloGridData->m_cellContents.getBufferCL() ),
@@ -412,7 +408,7 @@ public:
 		
 			b3BufferInfoCL bufferInfo[] = 
 			{
-				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 				
 				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
@@ -442,8 +438,7 @@ public:
 			
 			b3BufferInfoCL bufferInfo[] = 
 			{
-				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
 				b3BufferInfoCL( m_pairs.getBufferCL() ),
 				
@@ -476,8 +471,7 @@ public:
 		
 			b3BufferInfoCL bufferInfo[] = 
 			{
-				b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 				
 				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
 				b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
@@ -545,8 +539,7 @@ public:
 					
 				b3BufferInfoCL bufferInfo[] = 
 				{ 
-					b3BufferInfoCL( globalFluidParams.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_localParameters.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
 					
 					b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
 					b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),

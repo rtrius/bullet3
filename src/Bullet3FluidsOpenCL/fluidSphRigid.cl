@@ -24,8 +24,7 @@ inline b3Vector3 b3Vector3_normalize(b3Vector3 v)
 #define INVALID_FIRST_INDEX -1
 #define INVALID_LAST_INDEX -2
 
-
-//Syncronize with 'struct b3FluidSphParametersGlobal' in b3FluidSphParameters.h
+//Syncronize with 'struct b3FluidSphParameters' in b3FluidSphParameters.h
 typedef struct
 {
 	b3Scalar m_timeStep;
@@ -36,11 +35,6 @@ typedef struct
 	b3Scalar m_spikyKernGradCoeff;
 	b3Scalar m_viscosityKernLapCoeff;
 	b3Scalar m_initialSum;
-} b3FluidSphParametersGlobal;
-
-//Syncronize with 'struct b3FluidSphParametersLocal' in b3FluidSphParameters.h
-typedef struct
-{
 	b3Vector3 m_aabbBoundaryMin;
 	b3Vector3 m_aabbBoundaryMax;
 	int m_enableAabbBoundary;
@@ -60,7 +54,7 @@ typedef struct
 	b3Scalar m_boundaryFriction;
 	b3Scalar m_boundaryRestitution;
 	b3Scalar m_boundaryErp;
-} b3FluidSphParametersLocal;
+} b3FluidSphParameters;
 
 
 //#define B3_ENABLE_FLUID_SORTING_GRID_LARGE_WORLD_SUPPORT	//Ensure that this is also #defined in b3FluidSortingGrid.h
@@ -1072,7 +1066,7 @@ __kernel void clearFluidRigidPairsAndContacts(__global FluidRigidPairs* pairs, _
 	contacts[i].m_numContacts = 0;
 }
 
-__kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL,  
+__kernel void detectLargeAabbRigids(__constant b3FluidSphParameters* FP,  
 									__global btAabbCL* rigidBodyWorldAabbs,
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 									__global int* out_numLargeAabbRigids, __global int* out_largeAabbRigidIndicies, 
@@ -1081,8 +1075,8 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  
 	int i = get_global_id(0);
 	if(i >= numRigidBodies) return;
 	
-	b3Scalar gridCellSize = FG->m_sphSmoothRadius / FG->m_simulationScale;
-	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
+	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
 	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
@@ -1108,7 +1102,7 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParametersGlobal* FG,  
 		if(largeRigidIndex < maxLargeRigidAabbs) out_largeAabbRigidIndicies[largeRigidIndex] = i;
 	}
 }
-__kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+__kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParameters* FP, 
 										__global b3Vector3* fluidPosition, __global btAabbCL* rigidBodyWorldAabbs,
 										__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 										__global int* numLargeAabbRigids, __global int* largeAabbRigidIndicies,
@@ -1118,8 +1112,8 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar gridCellSize = FG->m_sphSmoothRadius / FG->m_simulationScale;
-	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
+	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
 	b3Vector3 particlePos = fluidPosition[i];
@@ -1154,7 +1148,7 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	}
 }
 
-__kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+__kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParameters* FP, 
 									__global b3Vector3* fluidPosition, __global b3FluidGridCombinedPos* cellValues, 
 									__global b3FluidGridIterator* cellContents, __global btAabbCL* rigidBodyWorldAabbs,
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
@@ -1164,8 +1158,8 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParametersGlobal* F
 	int i = get_global_id(0);
 	if(i >= numRigidBodies) return;
 	
-	b3Scalar gridCellSize = FG->m_sphSmoothRadius / FG->m_simulationScale;
-	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
+	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
 	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
@@ -1246,7 +1240,7 @@ b3FluidGridCombinedPos getCombinedPositionModulo(b3FluidGridPosition quantizedPo
 		+ unsignedY * B3_FLUID_HASH_GRID_COORD_RANGE
 		+ unsignedZ * B3_FLUID_HASH_GRID_COORD_RANGE* B3_FLUID_HASH_GRID_COORD_RANGE;
 }
-__kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParametersGlobal* FG,  __constant b3FluidSphParametersLocal* FL, 
+__kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParameters* FP, 
 									__global b3Vector3* fluidPosition, 
 									__global b3FluidGridIterator* cellContents, __global btAabbCL* rigidBodyWorldAabbs,
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
@@ -1256,8 +1250,8 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParametersGlo
 	int i = get_global_id(0);
 	if(i >= numRigidBodies) return;
 	
-	b3Scalar gridCellSize = FG->m_sphSmoothRadius / FG->m_simulationScale;
-	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
+	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
 	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
@@ -1325,7 +1319,7 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParametersGlo
 // Modulo Hash Grid Only
 // ////////////////////////////////////////////////////////////////////////////
 
-__kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __global b3Vector3* fluidPosition, 
+__kernel void fluidRigidMidphase(__constant b3FluidSphParameters* FP, __global b3Vector3* fluidPosition, 
 								__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 								__global b3BvhInfo* bvhInfos, __global btBvhSubtreeInfo* bvhSubtreeInfo, __global btQuantizedBvhNode* bvhNodes,
 								__global FluidRigidPairs* midphasePairs, __global FluidRigidPairs* out_pairs, int numFluidParticles)
@@ -1333,7 +1327,7 @@ __kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __glo
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar particleRadius = FL->m_particleRadius;
+	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
 	b3Vector3 fluidAabbMin = fluidPosition[i] - radiusAabbExtent;
@@ -1374,7 +1368,7 @@ __kernel void fluidRigidMidphase(__constant b3FluidSphParametersLocal* FL, __glo
 	}
 }
 
-__kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
+__kernel void fluidRigidNarrowphase(__constant b3FluidSphParameters* FP, 
 									__global b3Vector3* fluidPosition, __global FluidRigidPairs* pairs, 
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 									__global ConvexPolyhedronCL* convexShapes, __global btGpuFace* faces,
@@ -1426,7 +1420,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 			case SHAPE_CONVEX_HULL:
 			{
 				isColliding = computeContactSphereConvex( collidableIndex, collidables, convexShapes, convexVertices, convexIndices, faces,
-														fluidPosition[i], FL->m_particleRadius, rigidPosition, rigidOrientation,
+														fluidPosition[i], FP->m_particleRadius, rigidPosition, rigidOrientation,
 														&distance, &normalOnRigid, &pointOnRigid );
 				normalOnRigid = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
 			}
@@ -1436,7 +1430,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 			{
 				float4 rigidPlaneEquation = faces[shapeIndex].m_plane;
 		
-				isColliding = computeContactSpherePlane(fluidPosition[i], FL->m_particleRadius, 
+				isColliding = computeContactSpherePlane(fluidPosition[i], FP->m_particleRadius, 
 														rigidPosition, rigidOrientation, rigidPlaneEquation,
 														&distance, &normalOnRigid, &pointOnRigid );
 			}
@@ -1446,7 +1440,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 			{
 				float rigidSphereRadius = collidables[collidableIndex].m_radius;
 			
-				isColliding = computeContactSphereSphere(fluidPosition[i], FL->m_particleRadius,
+				isColliding = computeContactSphereSphere(fluidPosition[i], FP->m_particleRadius,
 														rigidPosition, rigidSphereRadius,
 														&distance, &normalOnRigid, &pointOnRigid);
 			}
@@ -1467,7 +1461,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 					triangleVertices[j] = vertex;
 				}
 				
-				isColliding = computeContactSphereTriangle(triangleVertices, fluidPosition[i], FL->m_particleRadius,
+				isColliding = computeContactSphereTriangle(triangleVertices, fluidPosition[i], FP->m_particleRadius,
 															rigidPosition, rigidOrientation,
 															&distance, &normalOnRigid, &pointOnRigid);									
 				normalOnRigid = -normalOnRigid;
@@ -1495,7 +1489,7 @@ __kernel void fluidRigidNarrowphase(__constant b3FluidSphParametersGlobal* FG, _
 	}
 }
 
-__kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
+__kernel void resolveFluidRigidCollisions(__constant b3FluidSphParameters* FP, 
 											__global BodyData* rigidBodies, __global InertiaTensor* rigidInertias,
 											__global FluidRigidContacts* contacts, 
 											__global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, int numFluidParticles)
@@ -1527,7 +1521,7 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 			
 			b3Vector3 rigidVelocity = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 			if(isDynamicRigidBody) rigidVelocity = rigidLinearVelocity + cross3(rigidAngularVelocity, rigidLocalHitPoint);
-			rigidVelocity *= FG->m_simulationScale;
+			rigidVelocity *= FP->m_simulationScale;
 		
 			b3Vector3 relativeVelocity = fluidVelocity - rigidVelocity;
 			b3Scalar penetratingMagnitude = b3Vector3_dot(relativeVelocity, -normalOnRigid);
@@ -1536,25 +1530,25 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParametersGlobal*
 			b3Vector3 penetratingVelocity = -normalOnRigid * penetratingMagnitude;
 			b3Vector3 tangentialVelocity = relativeVelocity - penetratingVelocity;
 			
-			penetratingVelocity *= 1.0f + FL->m_boundaryRestitution;
+			penetratingVelocity *= 1.0f + FP->m_boundaryRestitution;
 			
 			b3Scalar penetration = -distance;
-			penetration = (penetration > FL->m_particleMargin) ? penetration : 0.0f;
-			b3Scalar positionError = penetration * (FG->m_simulationScale/FG->m_timeStep) * FL->m_boundaryErp;
+			penetration = (penetration > FP->m_particleMargin) ? penetration : 0.0f;
+			b3Scalar positionError = penetration * (FP->m_simulationScale/FP->m_timeStep) * FP->m_boundaryErp;
 			
-			b3Vector3 particleImpulse = -(penetratingVelocity + (-normalOnRigid*positionError) + tangentialVelocity*FL->m_boundaryFriction);
+			b3Vector3 particleImpulse = -(penetratingVelocity + (-normalOnRigid*positionError) + tangentialVelocity*FP->m_boundaryFriction);
 			
 			if(isDynamicRigidBody)
 			{
-				b3Scalar inertiaParticle = 1.0f / FL->m_particleMass;
+				b3Scalar inertiaParticle = 1.0f / FP->m_particleMass;
 				
 				b3Vector3 relPosCrossNormal = cross3(rigidLocalHitPoint, normalOnRigid);
 				b3Scalar inertiaRigid = rigidInvMass + b3Vector3_dot( mtMul3(relPosCrossNormal, rigidInertiaTensor), relPosCrossNormal );
 				
 				particleImpulse *= 1.0f / (inertiaParticle + inertiaRigid);
 				
-				//b3Vector3 worldScaleImpulse = -particleImpulse / FG->m_simulationScale;
-				//worldScaleImpulse /= FG->m_timeStep;		//Impulse is accumulated as force
+				//b3Vector3 worldScaleImpulse = -particleImpulse / FP->m_simulationScale;
+				//worldScaleImpulse /= FP->m_timeStep;		//Impulse is accumulated as force
 				
 				//const b3Vector3& linearFactor = rigidBody->getLinearFactor();
 				//accumulatedRigidForce += worldScaleImpulse * linearFactor;
@@ -1599,7 +1593,7 @@ __kernel void mapRigidFluidContacts(__global FluidRigidContacts* fluidRigidConta
 	}
 }
 
-__kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal* FG, __constant b3FluidSphParametersLocal* FL, 
+__kernel void resolveRigidFluidCollisions(__constant b3FluidSphParameters* FP, 
 											__global BodyData* rigidBodies, __global InertiaTensor* rigidInertias,
 											__global FluidRigidContacts* fluidContacts, __global RigidFluidContacts* rigidContacts, 
 											__global b3Vector3* fluidVel, int numRigidBodies)
@@ -1640,7 +1634,7 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal*
 			
 			b3Vector3 rigidVelocity = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 			if(isDynamicRigidBody) rigidVelocity = rigidLinearVelocity + cross3(rigidAngularVelocity, rigidLocalHitPoint);
-			rigidVelocity *= FG->m_simulationScale;
+			rigidVelocity *= FP->m_simulationScale;
 		
 			b3Vector3 relativeVelocity = fluidVelocity - rigidVelocity;
 			b3Scalar penetratingMagnitude = b3Vector3_dot(relativeVelocity, -normalOnRigid);
@@ -1649,25 +1643,25 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal*
 			b3Vector3 penetratingVelocity = -normalOnRigid * penetratingMagnitude;
 			b3Vector3 tangentialVelocity = relativeVelocity - penetratingVelocity;
 			
-			penetratingVelocity *= 1.0f + FL->m_boundaryRestitution;
+			penetratingVelocity *= 1.0f + FP->m_boundaryRestitution;
 			
 			b3Scalar penetration = -distance;
-			penetration = (penetration > FL->m_particleMargin) ? penetration : 0.0f;
-			b3Scalar positionError = penetration * (FG->m_simulationScale/FG->m_timeStep) * FL->m_boundaryErp;
+			penetration = (penetration > FP->m_particleMargin) ? penetration : 0.0f;
+			b3Scalar positionError = penetration * (FP->m_simulationScale/FP->m_timeStep) * FP->m_boundaryErp;
 			
-			b3Vector3 particleImpulse = -(penetratingVelocity + (-normalOnRigid*positionError) + tangentialVelocity*FL->m_boundaryFriction);
+			b3Vector3 particleImpulse = -(penetratingVelocity + (-normalOnRigid*positionError) + tangentialVelocity*FP->m_boundaryFriction);
 			
 			if(isDynamicRigidBody)
 			{
-				b3Scalar inertiaParticle = 1.0f / FL->m_particleMass;
+				b3Scalar inertiaParticle = 1.0f / FP->m_particleMass;
 				
 				b3Vector3 relPosCrossNormal = cross3(rigidLocalHitPoint, normalOnRigid);
 				b3Scalar inertiaRigid = rigidInvMass + b3Vector3_dot( mtMul3(relPosCrossNormal, rigidInertiaTensor), relPosCrossNormal );
 				
 				particleImpulse *= 1.0f / (inertiaParticle + inertiaRigid);
 				
-				b3Vector3 worldScaleImpulse = -particleImpulse / FG->m_simulationScale;
-				worldScaleImpulse /= FG->m_timeStep;		//Impulse is accumulated as force
+				b3Vector3 worldScaleImpulse = -particleImpulse / FP->m_simulationScale;
+				worldScaleImpulse /= FP->m_timeStep;		//Impulse is accumulated as force
 				
 				accumulatedForce += worldScaleImpulse;
 				accumulatedTorque += cross3(rigidLocalHitPoint, worldScaleImpulse);
@@ -1678,7 +1672,7 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParametersGlobal*
 	}
 	
 	//Apply accumulated forces
-	b3Scalar timeStep = FG->m_timeStep;
+	b3Scalar timeStep = FP->m_timeStep;
 		
 	rigidLinearVelocity += accumulatedForce * (rigidInvMass * timeStep);
 	rigidAngularVelocity += mtMul1(rigidInertiaTensor, accumulatedTorque) * timeStep;

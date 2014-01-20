@@ -61,7 +61,7 @@ class b3FluidSphSolver;
 class b3FluidSph //: public b3CollisionObject
 {
 protected:
-	b3FluidSphParametersLocal	m_localParameters;
+	b3FluidSphParameters	m_parameters;
 	
 	b3FluidSortingGrid		m_grid;
 	
@@ -74,7 +74,6 @@ protected:
 	
 	//If either override is set, the fluid is passed separately to the solver(b3FluidSph-b3FluidSph interaction is disabled)
 	b3FluidSphSolver* m_overrideSolver;
-	b3FluidSphParametersGlobal* m_overrideParameters;
 	
 	
 	//These pointers are assigned and managed by an OpenCL solver, if one is being used 
@@ -82,8 +81,8 @@ protected:
 	void* m_gridDataCL;		//b3FluidSortingGridOpenCL
 	
 public:
-	///@param FG Reference returned by b3FluidRigidDynamicsWorld::getGlobalParameters().
-	b3FluidSph(const b3FluidSphParametersGlobal& FG, int maxNumParticles);
+
+	b3FluidSph(int maxNumParticles);
 	virtual ~b3FluidSph();
 	
 	int	numParticles() const { return m_particles.size(); }
@@ -122,22 +121,15 @@ public:
 	//
 	const b3FluidSortingGrid& getGrid() const { return m_grid; }
 	
-	///@param FG Reference returned by b3FluidRigidDynamicsWorld::getGlobalParameters().
-	void setGridCellSize(const b3FluidSphParametersGlobal& FG);
-	
 	//Parameters
-	const b3FluidSphParametersLocal& getLocalParameters() const { return m_localParameters; }
-	b3FluidSphParametersLocal& getLocalParameters() { return m_localParameters; }
-	void setLocalParameters(const b3FluidSphParametersLocal& FP) { m_localParameters = FP; }
-	b3Scalar getEmitterSpacing(const b3FluidSphParametersGlobal& FG) const { return m_localParameters.m_particleDist / FG.m_simulationScale; }
+	const b3FluidSphParameters& getParameters() const { return m_parameters; }
+	b3FluidSphParameters& getParameters() { return m_parameters; }
+	void setParameters(const b3FluidSphParameters& FP) { m_parameters = FP; }
+	b3Scalar getEmitterSpacing() const { return m_parameters.m_particleDist / m_parameters.m_simulationScale; }
 	
 	///If solver is not 0, then it will be used instead of the solver specified by b3FluidRigidDynamicsWorld::getFluidSolver()
 	void setOverrideSolver(b3FluidSphSolver* solver) { m_overrideSolver = solver; }
 	b3FluidSphSolver* getOverrideSolver() const { return m_overrideSolver; }
-	
-	///If parameters is not 0, then it will be used instead of the parameters specified by b3FluidRigidDynamicsWorld::getGlobalParameters()
-	void setOverrideParameters(b3FluidSphParametersGlobal* parameters) { m_overrideParameters = parameters; }
-	b3FluidSphParametersGlobal* getOverrideParameters() const { return m_overrideParameters; }
 	
 	//Metablobs	
 	b3Scalar getValue(b3Scalar x, b3Scalar y, b3Scalar z) const;
@@ -166,7 +158,7 @@ public:
 	{
 		m_grid.getPointAabb(aabbMin, aabbMax);
 		
-		b3Scalar radius = m_localParameters.m_particleRadius;
+		b3Scalar radius = m_parameters.m_particleRadius;
 		b3Vector3 extent = b3MakeVector3(radius, radius, radius);
 		
 		aabbMin -= extent;

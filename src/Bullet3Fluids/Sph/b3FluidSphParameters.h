@@ -19,9 +19,8 @@ subject to the following restrictions:
 	
 #include "Bullet3Common/b3Vector3.h"
 
-
-///@brief Contains characteristics shared by all b3FluidSph inside a b3FluidRigidDynamicsWorld.
-struct b3FluidSphParametersGlobal
+///@brief Contains parameters for fluids and fluid-rigid body interaction.
+struct b3FluidSphParameters
 {
 	b3Scalar m_timeStep;				///<Seconds; simulation becomes unstable at > ~0.004s timestep( with setDefaultParameters() ).
 	
@@ -30,8 +29,6 @@ struct b3FluidSphParametersGlobal
 	///(fluid-fluid interaction) is performed at a physically-correct
 	///'simulation scale', which is typically much smaller than the 
 	///'world scale' at which the particles are rendered.
-	///@remarks Note that the grid cell size is dependent on the simulation scale, 
-	///so b3FluidSph::setGridCellSize() should also be called after changing this.
 	b3Scalar m_simulationScale;
 	b3Scalar m_sphSmoothRadius;			///<SPH particle interaction radius; use setSphInteractionRadius() to set this; simulation scale; meters.
 	
@@ -43,42 +40,7 @@ struct b3FluidSphParametersGlobal
 	b3Scalar m_viscosityKernLapCoeff;	///<Coefficient of the Laplacian of the viscosity kernel; for viscosity force calculation.
 	b3Scalar m_initialSum; 				///<Self-contributed particle density; should generally be within [0.0, m_sphRadiusSquared^3] (for Wpoly6).
 	///@}
-	
-	b3FluidSphParametersGlobal() { setDefaultParameters(); }
-	void setDefaultParameters()
-	{
-		m_timeStep = b3Scalar(0.003);
-		
-		m_simulationScale 	 = b3Scalar(0.004);
-		
-		setSphInteractionRadius( b3Scalar(0.01) );
-	}
-	
-	///The grid cell size is dependent on this radius, so b3FluidSph::setGridCellSize() should also be called after this.
-	void setSphInteractionRadius(b3Scalar radius)
-	{
-		m_sphSmoothRadius = radius;
-	
-		m_sphRadiusSquared = m_sphSmoothRadius * m_sphSmoothRadius;
-		
-		//Wpoly6 kernel (denominator part) - 2003 Muller, p.4
-		m_poly6KernCoeff = b3Scalar(315.0) / ( b3Scalar(64.0) * B3_PI * b3Pow(m_sphSmoothRadius, 9) );
-		
-		m_spikyKernGradCoeff = b3Scalar(-45.0) / ( B3_PI * b3Pow(m_sphSmoothRadius, 6) );
-		
-		//Laplacian of viscocity (denominator): PI h^6
-		m_viscosityKernLapCoeff = b3Scalar(45.0) / ( B3_PI * b3Pow(m_sphSmoothRadius, 6) );
-		
-		//
-		//m_initialSum = b3Scalar(0.0);
-		//m_initialSum = m_sphRadiusSquared*m_sphRadiusSquared*m_sphRadiusSquared;	//poly6 kernel partial result
-		m_initialSum = m_sphRadiusSquared*m_sphRadiusSquared*m_sphRadiusSquared * b3Scalar(0.25);
-	}
-};
 
-///@brief Contains the properties of a single b3FluidSph.
-struct b3FluidSphParametersLocal
-{
 	b3Vector3 m_aabbBoundaryMin;		///<Particles cannot move below this boundary; world scale; meters.
 	b3Vector3 m_aabbBoundaryMax;		///<Particles cannot move above this boundary; world scale; meters.
 	int m_enableAabbBoundary;			///<If nonzero, the particles are confined to m_aabbBoundaryMin and m_aabbBoundaryMax.
@@ -103,9 +65,13 @@ struct b3FluidSphParametersLocal
 	b3Scalar m_boundaryRestitution;		///<Fraction of reflected velocity(bounciness); [0.0, 1.0]; higher values more unstable.
 	b3Scalar m_boundaryErp;				///<Controls how quickly penetration is removed(per frame impulse: penetration_depth*m_boundaryErp).
 	
-	b3FluidSphParametersLocal() { setDefaultParameters(); }
+	b3FluidSphParameters() { setDefaultParameters(); }
 	void setDefaultParameters()
 	{
+		m_timeStep = b3Scalar(0.003);
+		m_simulationScale = b3Scalar(0.004);
+		setSphInteractionRadius( b3Scalar(0.01) );
+	
 		m_aabbBoundaryMin.setValue(-B3_LARGE_FLOAT, -B3_LARGE_FLOAT, -B3_LARGE_FLOAT);
 		m_aabbBoundaryMax.setValue(B3_LARGE_FLOAT, B3_LARGE_FLOAT, B3_LARGE_FLOAT);
 		m_enableAabbBoundary = 0;
@@ -129,6 +95,22 @@ struct b3FluidSphParametersLocal
 		m_boundaryFriction 	= b3Scalar(0.0);
 		m_boundaryRestitution = b3Scalar(0.0);
 		m_boundaryErp = b3Scalar(0.25);
+	}
+	
+	///The grid cell size is dependent on this radius, so b3FluidSph::setGridCellSize() should also be called after this.
+	void setSphInteractionRadius(b3Scalar radius)
+	{
+		m_sphSmoothRadius = radius;
+		m_sphRadiusSquared = m_sphSmoothRadius * m_sphSmoothRadius;
+		
+		m_poly6KernCoeff = b3Scalar(315.0) / ( b3Scalar(64.0) * B3_PI * b3Pow(m_sphSmoothRadius, 9) );
+		m_spikyKernGradCoeff = b3Scalar(-45.0) / ( B3_PI * b3Pow(m_sphSmoothRadius, 6) );
+		m_viscosityKernLapCoeff = b3Scalar(45.0) / ( B3_PI * b3Pow(m_sphSmoothRadius, 6) );
+		
+		//
+		//m_initialSum = b3Scalar(0.0);
+		//m_initialSum = m_sphRadiusSquared*m_sphRadiusSquared*m_sphRadiusSquared;	//poly6 kernel partial result
+		m_initialSum = m_sphRadiusSquared*m_sphRadiusSquared*m_sphRadiusSquared * b3Scalar(0.25);
 	}
 };
 

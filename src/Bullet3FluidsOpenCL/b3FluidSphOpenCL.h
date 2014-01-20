@@ -18,16 +18,16 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3OpenCLArray.h"
 
 class b3Vector3;
-struct b3FluidSphParametersLocal;
+struct b3FluidSphParameters;
 struct b3FluidParticles;
 
-///@brief Manages OpenCL buffers corresponding to b3FluidParticles and b3FluidSphParametersLocal.
+///@brief Manages OpenCL buffers corresponding to b3FluidParticles and b3FluidSphParameters.
 class b3FluidSphOpenCL
 {
 public:
 	bool m_initialized;
 
-	b3OpenCLArray<b3FluidSphParametersLocal> m_localParameters;
+	b3OpenCLArray<b3FluidSphParameters> m_parameters;
 	
 	b3OpenCLArray<b3Vector3> m_pos;
 	b3OpenCLArray<b3Vector3> m_vel;
@@ -41,7 +41,7 @@ public:
 	b3FluidSphOpenCL(cl_context context, cl_command_queue queue) :
 		m_initialized(0),
 	
-		m_localParameters(context, queue),
+		m_parameters(context, queue),
 		m_pos(context, queue),
 		m_vel(context, queue),
 		m_vel_eval(context, queue),
@@ -50,7 +50,7 @@ public:
 		m_density(context, queue),
 		m_cellIndex(context, queue) {}
 	
-	void writeToOpenCL(cl_command_queue queue, const b3FluidSphParametersLocal& FL, b3FluidParticles& particles);
+	void writeToOpenCL(cl_command_queue queue, const b3FluidSphParameters& FP, b3FluidParticles& particles);
 	void readFromOpenCL(cl_command_queue queue, b3FluidParticles& particles, b3AlignedObjectArray<b3Vector3>& sphForce);
 };
 

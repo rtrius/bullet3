@@ -24,7 +24,7 @@ subject to the following restrictions:
 #include "b3FluidSphOpenCL.h"
 #include "b3FluidHashGridOpenCL.h"
 
-struct b3FluidSphParametersGlobal;
+struct b3FluidSphParameters;
 class b3FluidSph;
 
 ///Uses an infinite hashed grid with collisions, as opposed to a statically sized(1024^3) grid with no collisions as in b3FluidSphSolverOpenCL
@@ -42,8 +42,6 @@ class b3FluidSphSolverOpenCL2 : public b3FluidSphSolver
 	cl_kernel m_collideAabbImpulseKernel;
 	cl_kernel m_integratePositionKernel;
 	
-	b3OpenCLArray<b3FluidSphParametersGlobal> m_globalFluidParams;
-	
 	b3AlignedObjectArray<b3FluidSphOpenCL*> m_fluidData;
 	b3AlignedObjectArray<b3FluidHashGridOpenCL*> m_gridData;
 	
@@ -57,9 +55,9 @@ public:
 	virtual ~b3FluidSphSolverOpenCL2();
 	
 	//	remove/rename
-	virtual void updateGridAndCalculateSphForces(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids) { b3Assert(0); }
+	virtual void updateGridAndCalculateSphForces(b3FluidSph** fluids, int numFluids) { b3Assert(0); }
 	
-	virtual void stepSimulation(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData);
+	virtual void stepSimulation(b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData);
 	
 private:
 	void sphComputePressureModulo(int numFluidParticles, b3FluidHashGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);

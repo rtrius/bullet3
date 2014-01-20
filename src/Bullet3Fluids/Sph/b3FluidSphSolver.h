@@ -28,20 +28,19 @@ subject to the following restrictions:
 class b3FluidSphSolver
 {
 public:
-	virtual void updateGridAndCalculateSphForces(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids) = 0;
+	virtual void updateGridAndCalculateSphForces(b3FluidSph** fluids, int numFluids) = 0;
 	
-	static void applyForcesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid);
-	static void integratePositionsSingleFluid(const b3FluidSphParametersGlobal& FG, const b3FluidSphParametersLocal& FL, 
-												b3FluidParticles& particles);
+	static void applyForcesSingleFluid(b3FluidSph* fluid);
+	static void integratePositionsSingleFluid(const b3FluidSphParameters& FP, b3FluidParticles& particles);
 	
 	
 protected:
-	static void applySphForce(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid, const b3AlignedObjectArray<b3Vector3>& sphForce)
+	static void applySphForce(b3FluidSph* fluid, const b3AlignedObjectArray<b3Vector3>& sphForce)
 	{
 		B3_PROFILE("applySphForce()");
 		
-		const b3FluidSphParametersLocal& FL = fluid->getLocalParameters();
-		b3Scalar simulationScaleAccelLimit = FL.m_sphAccelLimit * FG.m_simulationScale;
+		const b3FluidSphParameters& FP = fluid->getParameters();
+		b3Scalar simulationScaleAccelLimit = FP.m_sphAccelLimit * FP.m_simulationScale;
 		for(int n = 0; n < fluid->numParticles(); ++n) 
 		{
 			b3Vector3 acceleration = sphForce[n];
@@ -49,7 +48,7 @@ protected:
 			b3Scalar accelMagnitude = acceleration.length();
 			if(accelMagnitude > simulationScaleAccelLimit) acceleration *= simulationScaleAccelLimit / accelMagnitude;
 			
-			fluid->applyForce(n, acceleration * FL.m_particleMass);
+			fluid->applyForce(n, acceleration * FP.m_particleMass);
 		}
 	}
 };
@@ -133,7 +132,7 @@ protected:
 	b3AlignedObjectArray<b3FluidSphSolverDefault::SphParticles> m_sphData;
 
 public:
-	virtual void updateGridAndCalculateSphForces(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids)
+	virtual void updateGridAndCalculateSphForces(b3FluidSph** fluids, int numFluids)
 	{
 		B3_PROFILE("b3FluidSphSolverDefault::updateGridAndCalculateSphForces()");
 		
@@ -149,38 +148,38 @@ public:
 			
 			fluid->insertParticlesIntoGrid();
 			
-			sphComputePressure(FG, fluid, sphData);
+			sphComputePressure(fluid, sphData);
 			
-			sphComputeForce(FG, fluid, sphData);
+			sphComputeForce(fluid, sphData);
 			
-			applySphForce(FG, fluid, sphData.m_sphForce);
+			applySphForce(fluid, sphData.m_sphForce);
 		}
 	}
 	
 protected:
-	virtual void sphComputePressure(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData);
-	virtual void sphComputeForce(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData);
+	virtual void sphComputePressure(b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData);
+	virtual void sphComputeForce(b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData);
 	
 	//Necessary to use separate classes for multithreaded and single threaded solver
-	virtual void computeSumsInMultithreadingGroup(const b3FluidSphParametersGlobal& FG, const b3AlignedObjectArray<int>& multithreadingGroup,
+	virtual void computeSumsInMultithreadingGroup(const b3FluidSphParameters& FP, const b3AlignedObjectArray<int>& multithreadingGroup,
 												const b3FluidSortingGrid& grid, b3FluidParticles& particles, 
 												b3FluidSphSolverDefault::SphParticles& sphData)
 	{	
 		for(int cell = 0; cell < multithreadingGroup.size(); ++cell)
-			calculateSumsInCellSymmetric(FG, multithreadingGroup[cell], grid, particles, sphData);
+			calculateSumsInCellSymmetric(FP, multithreadingGroup[cell], grid, particles, sphData);
 	}
-	virtual void computeForcesInMultithreadingGroup(const b3FluidSphParametersGlobal& FG, const b3Scalar vterm, 
+	virtual void computeForcesInMultithreadingGroup(const b3FluidSphParameters& FP, const b3Scalar vterm, 
 													const b3AlignedObjectArray<int>& multithreadingGroup, const b3FluidSortingGrid& grid, 
 													b3FluidParticles& particles, b3FluidSphSolverDefault::SphParticles& sphData)
 	{
 		for(int cell = 0; cell < multithreadingGroup.size(); ++cell)
-			calculateForcesInCellSymmetric(FG, vterm, multithreadingGroup[cell], grid, particles, sphData);
+			calculateForcesInCellSymmetric(FP, vterm, multithreadingGroup[cell], grid, particles, sphData);
 	}
 	
 public:
-	static void calculateSumsInCellSymmetric(const b3FluidSphParametersGlobal& FG, int gridCellIndex, const b3FluidSortingGrid& grid, 
+	static void calculateSumsInCellSymmetric(const b3FluidSphParameters& FP, int gridCellIndex, const b3FluidSortingGrid& grid, 
 											b3FluidParticles& particles, b3FluidSphSolverDefault::SphParticles& sphData);
-	static void calculateForcesInCellSymmetric(const b3FluidSphParametersGlobal& FG, const b3Scalar vterm,
+	static void calculateForcesInCellSymmetric(const b3FluidSphParameters& FP, const b3Scalar vterm,
 											int gridCellIndex, const b3FluidSortingGrid& grid, b3FluidParticles& particles,
 											b3FluidSphSolverDefault::SphParticles& sphData);
 };

@@ -42,31 +42,30 @@ public:
 	b3FluidSphSolverOpenCL2* m_solver;
 #endif
 
-	b3FluidSphParametersGlobal m_globalParameters;
 	b3FluidSph* m_sphFluid;
 	
 	GpuBoxPlaneFluidScene()
 	{
-		m_sphFluid = new b3FluidSph(m_globalParameters, 131072);
+		m_sphFluid = new b3FluidSph(131072);
 		
-		b3FluidSphParametersLocal FL = m_sphFluid->getLocalParameters();
+		b3FluidSphParameters FP = m_sphFluid->getParameters();
 		
 		b3Scalar EXTENT(100.0);
 		if(CONCAVE_SCENE) EXTENT = b3Scalar(400.0);
 		
-		FL.m_aabbBoundaryMin = b3MakeVector3(-EXTENT, -EXTENT, -EXTENT);
-		FL.m_aabbBoundaryMax = b3MakeVector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
-		FL.m_enableAabbBoundary = 1;
+		FP.m_aabbBoundaryMin = b3MakeVector3(-EXTENT, -EXTENT, -EXTENT);
+		FP.m_aabbBoundaryMax = b3MakeVector3(EXTENT, EXTENT*b3Scalar(2.0), EXTENT);
+		FP.m_enableAabbBoundary = 1;
 		
-		FL.m_particleMass = b3Scalar(0.005);
+		FP.m_particleMass = b3Scalar(0.005);
 		
 		if(CONCAVE_SCENE) 
 		{
-			FL.m_boundaryErp = b3Scalar(0.05);
-			FL.m_particleRadius = b3Scalar(4.0);
+			FP.m_boundaryErp = b3Scalar(0.05);
+			FP.m_particleRadius = b3Scalar(4.0);
 		}
 		
-		m_sphFluid->setLocalParameters(FL);
+		m_sphFluid->setParameters(FP);
 		
 		m_solver = 0;
 	}
@@ -124,7 +123,7 @@ public:
 		const float SPHERE_SIZE(1.25);
 		const float COLOR[4] = {0.5f, 0.8f, 1.0f, 1.0f};
 		
-		const bool USE_BULLET3_RENDERER = 0;
+		const bool USE_BULLET3_RENDERER = 1;
 		if(USE_BULLET3_RENDERER)
 		{
 			int numParticles = m_sphFluid->numParticles();
@@ -170,7 +169,7 @@ public:
 		RigidBodyGpuData rbData;
 		rbData.load(m_data->m_bp, m_data->m_np);
 		
-		m_solver->stepSimulation(m_globalParameters, &m_sphFluid, 1, rbData);
+		m_solver->stepSimulation(&m_sphFluid, 1, rbData);
 		
 		static int counter = 0;
 		if(++counter >= 100)

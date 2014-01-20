@@ -24,7 +24,7 @@ subject to the following restrictions:
 #include "b3FluidSphOpenCL.h"
 #include "b3FluidSortingGridOpenCL.h"
 
-struct b3FluidSphParametersGlobal;
+struct b3FluidSphParameters;
 class b3FluidSph;
 
 ///@brief Solver that uses the GPU to accelerate SPH force calculation.
@@ -45,8 +45,6 @@ class b3FluidSphSolverOpenCL : public b3FluidSphSolver
 	cl_kernel m_collideAabbImpulseKernel;
 	cl_kernel m_integratePositionKernel;
 	
-	b3OpenCLArray<b3FluidSphParametersGlobal> m_globalFluidParams;
-	
 	b3AlignedObjectArray<b3FluidSphOpenCL*> m_fluidData;
 	b3AlignedObjectArray<b3FluidSortingGridOpenCL*> m_gridData;
 	
@@ -60,9 +58,9 @@ public:
 	virtual ~b3FluidSphSolverOpenCL();
 	
 	//	remove/rename
-	virtual void updateGridAndCalculateSphForces(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids) { b3Assert(0); }
+	virtual void updateGridAndCalculateSphForces(b3FluidSph** fluids, int numFluids) { b3Assert(0); }
 	
-	virtual void stepSimulation(const b3FluidSphParametersGlobal& FG, b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData);
+	virtual void stepSimulation(b3FluidSph** fluids, int numFluids, RigidBodyGpuData& rbData);
 	
 private:
 	void findNeighborCells(int numActiveGridCells, int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData);

@@ -17,12 +17,12 @@ subject to the following restrictions:
 #include "Bullet3Fluids/Sph/b3FluidSphParameters.h"
 #include "Bullet3Fluids/Sph/b3FluidParticles.h"
 
-void b3FluidSphOpenCL::writeToOpenCL(cl_command_queue queue, const b3FluidSphParametersLocal& FL, b3FluidParticles& particles)
+void b3FluidSphOpenCL::writeToOpenCL(cl_command_queue queue, const b3FluidSphParameters& FP, b3FluidParticles& particles)
 {
 	if(m_initialized) return;
 
-	m_localParameters.resize(1);
-	m_localParameters.copyFromHostPointer(&FL, 1, 0, false);
+	m_parameters.resize(1);
+	m_parameters.copyFromHostPointer(&FP, 1, 0, false);
 	
 	int numParticles = particles.size();
 	m_pos.resize(numParticles);

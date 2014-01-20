@@ -18,37 +18,36 @@ subject to the following restrictions:
 
 #include "b3FluidSortingGrid.h"
 
-void b3FluidSphSolver::applyForcesSingleFluid(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid)
+void b3FluidSphSolver::applyForcesSingleFluid(b3FluidSph* fluid)
 {
 	B3_PROFILE("b3FluidSphSolver::applyForcesSingleFluid()");
 
-	const b3FluidSphParametersLocal& FL = fluid->getLocalParameters();
+	const b3FluidSphParameters& FP = fluid->getParameters();
 	b3FluidParticles& particles = fluid->internalGetParticles();
 	
-	const b3Scalar invParticleMass = b3Scalar(1.0) / FL.m_particleMass;
+	const b3Scalar invParticleMass = b3Scalar(1.0) / FP.m_particleMass;
 	
 	for(int i = 0; i < particles.size(); ++i)
 	{
 		b3Vector3& vel = particles.m_vel[i];
 	
-		b3Vector3 acceleration = FL.m_gravity + (particles.m_accumulatedForce[i] * invParticleMass);
+		b3Vector3 acceleration = FP.m_gravity + (particles.m_accumulatedForce[i] * invParticleMass);
 
 		//Leapfrog integration
-		b3Vector3 vnext = vel + acceleration * FG.m_timeStep;	//v(t+1/2) = v(t-1/2) + a(t) dt
+		b3Vector3 vnext = vel + acceleration * FP.m_timeStep;	//v(t+1/2) = v(t-1/2) + a(t) dt
 		vel = vnext;
 	}
 	
 	for(int i = 0; i < particles.size(); ++i) particles.m_accumulatedForce[i].setValue(0, 0, 0);
 }
-void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParametersGlobal& FG, const b3FluidSphParametersLocal& FL, 
-														b3FluidParticles& particles)
+void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParameters& FP, b3FluidParticles& particles)
 {
 	B3_PROFILE("b3FluidSphSolver::integratePositionsSingleFluid()");
 		
 	//Velocity is at simulation scale; divide by simulation scale to convert to world scale
-	b3Scalar timeStepDivSimScale = FG.m_timeStep / FG.m_simulationScale;
+	b3Scalar timeStepDivSimScale = FP.m_timeStep / FP.m_simulationScale;
 	
-	b3Scalar simulationScaleSpeedLimit = FL.m_speedLimit * FG.m_simulationScale;
+	b3Scalar simulationScaleSpeedLimit = FP.m_speedLimit * FP.m_simulationScale;
 	
 	if( simulationScaleSpeedLimit != b3Scalar(0.0) )
 	{
@@ -73,20 +72,20 @@ void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParametersG
 	for(int i = 0; i < particles.size(); ++i) particles.m_pos[i] += particles.m_vel[i] * timeStepDivSimScale;
 }
 
-void b3FluidSphSolverDefault::sphComputePressure(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData)
+void b3FluidSphSolverDefault::sphComputePressure(b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData)
 {
 	B3_PROFILE("b3FluidSphSolverDefault::sphComputePressure()");
 	
 	const int numParticles = fluid->numParticles();
 	
-	const b3FluidSphParametersLocal& FL = fluid->getLocalParameters();
+	const b3FluidSphParameters& FP = fluid->getParameters();
 	const b3FluidSortingGrid& grid = fluid->getGrid();
 	b3FluidParticles& particles = fluid->internalGetParticles();
 	
 	{
 		B3_PROFILE("sphComputePressure() - reset sums, clear table");
 		
-		for(int i = 0; i < numParticles; ++i) sphData.m_invDensity[i] = FG.m_initialSum;
+		for(int i = 0; i < numParticles; ++i) sphData.m_invDensity[i] = FP.m_initialSum;
 		for(int i = 0; i < numParticles; ++i) sphData.m_neighborTable[i].clear();
 	}
 	
@@ -98,7 +97,7 @@ void b3FluidSphSolverDefault::sphComputePressure(const b3FluidSphParametersGloba
 			const b3AlignedObjectArray<int>& currentGroup = grid.internalGetMultithreadingGroup(group);
 			if( !currentGroup.size() ) continue;
 			
-			computeSumsInMultithreadingGroup(FG, currentGroup, grid, particles, sphData);
+			computeSumsInMultithreadingGroup(FP, currentGroup, grid, particles, sphData);
 		}
 	}
 	
@@ -107,22 +106,22 @@ void b3FluidSphSolverDefault::sphComputePressure(const b3FluidSphParametersGloba
 		
 		for(int i = 0; i < numParticles; ++i)
 		{
-			b3Scalar density = sphData.m_invDensity[i] * FL.m_sphParticleMass * FG.m_poly6KernCoeff;
-			sphData.m_pressure[i] = (density - FL.m_restDensity) * FL.m_stiffness;
+			b3Scalar density = sphData.m_invDensity[i] * FP.m_sphParticleMass * FP.m_poly6KernCoeff;
+			sphData.m_pressure[i] = (density - FP.m_restDensity) * FP.m_stiffness;
 			sphData.m_invDensity[i] = b3Scalar(1.0) / density;
 		}
 	}
 }
 
-void b3FluidSphSolverDefault::sphComputeForce(const b3FluidSphParametersGlobal& FG, b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData)
+void b3FluidSphSolverDefault::sphComputeForce(b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData)
 {
 	B3_PROFILE("b3FluidSphSolverDefault::sphComputeForce()");
 	
-	const b3FluidSphParametersLocal& FL = fluid->getLocalParameters();
+	const b3FluidSphParameters& FP = fluid->getParameters();
 	const b3FluidSortingGrid& grid = fluid->getGrid();
 	b3FluidParticles& particles = fluid->internalGetParticles();
 	
-	b3Scalar vterm = FG.m_viscosityKernLapCoeff * FL.m_viscosity;
+	b3Scalar vterm = FP.m_viscosityKernLapCoeff * FP.m_viscosity;
 	
 	for(int i = 0; i < particles.size(); ++i)sphData.m_sphForce[i].setValue(0, 0, 0);
 	
@@ -131,13 +130,13 @@ void b3FluidSphSolverDefault::sphComputeForce(const b3FluidSphParametersGlobal& 
 		const b3AlignedObjectArray<int>& currentGroup = grid.internalGetMultithreadingGroup(group);
 		if( !currentGroup.size() ) continue;
 		
-		computeForcesInMultithreadingGroup(FG, vterm, currentGroup, grid, particles, sphData);
+		computeForcesInMultithreadingGroup(FP, vterm, currentGroup, grid, particles, sphData);
 	}
 	
-	for(int i = 0; i < particles.size(); ++i)sphData.m_sphForce[i] *= FL.m_sphParticleMass;
+	for(int i = 0; i < particles.size(); ++i)sphData.m_sphForce[i] *= FP.m_sphParticleMass;
 }
 
-void b3FluidSphSolverDefault::calculateSumsInCellSymmetric(const b3FluidSphParametersGlobal& FG, int gridCellIndex, 
+void b3FluidSphSolverDefault::calculateSumsInCellSymmetric(const b3FluidSphParameters& FP, int gridCellIndex, 
 															const b3FluidSortingGrid& grid, b3FluidParticles& particles,
 															b3FluidSphSolverDefault::SphParticles& sphData)
 {
@@ -160,12 +159,12 @@ void b3FluidSphSolverDefault::calculateSumsInCellSymmetric(const b3FluidSphParam
 				for(int n = FI.m_firstIndex; n <= FI.m_lastIndex; ++n)
 				{
 					//Simulation-scale distance
-					b3Vector3 difference = (particles.m_pos[i] - particles.m_pos[n]) * FG.m_simulationScale;		
+					b3Vector3 difference = (particles.m_pos[i] - particles.m_pos[n]) * FP.m_simulationScale;		
 					b3Scalar distanceSquared = difference.length2();
 					
-					if(FG.m_sphRadiusSquared > distanceSquared)
+					if(FP.m_sphRadiusSquared > distanceSquared)
 					{
-						b3Scalar c = FG.m_sphRadiusSquared - distanceSquared;
+						b3Scalar c = FP.m_sphRadiusSquared - distanceSquared;
 						b3Scalar poly6KernPartialResult = c * c * c;
 						sphData.m_invDensity[i] += poly6KernPartialResult;
 						sphData.m_invDensity[n] += poly6KernPartialResult;
@@ -185,7 +184,7 @@ void b3FluidSphSolverDefault::calculateSumsInCellSymmetric(const b3FluidSphParam
 	}
 }
 
-void computeForceNeighborTableSymmetric(const b3FluidSphParametersGlobal& FG, const b3Scalar vterm, int particleIndex, 
+void computeForceNeighborTableSymmetric(const b3FluidSphParameters& FP, const b3Scalar vterm, int particleIndex, 
 										b3FluidParticles& particles, b3FluidSphSolverDefault::SphParticles& sphData)
 {
 	int i = particleIndex;
@@ -194,11 +193,11 @@ void computeForceNeighborTableSymmetric(const b3FluidSphParametersGlobal& FG, co
 	{
 		int n = sphData.m_neighborTable[i].getNeighborIndex(j);
 		
-		b3Vector3 difference = (particles.m_pos[i] - particles.m_pos[n]) * FG.m_simulationScale;		//Simulation-scale distance
+		b3Vector3 difference = (particles.m_pos[i] - particles.m_pos[n]) * FP.m_simulationScale;		//Simulation-scale distance
 		b3Scalar distance = sphData.m_neighborTable[i].getDistance(j);
 		
-		b3Scalar c = FG.m_sphSmoothRadius - distance;
-		b3Scalar pterm = b3Scalar(-0.5) * c * FG.m_spikyKernGradCoeff * (sphData.m_pressure[i] + sphData.m_pressure[n]);
+		b3Scalar c = FP.m_sphSmoothRadius - distance;
+		b3Scalar pterm = b3Scalar(-0.5) * c * FP.m_spikyKernGradCoeff * (sphData.m_pressure[i] + sphData.m_pressure[n]);
 		pterm /= (distance < B3_EPSILON) ? B3_EPSILON : distance;
 		
 		b3Scalar dterm = c * sphData.m_invDensity[i] * sphData.m_invDensity[n];
@@ -211,13 +210,13 @@ void computeForceNeighborTableSymmetric(const b3FluidSphParametersGlobal& FG, co
 		sphData.m_sphForce[n] += -force;
 	}
 }
-void b3FluidSphSolverDefault::calculateForcesInCellSymmetric(const b3FluidSphParametersGlobal& FG, const b3Scalar vterm,
+void b3FluidSphSolverDefault::calculateForcesInCellSymmetric(const b3FluidSphParameters& FP, const b3Scalar vterm,
 															int gridCellIndex, const b3FluidSortingGrid& grid, b3FluidParticles& particles,
 															b3FluidSphSolverDefault::SphParticles& sphData)
 {
 	b3FluidGridIterator currentCell = grid.getGridCell(gridCellIndex);
 	for(int i = currentCell.m_firstIndex; i <= currentCell.m_lastIndex; ++i)
 	{
-		computeForceNeighborTableSymmetric(FG, vterm, i, particles, sphData);
+		computeForceNeighborTableSymmetric(FP, vterm, i, particles, sphData);
 	}
 }

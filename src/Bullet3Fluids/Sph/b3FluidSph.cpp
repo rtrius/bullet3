@@ -24,16 +24,15 @@ subject to the following restrictions:
 #include "b3FluidSortingGrid.h"
 //#include "b3FluidSphCollisionShape.h"
 
-b3FluidSph::b3FluidSph(const b3FluidSphParametersGlobal& FG, int maxNumParticles)
+b3FluidSph::b3FluidSph(int maxNumParticles)
 {
 	m_overrideSolver = 0;
-	m_overrideParameters = 0;
 
 	m_fluidDataCL = 0;
 	m_gridDataCL = 0;
 	
 	setMaxParticles(maxNumParticles);
-	setGridCellSize(FG);
+	m_grid.setCellSize(m_parameters.m_simulationScale, m_parameters.m_sphSmoothRadius);
 	
 	//b3CollisionObject
 	///BULLET_2_TO_3_PLACEHOLDER
@@ -60,11 +59,6 @@ b3FluidSph::~b3FluidSph()
 		b3AlignedFree(m_collisionShape);
 	}
 	*/
-}
-
-void b3FluidSph::setGridCellSize(const b3FluidSphParametersGlobal& FG)
-{
-	m_grid.setCellSize(FG.m_simulationScale, FG.m_sphSmoothRadius);
 }
 
 void b3FluidSph::setMaxParticles(int maxNumParticles)
@@ -184,6 +178,8 @@ void b3FluidSph::removeMarkedParticles()
 void b3FluidSph::insertParticlesIntoGrid()
 {	
 	B3_PROFILE("b3FluidSph::insertParticlesIntoGrid()");
+	
+	m_grid.setCellSize(m_parameters.m_simulationScale, m_parameters.m_sphSmoothRadius);
 	
 	//
 	m_grid.clear();
