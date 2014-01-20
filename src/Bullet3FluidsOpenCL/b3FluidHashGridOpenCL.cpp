@@ -1,5 +1,5 @@
 /*
-Bullet-FLUIDS 
+BulletFluids 
 Copyright (c) 2013 Jackson Lee
 
 This software is provided 'as-is', without any express or implied warranty.
@@ -17,7 +17,7 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 
-#include "BulletFluids/Sph/b3FluidSortingGrid.h"
+#include "Bullet3Fluids/Sph/b3FluidSortingGrid.h"
 
 #include "b3FluidSphOpenCL.h"
 #include "fluidSphCL.h"
@@ -39,7 +39,7 @@ b3FluidHashGridOpenCL::b3FluidHashGridOpenCL(cl_context context, cl_command_queu
 b3FluidHashGridOpenCLProgram::b3FluidHashGridOpenCLProgram(cl_context context, cl_device_id device, cl_command_queue queue)
 : m_tempBufferCL(context, queue), m_radixSorter(context, device, queue), m_valueIndexPairs(context, queue)
 {
-	const char CL_HASH_GRID_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSph.cl";
+	const char CL_HASH_GRID_PROGRAM_PATH[] = "src/Bullet3FluidsOpenCL/fluidSph.cl";
 	
 	const char* kernelSource = fluidSphCL;	//fluidSphCL.h
 	cl_int error;

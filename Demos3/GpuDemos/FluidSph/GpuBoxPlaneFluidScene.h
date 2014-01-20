@@ -10,10 +10,10 @@
 #include "../rigidbody/GpuRigidBodyDemoInternalData.h"
 
 #include "ScreenSpaceFluidRendererGL.h"
-#include "BulletFluids/Sph/b3FluidSph.h"
-#include "BulletFluidsOpenCL/b3FluidSphSolverOpenCL.h"
-#include "BulletFluidsOpenCL/b3FluidSphSolverOpenCL2.h"
-#include "BulletFluidsOpenCL/b3FluidSphOpenCL.h"
+#include "Bullet3Fluids/Sph/b3FluidSph.h"
+#include "Bullet3FluidsOpenCL/b3FluidSphSolverOpenCL.h"
+#include "Bullet3FluidsOpenCL/b3FluidSphSolverOpenCL2.h"
+#include "Bullet3FluidsOpenCL/b3FluidSphOpenCL.h"
 
 
 #include "../rigidbody/ConcaveScene.h"
@@ -121,10 +121,10 @@ public:
 		
 		B3_PROFILE("render fluid");
 		
-		const float SPHERE_SIZE(1.2);
+		const float SPHERE_SIZE(1.25);
 		const float COLOR[4] = {0.5f, 0.8f, 1.0f, 1.0f};
 		
-		const bool USE_BULLET3_RENDERER = true;
+		const bool USE_BULLET3_RENDERER = 0;
 		if(USE_BULLET3_RENDERER)
 		{
 			int numParticles = m_sphFluid->numParticles();

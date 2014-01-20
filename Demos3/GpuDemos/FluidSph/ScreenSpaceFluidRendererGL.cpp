@@ -31,13 +31,13 @@ const char generateDepthVertexShader[] = STRINGIFY(
 	
 	uniform vec2 screenDimensions;
 	uniform float pointRadius;  	//Point size in world space
-	out vec3 eyePosition;
+	out vec3 eyeSpherePosition;
 	
 	void main()
 	{
-		eyePosition = ( modelviewMatrix * vec4(position.xyz, 1.0) ).xyz;
+		eyeSpherePosition = ( modelviewMatrix * vec4(position.xyz, 1.0) ).xyz;
 		
-		vec4 projectedWidthHeight = projectionMatrix * vec4(pointRadius, pointRadius, eyePosition.z, 1.0);
+		vec4 projectedWidthHeight = projectionMatrix * vec4(pointRadius, pointRadius, eyeSpherePosition.z, 1.0);
 		gl_PointSize = screenDimensions.x * projectedWidthHeight.x / projectedWidthHeight.w;
 		//gl_PointSize = screenDimensions.y *  projectedWidthHeight.y / projectedWidthHeight.w;
 		
@@ -53,7 +53,7 @@ const char generateDepthFragmentShader[] = STRINGIFY(
 	
 	uniform mat4 projectionMatrix;
 	uniform float pointRadius;  	//Point size in world space
-	in vec3 eyePosition;      		//Position of sphere center in eye space
+	in vec3 eyeSpherePosition;      		//Position of sphere center in eye space
 	
 	out vec4 fragColor;
 	void main()
@@ -64,19 +64,19 @@ const char generateDepthFragmentShader[] = STRINGIFY(
 		vec3 normalAtPointOnSphere;
 		normalAtPointOnSphere.xy = gl_PointCoord.xy*2.0 - 1.0;
 		float r2 = dot(normalAtPointOnSphere.xy, normalAtPointOnSphere.xy);
-		if(!USE_RAY_SPHERE_INTERSECTION && r2 > 1.0*INV_SCALING_SQUARED) discard;
+		if( (USE_RAY_SPHERE_INTERSECTION == 0) && r2 > 1.0*INV_SCALING_SQUARED) discard;
 		
 		float nearness = (USE_RAY_SPHERE_INTERSECTION) ? sqrt(1.0 - r2) : sqrt(1.0*INV_SCALING_SQUARED - r2);
 		normalAtPointOnSphere.z = nearness;
 		normalAtPointOnSphere = normalize(normalAtPointOnSphere);
 		
-		vec4 pointOnSphere = vec4(eyePosition + normalAtPointOnSphere*pointRadius, 1.0);
+		vec3 pointOnSphere = eyeSpherePosition + normalAtPointOnSphere*pointRadius;
 		
 		if(USE_RAY_SPHERE_INTERSECTION)
 		{
-			vec3 rayDirection = normalize( eyePosition + vec3(gl_PointCoord.xy*2.0 - 1.0, 0.0)*pointRadius );
+			vec3 rayDirection = normalize( eyeSpherePosition + vec3(gl_PointCoord.xy*2.0 - 1.0, 0.0)*pointRadius );
 			//vec3 rayDirection = normalize(pointOnSphere.xyz);
-			vec3 sphereCenter = eyePosition;
+			vec3 sphereCenter = eyeSpherePosition;
 			
 			float b = -2.0 * dot(rayDirection, sphereCenter);
 			float c = dot(sphereCenter, sphereCenter) - pointRadius * pointRadius * INV_SCALING_SQUARED;	//	determine cause of scaling
@@ -88,10 +88,11 @@ const char generateDepthFragmentShader[] = STRINGIFY(
 			float t1 = (-b + discriminant_sqrt) * 0.5;
 			float t2 = (-b - discriminant_sqrt) * 0.5;
 			
-			pointOnSphere = vec4(rayDirection * min(t1, t2), 1.0);
+			pointOnSphere = rayDirection * min(t1, t2);
+			normalAtPointOnSphere = normalize(pointOnSphere - eyeSpherePosition);
 		}
 		
-		vec4 clipSpacePosition = projectionMatrix * pointOnSphere;
+		vec4 clipSpacePosition = projectionMatrix * vec4(pointOnSphere, 1.0);
 		
 		float thickness = 1.0;	//nearness * 0.03;	
 		float depth = clipSpacePosition.z / clipSpacePosition.w;
@@ -542,7 +543,7 @@ void ScreenSpaceFluidRendererGL::render(const float* projectionMatrix, const flo
 	
 	render_stage1_generateDepthTexture( projectionMatrix, modelviewMatrix, modelviewProjectionMatrix, numParticles, sphereRadius);
 	
-	const bool BLUR_DEPTH_TEXTURE = 0;
+	const bool BLUR_DEPTH_TEXTURE = 1;
 	if(BLUR_DEPTH_TEXTURE)
 	{
 		const bool USE_CURVATURE_FLOW = 0;
@@ -711,9 +712,9 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral(const f
 		
 	//First pass blurs along the x-axis
 	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getWidth() ) );
-	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 32.0f );
-	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurScale"), 0.17f );
-	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurDepthFalloff"), 24.0f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 64.0f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurScale"), 0.3f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurDepthFalloff"), 600.0f );
 	glUniform2f( glGetUniformLocation(m_blurDepthProgram, "blurDirection"), 1.0f, 0.0f );
 	glUniform1i( glGetUniformLocation(m_blurDepthProgram, "depthTexture"), 0 );
 	
@@ -723,9 +724,9 @@ void ScreenSpaceFluidRendererGL::render_stage2_blurDepthTextureBilateral(const f
 	
 	//Second pass blurs along the y-axis
 	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "texelSize"), 1.0f / static_cast<float>( m_frameBuffer.getHeight() ) );
-	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 32.0f );
-	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurScale"), 0.17f );
-	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurDepthFalloff"), 24.0f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "filterRadiusPixels"), 64.0f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurScale"), 0.3f );
+	glUniform1f( glGetUniformLocation(m_blurDepthProgram, "blurDepthFalloff"), 600.0f );
 	glUniform2f( glGetUniformLocation(m_blurDepthProgram, "blurDirection"), 0.0f, 1.0f );
 	glUniform1i( glGetUniformLocation(m_blurDepthProgram, "depthTexture"), 0 );
 	

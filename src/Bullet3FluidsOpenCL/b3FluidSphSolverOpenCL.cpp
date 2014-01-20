@@ -1,5 +1,5 @@
 /*
-Bullet-FLUIDS 
+BulletFluids 
 Copyright (c) 2012 Jackson Lee
 
 This software is provided 'as-is', without any express or implied warranty.
@@ -19,7 +19,7 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 
-#include "BulletFluids/Sph/b3FluidSphParameters.h"
+#include "Bullet3Fluids/Sph/b3FluidSphParameters.h"
 
 #include "fluidSphCL.h"
 
@@ -30,7 +30,7 @@ b3FluidSphSolverOpenCL::b3FluidSphSolverOpenCL(cl_context context, cl_device_id 
 	m_commandQueue = queue;
 
 	//
-	const char CL_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSph.cl";
+	const char CL_PROGRAM_PATH[] = "src/Bullet3FluidsOpenCL/fluidSph.cl";
 	
 	const char* kernelSource = fluidSphCL;	//fluidSphCL.h
 	cl_int error;

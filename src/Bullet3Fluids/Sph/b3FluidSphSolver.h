@@ -1,5 +1,5 @@
 /*
-Bullet-FLUIDS 
+BulletFluids 
 Copyright (c) 2012 Jackson Lee
 
 This software is provided 'as-is', without any express or implied warranty.

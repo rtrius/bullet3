@@ -184,7 +184,7 @@ public:
 		m_largeAabbRigidIndicies.resize(MAX_LARGE_AABB_RIGIDS);
 	
 		//
-		const char CL_PROGRAM_PATH[] = "src/BulletFluidsOpenCL/fluidSphRigid.cl";
+		const char CL_PROGRAM_PATH[] = "src/Bullet3FluidsOpenCL/fluidSphRigid.cl";
 		
 		const char* kernelSource = fluidSphRigidCL;	//fluidSphRigidCL.h
 		cl_int error;

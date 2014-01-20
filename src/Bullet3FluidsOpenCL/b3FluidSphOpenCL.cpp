@@ -1,5 +1,5 @@
 /*
-Bullet-FLUIDS 
+BulletFluids 
 Copyright (c) 2012 Jackson Lee
 
 This software is provided 'as-is', without any express or implied warranty.
@@ -14,8 +14,8 @@ subject to the following restrictions:
 */
 #include "b3FluidSphOpenCL.h"
 
-#include "BulletFluids/Sph/b3FluidSphParameters.h"
-#include "BulletFluids/Sph/b3FluidParticles.h"
+#include "Bullet3Fluids/Sph/b3FluidSphParameters.h"
+#include "Bullet3Fluids/Sph/b3FluidParticles.h"
 
 void b3FluidSphOpenCL::writeToOpenCL(cl_command_queue queue, const b3FluidSphParametersLocal& FL, b3FluidParticles& particles)
 {

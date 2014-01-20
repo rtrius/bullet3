@@ -1,5 +1,5 @@
 /*
-Bullet-FLUIDS 
+BulletFluids 
 Copyright (c) 2012 Jackson Lee
 
 This software is provided 'as-is', without any express or implied warranty.
@@ -20,8 +20,8 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/ParallelPrimitives/b3RadixSort32CL.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3PrefixScanCL.h"
 
-#include "BulletFluids/Sph/b3FluidSph.h"
-#include "BulletFluids/Sph/b3FluidSortingGrid.h"
+#include "Bullet3Fluids/Sph/b3FluidSph.h"
+#include "Bullet3Fluids/Sph/b3FluidSortingGrid.h"
 
 class b3FluidSortingGrid;
 class b3FluidSphOpenCL;

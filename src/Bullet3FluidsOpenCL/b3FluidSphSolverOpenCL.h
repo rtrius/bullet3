@@ -1,5 +1,5 @@
 /*
-Bullet-FLUIDS 
+BulletFluids 
 Copyright (c) 2012 Jackson Lee
 
 This software is provided 'as-is', without any express or implied warranty.
@@ -17,9 +17,9 @@ subject to the following restrictions:
 
 #include "Bullet3Common/b3AlignedObjectArray.h"
 
-#include "BulletFluids/Sph/b3FluidSphSolver.h"
+#include "Bullet3Fluids/Sph/b3FluidSphSolver.h"
 
-#include "BulletFluidsOpenCL/b3FluidSphRigidInteractorCL.h"
+#include "Bullet3FluidsOpenCL/b3FluidSphRigidInteractorCL.h"
 
 #include "b3FluidSphOpenCL.h"
 #include "b3FluidSortingGridOpenCL.h"

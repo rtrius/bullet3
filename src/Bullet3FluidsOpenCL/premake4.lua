@@ -3,7 +3,7 @@ function createProject(vendor)
 	
 	if (hasCL) then
 		
-		project ("BulletFluidsOpenCL_" .. vendor)
+		project ("Bullet3FluidsOpenCL_" .. vendor)
 	
 		initOpenCL(vendor)
 			

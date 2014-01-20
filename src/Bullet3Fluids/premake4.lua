@@ -1,4 +1,4 @@
-	project "BulletFluids"
+	project "Bullet3Fluids"
 
 	language "C++"
 				
