@@ -47,7 +47,6 @@ typedef struct
 	b3Scalar m_poly6KernCoeff;
 	b3Scalar m_spikyKernGradCoeff;
 	b3Scalar m_viscosityKernLapCoeff;
-	b3Scalar m_initialSum;
 	b3Vector3 m_aabbBoundaryMin;
 	b3Vector3 m_aabbBoundaryMax;
 	int m_enableAabbBoundary;
@@ -58,6 +57,7 @@ typedef struct
 	b3Scalar m_restDensity;
 	b3Scalar m_sphParticleMass;
 	b3Scalar m_stiffness;
+	b3Scalar m_initialSum;
 	b3Scalar m_particleDist;
 	b3Scalar m_particleRadius;
 	b3Scalar m_particleMargin;
@@ -236,61 +236,6 @@ __kernel void storeUniquesAndIndexRanges(__global b3FluidGridValueIndexPair* val
 		
 		out_iterators[gridCellIndex] = (b3FluidGridIterator){ lowerParticleIndex, upperParticleIndex };
 	}
-}
-
-b3FluidGridCombinedPos getCombinedPosition_yAxisOriented(b3FluidGridPosition quantizedPosition)
-{
-	b3FluidGridCoordinate signedX = quantizedPosition.x + B3_FLUID_GRID_COORD_RANGE_HALVED;
-	b3FluidGridCoordinate signedY = quantizedPosition.y + B3_FLUID_GRID_COORD_RANGE_HALVED;
-	b3FluidGridCoordinate signedZ = quantizedPosition.z + B3_FLUID_GRID_COORD_RANGE_HALVED;
-	
-	b3FluidGridCombinedPos unsignedX = (b3FluidGridCombinedPos)signedX * B3_FLUID_GRID_COORD_RANGE;
-	b3FluidGridCombinedPos unsignedY = (b3FluidGridCombinedPos)signedY;
-	b3FluidGridCombinedPos unsignedZ = (b3FluidGridCombinedPos)signedZ * B3_FLUID_GRID_COORD_RANGE * B3_FLUID_GRID_COORD_RANGE;
-	
-	return unsignedX + unsignedY + unsignedZ;
-}
-b3FluidGridCombinedPos getCombinedPosition_zAxisOriented(b3FluidGridPosition quantizedPosition)
-{
-	b3FluidGridCoordinate signedX = quantizedPosition.x + B3_FLUID_GRID_COORD_RANGE_HALVED;
-	b3FluidGridCoordinate signedY = quantizedPosition.y + B3_FLUID_GRID_COORD_RANGE_HALVED;
-	b3FluidGridCoordinate signedZ = quantizedPosition.z + B3_FLUID_GRID_COORD_RANGE_HALVED;
-	
-	b3FluidGridCombinedPos unsignedX = (b3FluidGridCombinedPos)signedX * B3_FLUID_GRID_COORD_RANGE * B3_FLUID_GRID_COORD_RANGE;
-	b3FluidGridCombinedPos unsignedY = (b3FluidGridCombinedPos)signedY * B3_FLUID_GRID_COORD_RANGE;
-	b3FluidGridCombinedPos unsignedZ = (b3FluidGridCombinedPos)signedZ;
-	
-	return unsignedX + unsignedY + unsignedZ;
-}
-__kernel void convertCellValuesAndLoadCellIndex(__global b3FluidGridCombinedPos* activeCells, __global b3FluidGridValueIndexPair* yOrientedPairs, 
-								__global b3FluidGridValueIndexPair* zOrientedPairs, int numActiveCells)
-{
-	int index = get_global_id(0);
-	if(index >= numActiveCells) return;
-	
-	b3FluidGridCombinedPos xAxisOrientedValue = activeCells[index];
-	
-	b3FluidGridPosition splitPosition;
-	splitCombinedPosition(B3_FLUID_GRID_COORD_RANGE, B3_FLUID_GRID_COORD_RANGE, xAxisOrientedValue, 
-							&splitPosition.x, &splitPosition.y, &splitPosition.z);
-	splitPosition.x -= B3_FLUID_GRID_COORD_RANGE_HALVED;
-	splitPosition.y -= B3_FLUID_GRID_COORD_RANGE_HALVED;
-	splitPosition.z -= B3_FLUID_GRID_COORD_RANGE_HALVED;
-	
-	yOrientedPairs[index].m_value = getCombinedPosition_yAxisOriented(splitPosition);
-	yOrientedPairs[index].m_index = index;
-	
-	zOrientedPairs[index].m_value = getCombinedPosition_zAxisOriented(splitPosition);
-	zOrientedPairs[index].m_index = index;
-}
-__kernel void writebackReorientedCellIndicies(__global b3FluidGridValueIndexPair* yOrientedPairs, __global b3FluidGridValueIndexPair* zOrientedPairs,
-											__global int* yIndex, __global int* zIndex, int numActiveCells)
-{
-	int index = get_global_id(0);
-	if(index >= numActiveCells) return;
-	
-	yIndex[ yOrientedPairs[index].m_index ] = index;
-	zIndex[ zOrientedPairs[index].m_index ] = index;
 }
 
 __kernel void generateUniques(__global b3FluidGridValueIndexPair* sortedPairs, 
@@ -506,7 +451,8 @@ __kernel void sphComputePressure(__constant b3FluidSphParameters* FP,
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar sum = FP->m_initialSum;
+	b3Scalar poly6ZeroDistance = FP->m_sphRadiusSquared * FP->m_sphRadiusSquared * FP->m_sphRadiusSquared;
+	b3Scalar sum = poly6ZeroDistance * FP->m_initialSum;
 	
 	for(int cell = 0; cell < b3FluidSortingGrid_NUM_FOUND_CELLS_GPU; ++cell) 
 	{
@@ -757,7 +703,8 @@ __kernel void sphComputePressureModulo(__constant b3FluidSphParameters* FP,
 	int i = get_global_id(0);
 	if(i >= numFluidParticles) return;
 	
-	b3Scalar sum = FP->m_initialSum;
+	b3Scalar poly6ZeroDistance = FP->m_sphRadiusSquared * FP->m_sphRadiusSquared * FP->m_sphRadiusSquared;
+	b3Scalar sum = poly6ZeroDistance * FP->m_initialSum;
 	
 	b3FluidGridPosition centerCell = getDiscretePosition(gridCellSize, fluidPosition[i]);
 	centerCell.x--;

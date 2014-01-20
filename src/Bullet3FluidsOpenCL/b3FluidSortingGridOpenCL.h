@@ -37,15 +37,6 @@ public:
 	b3OpenCLArray<b3FluidGridIterator> m_cellContents;
 	b3OpenCLArray<b3FluidSortingGrid::FoundCellsGpu> m_foundCells;
 	
-	//Size == m_numActiveCells
-		//b3SortData.m_key == grid cell value(value to sort by), converted to y/z-axis orientation
-		//b3SortData.m_value == x-axis oriented grid cell index
-		b3OpenCLArray<b3SortData> m_yOrientedPairs;
-		b3OpenCLArray<b3SortData> m_zOrientedPairs;
-		
-		b3OpenCLArray<int> m_yIndex;	//Parallel array to m_activeCells
-		b3OpenCLArray<int> m_zIndex;	//Parallel array to m_activeCells
-	
 	b3FluidSortingGridOpenCL(cl_context context, cl_command_queue queue);
 		
 	virtual b3FluidSphDataType getType() const { return FSDT_b3FluidSortingGridOpenCL; }
@@ -62,9 +53,6 @@ class b3FluidSortingGridOpenCLProgram_GenerateUniques
 	cl_program m_sortingGridProgram;
 	cl_kernel m_markUniquesKernel;
 	cl_kernel m_storeUniquesAndIndexRangesKernel;
-	
-	cl_kernel m_convertCellValuesAndLoadCellIndexKernel;
-	cl_kernel m_writebackReorientedCellIndiciesKernel;
 	
 	b3PrefixScanCL m_prefixScanner;
 	

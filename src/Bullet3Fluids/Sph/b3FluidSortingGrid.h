@@ -63,7 +63,7 @@ const b3FluidGridCoordinate B3_FLUID_GRID_COORD_RANGE_HALVED = B3_FLUID_GRID_COO
 ///For sorting; contains a b3FluidSortingGrid grid cell id and fluid particle index.
 struct b3FluidGridValueIndexPair
 {
-	b3FluidGridCombinedPos m_value;		///<Grid cell id
+	b3FluidGridCombinedPos m_value;		///<Grid cell id(also called hash value)
 	int m_index;						///<Fluid particle index
 	
 	b3FluidGridValueIndexPair() {}
@@ -155,17 +155,17 @@ public:
 	struct FoundCells { b3FluidGridIterator m_iterators[b3FluidSortingGrid::NUM_FOUND_CELLS]; }; ///<Contains results of b3FluidSortingGrid::findCells()
 	struct FoundCellsGpu { b3FluidGridIterator m_iterators[b3FluidSortingGrid::NUM_FOUND_CELLS_GPU]; };
 	
-private:
-	b3Vector3 m_pointMin;	//AABB calculated from the center of fluid particles, without considering particle radius
+protected:
+	b3Vector3 m_pointMin;	///<AABB calculated from the center of fluid particles, without considering particle radius
 	b3Vector3 m_pointMax;
 	
 	///Each array contains a set of grid cell indicies that may be simultaneously processed
 	b3AlignedObjectArray<int> m_multithreadingGroups[b3FluidSortingGrid::NUM_MULTITHREADING_GROUPS];
 	
-	b3Scalar m_gridCellSize;
+	b3Scalar m_gridCellSize;	///<Typically equal to the SPH interaction radius at world scale
 
-	b3AlignedObjectArray<b3FluidGridCombinedPos> m_activeCells;		//Stores the value of each nonempty grid cell
-	b3AlignedObjectArray<b3FluidGridIterator> m_cellContents;	//Stores the range of indicies that correspond to the values in m_activeCells
+	b3AlignedObjectArray<b3FluidGridCombinedPos> m_activeCells;		///<Stores the hash value of each nonempty grid cell
+	b3AlignedObjectArray<b3FluidGridIterator> m_cellContents;	///<Stores the range of indicies that correspond to the values in m_activeCells
 	
 	b3AlignedObjectArray<b3FluidGridValueIndexPair> m_tempPairs;
 	b3AlignedObjectArray<b3Vector3> m_tempBufferVector;
@@ -237,7 +237,7 @@ public:
 	b3Vector3& internalGetPointAabbMin() { return m_pointMin; }
 	b3Vector3& internalGetPointAabbMax() { return m_pointMax; }
 	
-private:
+protected:
 	b3FluidGridPosition getDiscretePosition(const b3Vector3& position) const;
 
 	void findAdjacentGridCells(b3FluidGridPosition indicies, b3FluidSortingGrid::FoundCells& out_gridCells) const;

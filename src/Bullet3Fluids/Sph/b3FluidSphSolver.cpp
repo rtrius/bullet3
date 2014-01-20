@@ -150,7 +150,10 @@ void b3FluidSphSolverDefault::sphComputePressure(b3FluidSph* fluid, b3FluidSphSo
 	{
 		B3_PROFILE("sphComputePressure() - reset sums, clear table");
 		
-		for(int i = 0; i < numParticles; ++i) sphData.m_invDensity[i] = FP.m_initialSum;
+		b3Scalar poly6ZeroDistance = FP.m_sphRadiusSquared * FP.m_sphRadiusSquared * FP.m_sphRadiusSquared;
+		b3Scalar initialSphSum = poly6ZeroDistance * FP.m_initialSum;
+	
+		for(int i = 0; i < numParticles; ++i) sphData.m_invDensity[i] = initialSphSum;
 		for(int i = 0; i < numParticles; ++i) sphData.m_neighborTable[i].clear();
 	}
 	

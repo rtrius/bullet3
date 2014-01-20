@@ -32,13 +32,7 @@ subject to the following restrictions:
 //class b3FluidSortingGridOpenCL
 // /////////////////////////////////////////////////////////////////////////////
 b3FluidSortingGridOpenCL::b3FluidSortingGridOpenCL(cl_context context, cl_command_queue queue) 
-: m_numActiveCells(context, queue), m_activeCells(context, queue), m_foundCells(context, queue), m_cellContents(context, queue),
-
-	m_yIndex(context, queue),
-	m_zIndex(context, queue),
-		
-	m_yOrientedPairs(context, queue),
-	m_zOrientedPairs(context, queue)
+: m_numActiveCells(context, queue), m_activeCells(context, queue), m_foundCells(context, queue), m_cellContents(context, queue)
 {
 	m_numActiveCells.resize(1);
 }
@@ -95,19 +89,11 @@ b3FluidSortingGridOpenCLProgram_GenerateUniques::b3FluidSortingGridOpenCLProgram
 	b3Assert(m_markUniquesKernel);
 	m_storeUniquesAndIndexRangesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "storeUniquesAndIndexRanges", &error, m_sortingGridProgram, additionalMacros );
 	b3Assert(m_storeUniquesAndIndexRangesKernel);
-	
-	m_convertCellValuesAndLoadCellIndexKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "convertCellValuesAndLoadCellIndex", &error, m_sortingGridProgram, additionalMacros );
-	b3Assert(m_convertCellValuesAndLoadCellIndexKernel);
-	m_writebackReorientedCellIndiciesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "writebackReorientedCellIndicies", &error, m_sortingGridProgram, additionalMacros );
-	b3Assert(m_writebackReorientedCellIndiciesKernel);
 }
 b3FluidSortingGridOpenCLProgram_GenerateUniques::~b3FluidSortingGridOpenCLProgram_GenerateUniques()
 {
 	clReleaseKernel(m_markUniquesKernel);
 	clReleaseKernel(m_storeUniquesAndIndexRangesKernel);
-	
-	clReleaseKernel(m_convertCellValuesAndLoadCellIndexKernel);
-	clReleaseKernel(m_writebackReorientedCellIndiciesKernel);
 	
 	clReleaseProgram(m_sortingGridProgram);
 }
@@ -189,85 +175,6 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 	
 	
 	clFinish(commandQueue);
-	const bool GENERATE_YZ_ORIENTED_ARRAYS = false;
-	if(GENERATE_YZ_ORIENTED_ARRAYS)
-	{
-		B3_PROFILE("Generate yz oriented arrays");
-	
-		gridData->m_yIndex.resize(numUniques, false);
-		gridData->m_zIndex.resize(numUniques, false);
-			
-		gridData->m_yOrientedPairs.resize(numUniques, false);
-		gridData->m_zOrientedPairs.resize(numUniques, false);
-		
-		//Each grid cell has a position specified by 3 integers: x, y, z
-		//these 3 coordinates are combined into a single value for sorting
-		//By default the value assigned to a grid cell is: x + y * CELLS_PER_LINE + z * CELLS_PER_LINE^2
-		//This 'hash function' has the feature that adjacent cells along the x-axis may be accessed
-		//by incrementing or decrementing the value instead of performing a binary search.
-		//
-		//In order to replicate this feature along the y and z axes,
-		//Convert the values in m_yOrientedPairs to: x * CELLS_PER_LINE + y + z * CELLS_PER_LINE^2
-		//Convert the values in m_zOrientedPairs to: x * CELLS_PER_LINE + y * CELLS_PER_LINE^2 + z
-		//
-		//Also load y/z oriented arrays with the x-axis oriented index to make it possible to
-		//access the grid cell contents
-		{
-			B3_PROFILE("convertCellValuesAndLoadCellIndex");
-			
-			b3BufferInfoCL bufferInfo[] = 
-			{
-				b3BufferInfoCL( gridData->m_activeCells.getBufferCL() ),
-				b3BufferInfoCL( gridData->m_yOrientedPairs.getBufferCL() ),
-				b3BufferInfoCL( gridData->m_zOrientedPairs.getBufferCL() )
-			};
-				
-			b3LauncherCL launcher(commandQueue, m_convertCellValuesAndLoadCellIndexKernel);
-			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst( static_cast<int>(numUniques) );
-			
-			launcher.launch1D(numUniques);
-			clFinish(commandQueue);
-		}
-		
-		//Sort
-		{
-			B3_PROFILE("Sort Reoriented Pairs");
-			
-			//Note that b3RadixSort32CL uses b3SortData, while b3FluidSortingGrid uses b3FluidGridValueIndexPair.
-			//b3SortData is used in the C++ code, while b3FluidGridValueIndexPair is used in the OpenCL kernels
-			//b3SortData.m_key == b3FluidGridValueIndexPair.m_value (value to sort by)
-			//b3SortData.m_value == b3FluidGridValueIndexPair.m_index (grid cell index)
-			
-			radixSorter.execute(gridData->m_yOrientedPairs, 32);
-			radixSorter.execute(gridData->m_zOrientedPairs, 32);
-			clFinish(commandQueue);
-		}
-		
-		//Writeback the y/z oriented cell indicies so that we can use the x oriented index 
-		//to access the cells in y/z order
-		{
-			B3_PROFILE("writebackReorientedCellIndicies");
-			
-			b3BufferInfoCL bufferInfo[] = 
-			{
-				b3BufferInfoCL( gridData->m_yOrientedPairs.getBufferCL() ),
-				b3BufferInfoCL( gridData->m_zOrientedPairs.getBufferCL() ),
-				
-				b3BufferInfoCL( gridData->m_yIndex.getBufferCL() ),
-				b3BufferInfoCL( gridData->m_zIndex.getBufferCL() )
-			};
-				
-			b3LauncherCL launcher(commandQueue, m_writebackReorientedCellIndiciesKernel);
-			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst( static_cast<int>(numUniques) );
-			
-			launcher.launch1D(numUniques);
-			clFinish(commandQueue);
-		}
-		
-		clFinish(commandQueue);
-	}
 }
 	
 // /////////////////////////////////////////////////////////////////////////////

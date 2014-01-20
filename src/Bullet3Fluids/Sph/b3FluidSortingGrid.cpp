@@ -118,7 +118,7 @@ void b3FluidSortingGrid::insertParticles(b3FluidParticles& particles)
 	}
 	
 	
-	//Sort fluidSystem and values by m_value(s) in m_tempPairs
+	//Sort particle indices and values by hash values(s) in m_tempPairs
 	{
 		B3_PROFILE("b3FluidSortingGrid() - sort");
 		sortParticlesByValues(particles, m_tempPairs, m_tempBufferVector, m_tempBufferVoid);

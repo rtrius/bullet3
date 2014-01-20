@@ -38,32 +38,39 @@ struct b3FluidSphParameters
 	b3Scalar m_poly6KernCoeff;			///<Coefficient of the poly6 kernel; for density calculation.
 	b3Scalar m_spikyKernGradCoeff;		///<Coefficient of the gradient of the spiky kernel; for pressure force calculation.
 	b3Scalar m_viscosityKernLapCoeff;	///<Coefficient of the Laplacian of the viscosity kernel; for viscosity force calculation.
-	b3Scalar m_initialSum; 				///<Self-contributed particle density; should generally be within [0.0, m_sphRadiusSquared^3] (for Wpoly6).
 	///@}
 
 	b3Vector3 m_aabbBoundaryMin;		///<Particles cannot move below this boundary; world scale; meters.
 	b3Vector3 m_aabbBoundaryMax;		///<Particles cannot move above this boundary; world scale; meters.
 	int m_enableAabbBoundary;			///<If nonzero, the particles are confined to m_aabbBoundaryMin and m_aabbBoundaryMax.
 	
-	b3Vector3 m_gravity;				///<Simulation scale; meters / seconds^2.
-	b3Scalar m_sphAccelLimit;			///<Acceleration caused by SPH forces is clamped to this value; world scale; meters / second.
+	b3Vector3 m_gravity;				///<Acceleration applied to all particles every frame; simulation scale; meters / seconds^2.
+	b3Scalar m_sphAccelLimit;			///<Acceleration caused by SPH forces is clamped to this value; world scale; meters / second^2.
 	b3Scalar m_speedLimit;				///<If nonzero, particle speeds are clamped to this value; world scale; meters / second.
 	
-	b3Scalar m_viscosity;				///<Higher values increase the fluid's resistance to flow; force calculation; pascal*seconds(Pa*s).
-	b3Scalar m_restDensity;				///<Used for pressure calculation; kilograms/meters^3
+	b3Scalar m_viscosity;				///<Higher values increase the fluid's resistance to flow(viscosity force); pascal*seconds(Pa*s).
+	b3Scalar m_restDensity;				///<Pressure force accelerates particles towards this density; kilograms/meters^3
 	b3Scalar m_sphParticleMass;			///<Mass of a single particle when calculating SPH density and force; kilograms.
-	b3Scalar m_stiffness;				///<Gas constant; higher values make a less compressible, more unstable fluid; pressure calculation; joules.
+	b3Scalar m_stiffness;				///<Gas constant; higher values make a less compressible, more unstable fluid(pressure force); joules.
+	b3Scalar m_initialSum; 				///<Self-contributed particle density; recommend using values near 0; range (0.0, 1.0].
 	
 	b3Scalar m_particleDist;			///<Used to determine particle spacing for b3FluidEmitter; simulation scale; meters. 
-	b3Scalar m_particleRadius;			///<For collision detection and collision response; world scale; meters.
-	b3Scalar m_particleMargin;			///<World scale meters of allowed penetration when colliding with rigids; [0.0, m_particleRadius).
+	b3Scalar m_particleRadius;			///<Radius of a particle when colliding with rigid bodies; world scale; meters.
+	b3Scalar m_particleMargin;			///<World scale meters of allowed penetration when colliding with rigid bodies; [0.0, m_particleRadius).
 	b3Scalar m_particleMass;			///<Mass of a single particle when colliding with rigid bodies and applying forces; kilograms.
 	
+	///@name Parameters for collision response using forces; unused by default.
+	///@{
 	b3Scalar m_boundaryStiff;			///<Spring coefficient; controls the magnitude of the boundary repulsion force.
 	b3Scalar m_boundaryDamp;			///<Damping coefficient; controls the influence of relative velocity on the boundary repulsion force.
+	///@}
+	
+	///@name Parameters for collision response using impulses.
+	///@{
 	b3Scalar m_boundaryFriction;		///<Fraction of tangential velocity removed per frame; [0.0, 1.0]; higher values more unstable.
 	b3Scalar m_boundaryRestitution;		///<Fraction of reflected velocity(bounciness); [0.0, 1.0]; higher values more unstable.
-	b3Scalar m_boundaryErp;				///<Controls how quickly penetration is removed(per frame impulse: penetration_depth*m_boundaryErp).
+	b3Scalar m_boundaryErp;				///<Fraction of penetration to remove per frame; [0.0, 1.0]; higher values more unstable.
+	///@}
 	
 	b3FluidSphParameters() { setDefaultParameters(); }
 	void setDefaultParameters()
@@ -78,12 +85,13 @@ struct b3FluidSphParameters
 	
 		m_gravity.setValue(0, b3Scalar(-9.8), 0);
 		m_sphAccelLimit = b3Scalar(50000.0);	
-		m_speedLimit 	= b3Scalar(0.0);	
+		m_speedLimit = b3Scalar(0.0);	
 		
-		m_viscosity 	= b3Scalar(0.2);
-		m_restDensity 	= b3Scalar(600.0);
-		m_sphParticleMass  = b3Scalar(0.00020543);
-		m_stiffness 	= b3Scalar(1.5);
+		m_viscosity = b3Scalar(0.2);
+		m_restDensity = b3Scalar(600.0);
+		m_sphParticleMass = b3Scalar(0.00020543);
+		m_stiffness = b3Scalar(1.5);
+		m_initialSum = b3Scalar(0.25);
 		
 		m_particleDist = b3Pow( m_sphParticleMass/m_restDensity, b3Scalar(1.0/3.0) );
 		m_particleRadius = b3Scalar(1.0);
@@ -91,13 +99,12 @@ struct b3FluidSphParameters
 		m_particleMass = b3Scalar(0.00020543);
 		
 		m_boundaryStiff	= b3Scalar(20000.0);
-		m_boundaryDamp 	= b3Scalar(256.0);
-		m_boundaryFriction 	= b3Scalar(0.0);
+		m_boundaryDamp = b3Scalar(256.0);
+		m_boundaryFriction = b3Scalar(0.0);
 		m_boundaryRestitution = b3Scalar(0.0);
 		m_boundaryErp = b3Scalar(0.25);
 	}
 	
-	///The grid cell size is dependent on this radius, so b3FluidSph::setGridCellSize() should also be called after this.
 	void setSphInteractionRadius(b3Scalar radius)
 	{
 		m_sphSmoothRadius = radius;
@@ -106,11 +113,6 @@ struct b3FluidSphParameters
 		m_poly6KernCoeff = b3Scalar(315.0) / ( b3Scalar(64.0) * B3_PI * b3Pow(m_sphSmoothRadius, 9) );
 		m_spikyKernGradCoeff = b3Scalar(-45.0) / ( B3_PI * b3Pow(m_sphSmoothRadius, 6) );
 		m_viscosityKernLapCoeff = b3Scalar(45.0) / ( B3_PI * b3Pow(m_sphSmoothRadius, 6) );
-		
-		//
-		//m_initialSum = b3Scalar(0.0);
-		//m_initialSum = m_sphRadiusSquared*m_sphRadiusSquared*m_sphRadiusSquared;	//poly6 kernel partial result
-		m_initialSum = m_sphRadiusSquared*m_sphRadiusSquared*m_sphRadiusSquared * b3Scalar(0.25);
 	}
 };
 

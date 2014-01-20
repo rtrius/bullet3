@@ -34,7 +34,6 @@ typedef struct
 	b3Scalar m_poly6KernCoeff;
 	b3Scalar m_spikyKernGradCoeff;
 	b3Scalar m_viscosityKernLapCoeff;
-	b3Scalar m_initialSum;
 	b3Vector3 m_aabbBoundaryMin;
 	b3Vector3 m_aabbBoundaryMax;
 	int m_enableAabbBoundary;
@@ -45,6 +44,7 @@ typedef struct
 	b3Scalar m_restDensity;
 	b3Scalar m_sphParticleMass;
 	b3Scalar m_stiffness;
+	b3Scalar m_initialSum;
 	b3Scalar m_particleDist;
 	b3Scalar m_particleRadius;
 	b3Scalar m_particleMargin;

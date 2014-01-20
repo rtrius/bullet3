@@ -91,6 +91,7 @@ public:
 	void setMaxParticles(int maxNumParticles);	///<Removes particles if( maxNumParticles < numParticles() ).
 	
 	///Returns a particle index; creates a new particle if numParticles() < getMaxParticles(), returns numParticles() otherwise.
+	///The particle indicies change during each internal simulation step, so the returned index should be used only for initialization.
 	int addParticle(const b3Vector3& position) { return m_particles.addParticle(position); }
 	
 	///Duplicate indicies are ignored, so a particle may be marked twice without any issues.
