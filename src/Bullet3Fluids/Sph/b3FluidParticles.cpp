@@ -20,17 +20,17 @@ int b3FluidParticles::addParticle(const b3Vector3& position)
 {
 	if( size() < m_maxParticles )
 	{
-		m_pos.push_back( b3Vector3() );
-		m_vel.push_back( b3Vector3() );
-		m_vel_eval.push_back( b3Vector3() );
+		m_position.push_back( b3Vector3() );
+		m_velocity.push_back( b3Vector3() );
+		m_velocityEval.push_back( b3Vector3() );
 		m_accumulatedForce.push_back( b3Vector3() );
 		m_userPointer.push_back(0);
 		
 		int index = size() - 1;
 		
-		m_pos[index] = position;
-		m_vel[index].setValue(0,0,0);
-		m_vel_eval[index].setValue(0,0,0);
+		m_position[index] = position;
+		m_velocity[index].setValue(0,0,0);
+		m_velocityEval[index].setValue(0,0,0);
 		m_accumulatedForce[index].setValue(0,0,0);
 		
 		return index;
@@ -47,15 +47,15 @@ void b3FluidParticles::removeParticle(int index)
 	
 	if(index < lastIndex) 
 	{
-		m_pos[index] = m_pos[lastIndex];
-		m_vel[index] = m_vel[lastIndex];
-		m_vel_eval[index] = m_vel_eval[lastIndex];
+		m_position[index] = m_position[lastIndex];
+		m_velocity[index] = m_velocity[lastIndex];
+		m_velocityEval[index] = m_velocityEval[lastIndex];
 		m_accumulatedForce[index] = m_accumulatedForce[lastIndex];
 		m_userPointer[index] = m_userPointer[lastIndex];
 	}
-	m_pos.pop_back();
-	m_vel.pop_back();
-	m_vel_eval.pop_back();
+	m_position.pop_back();
+	m_velocity.pop_back();
+	m_velocityEval.pop_back();
 	m_accumulatedForce.pop_back();
 	m_userPointer.pop_back();
 }
@@ -64,9 +64,9 @@ void b3FluidParticles::resize(int newSize)
 {
 	if(newSize > m_maxParticles) m_maxParticles = newSize;
 
-	m_pos.resize(newSize);
-	m_vel.resize(newSize);
-	m_vel_eval.resize(newSize);
+	m_position.resize(newSize);
+	m_velocity.resize(newSize);
+	m_velocityEval.resize(newSize);
 	m_accumulatedForce.resize(newSize);
 	m_userPointer.resize(newSize);
 }
@@ -75,9 +75,9 @@ void b3FluidParticles::setMaxParticles(int maxNumParticles)
 {
 	m_maxParticles = maxNumParticles;
 	
-	m_pos.reserve(maxNumParticles);
-	m_vel.reserve(maxNumParticles);
-	m_vel_eval.reserve(maxNumParticles);
+	m_position.reserve(maxNumParticles);
+	m_velocity.reserve(maxNumParticles);
+	m_velocityEval.reserve(maxNumParticles);
 	m_accumulatedForce.reserve(maxNumParticles);
 	m_userPointer.reserve(maxNumParticles);
 }

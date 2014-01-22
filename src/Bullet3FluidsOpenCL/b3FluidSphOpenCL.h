@@ -20,42 +20,30 @@ subject to the following restrictions:
 #include "Bullet3Fluids/Sph/b3FluidSphTypedData.h"
 
 class b3Vector3;
+class b3FluidSph;
 struct b3FluidSphParameters;
-struct b3FluidParticles;
 
 ///@brief Manages OpenCL buffers corresponding to b3FluidParticles and b3FluidSphParameters.
 class b3FluidSphOpenCL : public b3FluidSphTypedData
 {
 public:
-	bool m_initialized;
-
 	b3OpenCLArray<b3FluidSphParameters> m_parameters;
 	
-	b3OpenCLArray<b3Vector3> m_pos;
-	b3OpenCLArray<b3Vector3> m_vel;
-	b3OpenCLArray<b3Vector3> m_vel_eval;
+	b3OpenCLArray<b3Vector3> m_position;
+	b3OpenCLArray<b3Vector3> m_velocity;
+	b3OpenCLArray<b3Vector3> m_velocityEval;
 	b3OpenCLArray<b3Vector3> m_accumulatedForce;
 	
 	b3OpenCLArray<b3Vector3> m_sph_force;
 	b3OpenCLArray<b3Scalar> m_density;
 	b3OpenCLArray<int> m_cellIndex;
 	
-	b3FluidSphOpenCL(cl_context context, cl_command_queue queue) :
-		m_initialized(0),
-	
-		m_parameters(context, queue),
-		m_pos(context, queue),
-		m_vel(context, queue),
-		m_vel_eval(context, queue),
-		m_accumulatedForce(context, queue),
-		m_sph_force(context, queue),
-		m_density(context, queue),
-		m_cellIndex(context, queue) {}
+	b3FluidSphOpenCL(cl_context context, cl_command_queue queue);
 	
 	virtual b3FluidSphDataType getType() const { return FSDT_b3FluidSphOpenCL; }
 	
-	void writeToOpenCL(cl_command_queue queue, const b3FluidSphParameters& FP, b3FluidParticles& particles);
-	void readFromOpenCL(cl_command_queue queue, b3FluidParticles& particles, b3AlignedObjectArray<b3Vector3>& sphForce);
+	void writeToOpenCL(cl_command_queue queue, b3FluidSph* fluid);
+	void readFromOpenCL(cl_command_queue queue, b3FluidSph* fluid);
 };
 
 #endif

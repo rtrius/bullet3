@@ -99,6 +99,7 @@ public:
 			b3Vector3 MIN = b3MakeVector3(-EXTENT, b3Scalar(0.0), -EXTENT);
 			b3Vector3 MAX = b3MakeVector3(EXTENT, EXTENT, EXTENT);
 			b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3) );
+			m_sphFluid->applyUpdates();
 		}
 	}
 	
@@ -118,7 +119,7 @@ public:
 			int numParticles = m_sphFluid->numParticles();
 			if(numParticles)
 			{
-				const float* positions = reinterpret_cast<const float*>(&m_sphFluid->getParticles().m_pos[0]);
+				const float* positions = reinterpret_cast<const float*>(&m_sphFluid->getParticles().m_position[0]);
 				m_instancingRenderer->drawSpheres(positions, COLOR, numParticles, sizeof(float)*4, SPHERE_SIZE);
 			}
 		}
@@ -148,7 +149,7 @@ public:
 			float modelviewProjectionMatrix[16];
 			b3Matrix4x4Mul16(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix);
 			
-			fluidRenderer->render(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix, m_sphFluid->getParticles().m_pos, 
+			fluidRenderer->render(projectionMatrix, modelviewMatrix, modelviewProjectionMatrix, m_sphFluid->getParticles().m_position, 
 									SPHERE_SIZE, COLOR[0], COLOR[1], COLOR[2], absorptionR, absorptionG, absorptionB, true);
 		}
 	}

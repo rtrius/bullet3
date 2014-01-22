@@ -159,7 +159,7 @@ protected:
 	b3Vector3 m_pointMin;	///<AABB calculated from the center of fluid particles, without considering particle radius
 	b3Vector3 m_pointMax;
 	
-	///Each array contains a set of grid cell indicies that may be simultaneously processed
+	///Each array contains a set of grid cell indicies that may be simultaneously processed; used only for CPU multithreading
 	b3AlignedObjectArray<int> m_multithreadingGroups[b3FluidSortingGrid::NUM_MULTITHREADING_GROUPS];
 	
 	b3Scalar m_gridCellSize;	///<Typically equal to the SPH interaction radius at world scale

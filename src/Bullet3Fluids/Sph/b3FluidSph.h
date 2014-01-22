@@ -18,60 +18,62 @@ subject to the following restrictions:
 #ifndef B3_FLUID_SPH_H
 #define B3_FLUID_SPH_H
 
-//#include "BulletCollision/CollisionDispatch/b3CollisionObject.h"
-
 #include "b3FluidParticles.h"
 #include "b3FluidSphParameters.h"
 #include "b3FluidSortingGrid.h"
+#include "b3FluidSphUpdatePacket.h"
 
-///BULLET_2_TO_3_PLACEHOLDER
-#define CO_USER_TYPE 1111
-struct b3CollisionObject 
-{ 
-	int getInternalType() const { return 0; }
-};
-struct b3CollisionShape 
-{ 
-};
-///
-
-///Describes a single contact between a b3FluidSph particle and a b3CollisionObject or b3RigidBody.
-struct b3FluidSphRigidContact
+///Specifies the data copied between the CPU and GPU every frame.
+/// - Members beginning with m_sync* determine a copy from GPU to CPU
+/// - Members beginning with m_write* determine a copy from CPU to GPU
+struct b3FluidSphSyncronizationFlags
 {
-	int m_fluidParticleIndex;
+	bool m_syncPosition;			///<b3FluidParticles.m_position ( b3FluidSph::getParticles() )
+	bool m_syncVelocity;			///<b3FluidParticles.m_velocity ( b3FluidSph::getParticles() )
+	bool m_syncVelocityEval;		///<b3FluidParticles.m_velocityEval ( b3FluidSph::getParticles() )
+	//bool m_syncUserPointer;			///<b3FluidParticles.m_userPointer ( b3FluidSph::getParticles() )
 	
-	b3Vector3 m_normalOnObject;
-	b3Vector3 m_hitPointWorldOnObject;
-	b3Scalar m_distance;
-};
-
-///Contains all b3FluidSphRigidContact between a b3FluidSph and a b3CollisionObject.
-struct b3FluidSphRigidContactGroup
-{
-	const b3CollisionObject* m_object;
-	b3AlignedObjectArray<b3FluidSphRigidContact> m_contacts;
+	//bool m_syncGridState;			///<If true, the state of the b3FluidSortingGrid is copied back to CPU every frame
+	//boom m_syncRigidContacts;		///<If true, data from collision with rigid bodies is copied back to GPU every frame
 	
-	void addContact(const b3FluidSphRigidContact &contact) { m_contacts.push_back(contact); }
-	int numContacts() const { return m_contacts.size(); }
+	//bool m_writeForces;			///<If false, applied forces are not written to GPU( b3FluidSph::applyForce() will have no effect )
+	
+	b3FluidSphSyncronizationFlags()
+	{
+		m_syncPosition = true;
+		m_syncVelocity = false;
+		m_syncVelocityEval = false;
+		//m_syncUserPointer = false;
+		
+		//m_syncGridState = false;
+		//m_syncRigidContacts = false;
+		
+		//m_writeForces = false;
+	}
 };
 
 class b3FluidSphSolver;
 class b3FluidSphTypedData;
 
-///@brief Main fluid class. Coordinates a set of b3FluidParticles with material definition and grid broadphase.
+///@brief Main class for particle fluids.
+///@remarks b3FluidSph is basically a manager class for several components used to simulate a SPH fluid.
+///These components are:
+/// - b3FluidSphParameters, which defines the material of the fluid
+/// - b3FluidParticles, which manages the per-particle properities such as position, velocity, and accumulated force
+/// - b3FluidSortingGrid, a uniform grid broadphase for accelerating the SPH force calculation
+/// - b3FluidSphUpdatePacket, which is used to incrementally add particles, remove particles, and set per-particle properities 
+/// - b3FluidSphSyncronizationFlags, which is used to specify data copied back to and from the CPU every frame(can be ignored if using a CPU solver)
+///Each b3FluidSph cannot interact with another b3FluidSph.
+///By defining another b3FluidSphSolver, it is also possible to use this as a generic particle system.
 class b3FluidSph
 {
 protected:
-	b3FluidSphParameters	m_parameters;
+	b3FluidSphParameters m_parameters;
+	b3FluidParticles m_particles;
+	b3FluidSortingGrid m_grid;
 	
-	b3FluidSortingGrid		m_grid;
-	
-	b3FluidParticles 		m_particles;
-	
-	b3AlignedObjectArray<int> m_removedFluidIndicies;
-
-	b3AlignedObjectArray<const b3CollisionObject*> m_intersectingRigidAabb;	///<Contains b3CollisionObject/b3RigidBody(not b3Softbody)
-	b3AlignedObjectArray<b3FluidSphRigidContactGroup> m_rigidContacts;
+	b3FluidSphUpdatePacket m_updates;
+	b3FluidSphSyncronizationFlags m_gpuSyncFlags;
 	
 	b3FluidSphSolver* m_solver;
 	
@@ -79,8 +81,10 @@ protected:
 	b3FluidSphTypedData* m_solverData;
 	
 	//These pointers are assigned and managed by an OpenCL solver, if one is being used 
-	b3FluidSphTypedData* m_fluidDataCL;		//b3FluidSphOpenCL
-	b3FluidSphTypedData* m_gridDataCL;		//b3FluidSortingGridOpenCL
+	b3FluidSphTypedData* m_solverDataGpu;	//e.g. b3FluidSphOpenCL
+	b3FluidSphTypedData* m_gridDataGpu;		//e.g. b3FluidSortingGridOpenCL
+	
+	bool m_copyParticleDataToGpu;	
 	
 public:
 	b3FluidSph(b3FluidSphSolver* solver, int maxNumParticles);
@@ -88,100 +92,85 @@ public:
 	
 	int	numParticles() const { return m_particles.size(); }
 	int getMaxParticles() const { return m_particles.getMaxParticles(); }
-	void setMaxParticles(int maxNumParticles);	///<Removes particles if( maxNumParticles < numParticles() ).
 	
-	///Returns a particle index; creates a new particle if numParticles() < getMaxParticles(), returns numParticles() otherwise.
-	///The particle indicies change during each internal simulation step, so the returned index should be used only for initialization.
-	int addParticle(const b3Vector3& position) { return m_particles.addParticle(position); }
-	
-	///Duplicate indicies are ignored, so a particle may be marked twice without any issues.
-	void markParticleForRemoval(int index) { m_removedFluidIndicies.push_back(index); }
-	
-	void removeAllParticles();
-	void removeMarkedParticles();	///<Automatically called during b3FluidRigidDynamicsWorld::stepSimulation(); invalidates grid.
-	void insertParticlesIntoGrid(); ///<Automatically called during b3FluidRigidDynamicsWorld::stepSimulation(); updates the grid.
-	
-	///Avoid placing particles at the same position; particles with same position and velocity will experience identical SPH forces and not seperate.
-	void setPosition(int index, const b3Vector3& position) { m_particles.m_pos[index] = position; }
-	
-	///Sets both velocities; getVelocity() and getEvalVelocity().
-	void setVelocity(int index, const b3Vector3& velocity) 
-	{
-		m_particles.m_vel[index] = velocity;
-		m_particles.m_vel_eval[index] = velocity;
-	}
-	
-	///Accumulates a simulation scale force that is applied, and then set to 0 during b3FluidRigidDynamicsWorld::stepSimulation().
-	void applyForce(int index, const b3Vector3& force) { m_particles.m_accumulatedForce[index] += force; }
-	
-	const b3Vector3& getPosition(int index) const { return m_particles.m_pos[index]; }
-	const b3Vector3& getVelocity(int index) const { return m_particles.m_vel[index]; }			///<Returns the 'current+(1/2)*timestep' velocity.
-	const b3Vector3& getEvalVelocity(int index) const { return m_particles.m_vel_eval[index]; } ///<Returns the current velocity.
-	
-	void setParticleUserPointer(int index, void* userPointer) { m_particles.m_userPointer[index] = userPointer; }
-	void* getParticleUserPointer(int index) const { return m_particles.m_userPointer[index]; }
-	//
-	const b3FluidSortingGrid& getGrid() const { return m_grid; }
-	
-	//Parameters
+	///Contains fluid material definition(e.g. viscosity) and rigid body interaction parameters 
 	const b3FluidSphParameters& getParameters() const { return m_parameters; }
 	b3FluidSphParameters& getParameters() { return m_parameters; }
 	void setParameters(const b3FluidSphParameters& FP) { m_parameters = FP; }
-	b3Scalar getEmitterSpacing() const { return m_parameters.m_particleDist / m_parameters.m_simulationScale; }
 	
+	///If using a GPU(OpenCL) solver, the sync flags determine what data is copied back to the CPU every frame 
+	const b3FluidSphSyncronizationFlags& getGpuSyncFlags() const { return m_gpuSyncFlags; }
+	b3FluidSphSyncronizationFlags& getGpuSyncFlags() { return m_gpuSyncFlags; }
+	void setGpuSyncFlags(const b3FluidSphSyncronizationFlags& gpuSyncFlags) { m_gpuSyncFlags = gpuSyncFlags; }
+	
+	///The solver determines how the particles interact with each other
 	void setSolver(b3FluidSphSolver* solver) { m_solver = solver; }
 	b3FluidSphSolver* getSolver() const { return m_solver; }
-
+	
+	b3Scalar getEmitterSpacing() const { return m_parameters.m_particleDist / m_parameters.m_simulationScale; }
+	
+	///Use to access particle positions and velocities; if using a GPU solver make sure that getGpuSyncFlags() is set correctly.
 	const b3FluidParticles& getParticles() const { return m_particles; }
+	const b3FluidSortingGrid& getGrid() const { return m_grid; }
+	const b3FluidSphUpdatePacket& getUpdates() const { return m_updates; }
+		
+	///Does not distinguish whether the data on CPU or GPU is current; use with caution. 
 	b3FluidParticles& internalGetParticles() { return m_particles; }
 	b3FluidSortingGrid& internalGetGrid() { return m_grid; }
+	b3FluidSphUpdatePacket& internalGetUpdates() { return m_updates; }
 	
-	//b3FluidSph-Rigid collisions
-	void internalClearRigidContacts()
-	{
-		m_intersectingRigidAabb.clear();
-		m_rigidContacts.clear();
-	}
-	b3AlignedObjectArray<const b3CollisionObject*>& internalGetIntersectingRigidAabbs() { return m_intersectingRigidAabb; }
-	b3AlignedObjectArray<b3FluidSphRigidContactGroup>& internalGetRigidContacts() { return m_rigidContacts; }
-	
-	const b3AlignedObjectArray<const b3CollisionObject*>& getIntersectingRigidAabbs() const { return m_intersectingRigidAabb; }
-	const b3AlignedObjectArray<b3FluidSphRigidContactGroup>& getRigidContacts() const { return m_rigidContacts; }
-	
-	//b3CollisionObject
-	virtual void setCollisionShape(b3CollisionShape *collisionShape) { b3Assert(0); }
-	
-	virtual void getAabb(b3Vector3& aabbMin, b3Vector3& aabbMax) const
-	{
-		m_grid.getPointAabb(aabbMin, aabbMax);
+	///If true, CPU position, velocity, accumulated force is copied to GPU on next simulation step and all incremental updates are discarded.
+	///This is automatically set to false after the data is copied.
+	bool needsWriteStateToGpu() const { return m_copyParticleDataToGpu; }
+	void shouldWriteStateToGpu(bool transferCpuToGpuNextFrame) { m_copyParticleDataToGpu = transferCpuToGpuNextFrame; }
 		
-		b3Scalar radius = m_parameters.m_particleRadius;
-		b3Vector3 extent = b3MakeVector3(radius, radius, radius);
-		
-		aabbMin -= extent;
-		aabbMax += extent;
-	}
-
-	static const b3FluidSph* upcast(const b3CollisionObject* colObj)
-	{
-		// replace later with CO_FLUID_SPH
-		return (colObj->getInternalType() == CO_USER_TYPE) ? (const b3FluidSph*)colObj : 0;
-	}
-	static b3FluidSph* upcast(b3CollisionObject* colObj)
-	{
-		// replace later with CO_FLUID_SPH
-		return (colObj->getInternalType() == CO_USER_TYPE) ? (b3FluidSph*)colObj : 0;
-	}
-	
-	///@name Solver specific data is managed by the solver. Can be accessed but should not be modified.
+	//These functions assume that the data on CPU is current; if a GPU solver is being used they should only be called during initialization
+	///@name Calling any of these functions will overwrite the GPU data with the CPU data on the next frame( shouldWriteStateToGpu(true) ).
 	///@{
-	void setFluidSolverData(b3FluidSphTypedData* solverData) { m_solverData = solverData; }
-	b3FluidSphTypedData* getSolverData() const { return m_solverData; }
+		void setMaxParticles(int maxNumParticles);	///<Removes particles if( maxNumParticles < numParticles() ).
+		void removeAllParticles();		///<Also clears any updates or added particles.
+		
+		void applyUpdates(); 			///<Automatically called during b3FluidRigidDynamicsWorld::stepSimulation(); invalidates grid.
+		void insertParticlesIntoGrid(); ///<Automatically called during b3FluidRigidDynamicsWorld::stepSimulation(); updates the grid.
+	///@}
+
+	///@name Cached particle update. Note that these changes are not applied until applyUpdates() is called.
+	///@{
+		///Returns a particle index; creates a new particle if numParticles() < getMaxParticles(), returns numParticles() otherwise.
+		///The particle indicies change during each internal simulation step, so the returned index should be used only for initialization.
+		int addParticleCached( const b3Vector3& position, const b3Vector3& velocity = b3MakeVector3(0,0,0) ) 
+		{ 
+			return m_updates.addParticle( getMaxParticles(), numParticles(), position, velocity); 
+		}
+		
+		///Do not use the same index twice; will result in thread collisions.
+		///Avoid placing particles at the same position; particles with same position and velocity .
+		///will experience identical SPH forces and not seperate.
+		void setPositionCached(int index, const b3Vector3& position) { m_updates.addUpdate(b3FluidSphUpdatePacket::UT_Position, index, position); }
+		
+		///Do not use the same index twice; will result in thread collisions.
+		///Velocity is at simulation scale; make sure to multiply by getParameters().m_simulationScale before applying if at world scale.
+		void setVelocityCached(int index, const b3Vector3& velocity) { m_updates.addUpdate(b3FluidSphUpdatePacket::UT_Velocity, index, velocity); }
 	
-	void setFluidDataCL(b3FluidSphTypedData* sphData) { m_fluidDataCL = sphData; }
-	b3FluidSphTypedData* getFluidDataCL() const { return m_fluidDataCL; }
-	void setGridDataCL(b3FluidSphTypedData* gridData) { m_gridDataCL = gridData; }
-	b3FluidSphTypedData* getGridDataCL() const { return m_gridDataCL; }
+		///Do not use the same index twice; will result in thread collisions.
+		//void setParticleUserPointer(int index, void* userPointer) { m_particles.m_userPointer[index] = userPointer; }
+		
+		///Duplicate indicies are ignored, so a particle may be marked twice without any issues.
+		void markParticleForRemoval(int index) { m_updates.markParticleForRemoval(index); }
+		
+		///Accumulates a simulation scale force that is applied, and then set to 0 during b3FluidRigidDynamicsWorld::stepSimulation().
+		void applyForce(int index, const b3Vector3& force) { m_particles.m_accumulatedForce[index] += force; }
+	///@}
+	
+	///@name Solver specific data managed by the solver. Can be accessed but should not be modified.
+	///@{
+		void setSolverDataCpu(b3FluidSphTypedData* solverData) { m_solverData = solverData; }
+		b3FluidSphTypedData* getSolverDataCpu() const { return m_solverData; }
+		
+		void setSolverDataGpu(b3FluidSphTypedData* sphData) { m_solverDataGpu = sphData; }
+		b3FluidSphTypedData* getSolverDataGpu() const { return m_solverDataGpu; }
+		void setGridDataGpu(b3FluidSphTypedData* gridData) { m_gridDataGpu = gridData; }
+		b3FluidSphTypedData* getGridDataGpu() const { return m_gridDataGpu; }
 	///@}
 };
 
@@ -214,24 +203,6 @@ struct b3FluidEmitter
 	void emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing);
 
 	static void addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3Vector3& max, b3Scalar spacing);
-};
-
-///@brief Marks particles from a b3FluidSph for removal; see b3FluidSph::removeMarkedParticles().
-struct b3FluidAbsorber
-{
-	b3Vector3 m_min;
-	b3Vector3 m_max;
-	
-	//int m_maxParticlesRemoved;
-	//	add velocity limit / max particles removed, etc.?
-	
-	b3FluidAbsorber()
-	{
-		m_min.setValue(0,0,0);
-		m_max.setValue(0,0,0);
-	}
-	
-	void absorb(b3FluidSph* fluid);
 };
 
 #endif

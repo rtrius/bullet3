@@ -19,26 +19,27 @@ subject to the following restrictions:
 
 class b3Vector3;
 
+
 ///@brief Coordinates the parallel arrays used to store fluid particles.
 ///@remarks
-///Members of this struct should not be accessed directly, except for calling:
-/// - b3AlignedObjectArray::operator[]() or
-/// - b3AlignedObjectArray::at()
+///Members of this struct should not be accessed directly, except for:
+/// - b3FluidParticlesSyncronization m_gpuSyncronization
+/// - Calling b3AlignedObjectArray::operator[]() or b3AlignedObjectArray::at()
 struct b3FluidParticles
 {
 	int m_maxParticles;
-
-	//Parallel arrays
-	b3AlignedObjectArray<b3Vector3> m_pos;					///<Current position; world scale.
-	b3AlignedObjectArray<b3Vector3> m_vel;					///<'Current + (1/2)*timestep' velocity for leapfrog integration; simulation scale.
-	b3AlignedObjectArray<b3Vector3> m_vel_eval;				///<Current velocity; simulation scale.
-	b3AlignedObjectArray<b3Vector3> m_accumulatedForce;		///<Applied during stepSimulation(), then set to 0; simulation scale.
 	
+	//Parallel arrays
+	b3AlignedObjectArray<b3Vector3> m_position;				///<World scale.
+	b3AlignedObjectArray<b3Vector3> m_velocity;				///<Simulation scale; actually the velocity at (t+1/2t) for leapfrog integration.
+	b3AlignedObjectArray<b3Vector3> m_velocityEval;			///<Simulation scale; average of the current(t+1/2t) and last frame(t-1/2t) m_velocity. 
 	b3AlignedObjectArray<void*> m_userPointer;
+	
+	b3AlignedObjectArray<b3Vector3> m_accumulatedForce;		///<Applied during stepSimulation(), then set to 0; simulation scale.
 	
 	b3FluidParticles() : m_maxParticles(0) {}
 	
-	int	size() const	{ return m_pos.size(); }
+	int	size() const	{ return m_position.size(); }
 
 	int addParticle(const b3Vector3& position);		///<Returns size() if size() == getMaxParticles().
 	void removeParticle(int index);					///<Swaps indicies if index does not correspond to the last index; invalidates grid.

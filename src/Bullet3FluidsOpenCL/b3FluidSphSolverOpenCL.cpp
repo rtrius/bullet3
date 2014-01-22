@@ -110,9 +110,9 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 	
 	
 	//Allocate solver data b3FluidSphOpenCL and b3FluidSortingGridOpenCL
-	b3FluidSphOpenCL* fluidDataCL = static_cast<b3FluidSphOpenCL*>( fluid->getFluidDataCL() );
-	b3FluidSortingGridOpenCL* gridDataCL = static_cast<b3FluidSortingGridOpenCL*>( fluid->getGridDataCL() );
-	b3FluidHashGridOpenCL* hashGridDataCL = static_cast<b3FluidHashGridOpenCL*>( fluid->getGridDataCL() );
+	b3FluidSphOpenCL* fluidDataCL = static_cast<b3FluidSphOpenCL*>( fluid->getSolverDataGpu() );
+	b3FluidSortingGridOpenCL* gridDataCL = static_cast<b3FluidSortingGridOpenCL*>( fluid->getGridDataGpu() );
+	b3FluidHashGridOpenCL* hashGridDataCL = static_cast<b3FluidHashGridOpenCL*>( fluid->getGridDataGpu() );
 	{
 		if(fluidDataCL && fluidDataCL->getType() != FSDT_b3FluidSphOpenCL)
 		{
@@ -123,7 +123,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 		{
 			void* ptr = b3AlignedAlloc( sizeof(b3FluidSphOpenCL), 16 );
 			fluidDataCL = new(ptr) b3FluidSphOpenCL(m_context, m_commandQueue);
-			fluid->setFluidDataCL(fluidDataCL);
+			fluid->setSolverDataGpu(fluidDataCL);
 		}
 		
 		if(!USE_HASH_GRID)
@@ -137,7 +137,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 			{
 				void* ptr = b3AlignedAlloc( sizeof(b3FluidSortingGridOpenCL), 16 );
 				gridDataCL = new(ptr) b3FluidSortingGridOpenCL(m_context, m_commandQueue);
-				fluid->setGridDataCL(gridDataCL);
+				fluid->setGridDataGpu(gridDataCL);
 			}
 		}
 		else
@@ -151,7 +151,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 			{
 				void* ptr = b3AlignedAlloc( sizeof(b3FluidHashGridOpenCL), 16 );
 				hashGridDataCL = new(ptr) b3FluidHashGridOpenCL(m_context, m_commandQueue);
-				fluid->setGridDataCL(hashGridDataCL);
+				fluid->setGridDataGpu(hashGridDataCL);
 			}
 		}
 	}
@@ -163,7 +163,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 		const b3FluidSphParameters& FP = fluid->getParameters();
 			
 		if(!USE_HASH_GRID && !UPDATE_GRID_ON_GPU) gridDataCL->writeToOpenCL( m_commandQueue, fluid->internalGetGrid() );
-		fluidDataCL->writeToOpenCL( m_commandQueue, FP, fluid->internalGetParticles() );
+		fluidDataCL->writeToOpenCL(m_commandQueue, fluid);
 	}
 	
 	//
@@ -193,8 +193,8 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 		
 		//The previous vel(velocity at t-1/2) is needed to update vel_eval for leapfrog integration
 		//Since vel_eval(velocity at t) is used only for SPH force computation,
-		//it is possible to store the previous velocity in m_vel_eval
-		fluidDataCL->m_vel_eval.copyFromOpenCLArray(fluidDataCL->m_vel);
+		//it is possible to store the previous velocity in m_velocityEval
+		fluidDataCL->m_velocityEval.copyFromOpenCLArray(fluidDataCL->m_velocity);
 		
 		clFinish(m_commandQueue);
 	}
@@ -212,8 +212,8 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 				b3BufferInfoCL( fluidDataCL->m_parameters.getBufferCL() ),
 				b3BufferInfoCL( fluidDataCL->m_accumulatedForce.getBufferCL() ),
 				b3BufferInfoCL( fluidDataCL->m_sph_force.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_vel.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_vel_eval.getBufferCL() )
+				b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);
@@ -227,9 +227,9 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( fluidDataCL->m_parameters.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_pos.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_vel.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_vel_eval.getBufferCL() )
+				b3BufferInfoCL( fluidDataCL->m_position.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_collideAabbImpulseKernel);
@@ -246,9 +246,9 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( fluidDataCL->m_parameters.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_pos.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_vel.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_vel_eval.getBufferCL() )
+				b3BufferInfoCL( fluidDataCL->m_position.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel);
@@ -270,12 +270,14 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 			if(!USE_HASH_GRID && UPDATE_GRID_ON_GPU) gridDataCL->readFromOpenCL( m_commandQueue, fluid->internalGetGrid() );
 		
 			if( m_tempSphForce.size() < fluid->numParticles() ) m_tempSphForce.resize( fluid->numParticles() );
-			fluidDataCL->readFromOpenCL( m_commandQueue, fluid->internalGetParticles(), m_tempSphForce);
+			fluidDataCL->readFromOpenCL(m_commandQueue, fluid);
 			
 			if(!GPU_INTEGRATE)
 			{
+				b3Assert(0);
+			
 				b3FluidParticles& particles = fluid->internalGetParticles();
-				particles.m_vel_eval = particles.m_vel;
+				particles.m_velocityEval = particles.m_velocity;
 			
 				applySphForce(fluid, m_tempSphForce);
 				
@@ -337,7 +339,7 @@ void b3FluidSphSolverOpenCL::sphComputePressure(int numFluidParticles, b3FluidSo
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
 		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
 		b3BufferInfoCL( gridData->m_foundCells.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
@@ -357,8 +359,8 @@ void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSorti
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
 		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
-		b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_velocityEval.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
 		b3BufferInfoCL( gridData->m_foundCells.getBufferCL() ),
@@ -381,7 +383,7 @@ void b3FluidSphSolverOpenCL::sphComputePressureModulo(int numFluidParticles, b3F
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
 		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
 		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 	};
@@ -401,8 +403,8 @@ void b3FluidSphSolverOpenCL::sphComputeForceModulo(int numFluidParticles, b3Flui
 	b3BufferInfoCL bufferInfo[] = 
 	{ 
 		b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-		b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
-		b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
+		b3BufferInfoCL( fluidData->m_velocityEval.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_sph_force.getBufferCL() ),
 		b3BufferInfoCL( fluidData->m_density.getBufferCL() ),
 		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )

@@ -48,8 +48,8 @@ void accumulateBoundaryImpulse(const b3FluidSphParameters& FP, b3Scalar simScale
 	const b3Vector3& boundaryMin = FP.m_aabbBoundaryMin;
 	const b3Vector3& boundaryMax = FP.m_aabbBoundaryMax;
 	
-	const b3Vector3& pos = particles.m_pos[i];
-	const b3Vector3& vel = particles.m_vel[i];
+	const b3Vector3& pos = particles.m_position[i];
+	const b3Vector3& vel = particles.m_velocity[i];
 	
 	b3Vector3& impulse = out_accumulatedImpulse;
 	resolveAabbCollision_impulse( FP, vel, b3MakeVector3( 1.0, 0.0, 0.0), ( pos.getX() - boundaryMin.getX() )*simScale - radius, impulse );
@@ -73,8 +73,8 @@ void b3FluidSphSolver::applyAabbImpulsesSingleFluid(b3FluidSph* fluid)
 		b3Vector3 aabbImpulse = b3MakeVector3(0, 0, 0);
 		accumulateBoundaryImpulse(FP, simScaleParticleRadius, particles, i, aabbImpulse);
 		
-		b3Vector3& vel = particles.m_vel[i];
-		b3Vector3& vel_eval = particles.m_vel_eval[i];
+		b3Vector3& vel = particles.m_velocity[i];
+		b3Vector3& vel_eval = particles.m_velocityEval[i];
 		
 		//Leapfrog integration
 		b3Vector3 velNext = vel + aabbImpulse;
@@ -94,7 +94,7 @@ void b3FluidSphSolver::applyForcesSingleFluid(b3FluidSph* fluid)
 	
 	for(int i = 0; i < particles.size(); ++i)
 	{
-		b3Vector3& vel = particles.m_vel[i];
+		b3Vector3& vel = particles.m_velocity[i];
 	
 		b3Vector3 acceleration = FP.m_gravity + (particles.m_accumulatedForce[i] * invParticleMass);
 
@@ -118,23 +118,23 @@ void b3FluidSphSolver::integratePositionsSingleFluid(const b3FluidSphParameters&
 	{
 		for(int i = 0; i < particles.size(); ++i)
 		{
-			b3Vector3 prevVelocity = particles.m_vel_eval[i];	//Velocity at (t-1/2)
-			b3Vector3 nextVelocity = particles.m_vel[i];		//Velccity at (t+1/2)
+			b3Vector3 prevVelocity = particles.m_velocityEval[i];	//Velocity at (t-1/2)
+			b3Vector3 nextVelocity = particles.m_velocity[i];		//Velccity at (t+1/2)
 			
 			b3Scalar speed = nextVelocity.length();
 			if(speed > simulationScaleSpeedLimit) 
 			{
 				nextVelocity *= simulationScaleSpeedLimit / speed;
 					
-				particles.m_vel_eval[i] = (prevVelocity + nextVelocity) * b3Scalar(0.5);	//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
-				particles.m_vel[i] = nextVelocity;
+				particles.m_velocityEval[i] = (prevVelocity + nextVelocity) * b3Scalar(0.5);	//v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5		used to compute (sph)forces later
+				particles.m_velocity[i] = nextVelocity;
 			}
 		}	
 	}
 		
 	//Leapfrog integration
 	//p(t+1) = p(t) + v(t+1/2)*dt
-	for(int i = 0; i < particles.size(); ++i) particles.m_pos[i] += particles.m_vel[i] * timeStepDivSimScale;
+	for(int i = 0; i < particles.size(); ++i) particles.m_position[i] += particles.m_velocity[i] * timeStepDivSimScale;
 }
 
 void b3FluidSphSolverDefault::sphComputePressure(b3FluidSph* fluid, b3FluidSphSolverDefault::SphParticles& sphData)
@@ -213,7 +213,7 @@ void b3FluidSphSolverDefault::calculateSumsInCellSymmetric(const b3FluidSphParam
 	if(currentCell.m_firstIndex <= currentCell.m_lastIndex)	//if cell is not empty
 	{
 		b3FluidSortingGrid::FoundCells foundCells;
-		grid.findCellsSymmetric(particles.m_pos[currentCell.m_firstIndex], foundCells);
+		grid.findCellsSymmetric(particles.m_position[currentCell.m_firstIndex], foundCells);
 		
 		for(int i = currentCell.m_firstIndex; i <= currentCell.m_lastIndex; ++i)
 		{
@@ -227,7 +227,7 @@ void b3FluidSphSolverDefault::calculateSumsInCellSymmetric(const b3FluidSphParam
 				for(int n = FI.m_firstIndex; n <= FI.m_lastIndex; ++n)
 				{
 					//Simulation-scale distance
-					b3Vector3 difference = (particles.m_pos[i] - particles.m_pos[n]) * FP.m_simulationScale;		
+					b3Vector3 difference = (particles.m_position[i] - particles.m_position[n]) * FP.m_simulationScale;		
 					b3Scalar distanceSquared = difference.length2();
 					
 					if(FP.m_sphRadiusSquared > distanceSquared)
@@ -261,7 +261,7 @@ void computeForceNeighborTableSymmetric(const b3FluidSphParameters& FP, const b3
 	{
 		int n = sphData.m_neighborTable[i].getNeighborIndex(j);
 		
-		b3Vector3 difference = (particles.m_pos[i] - particles.m_pos[n]) * FP.m_simulationScale;		//Simulation-scale distance
+		b3Vector3 difference = (particles.m_position[i] - particles.m_position[n]) * FP.m_simulationScale;		//Simulation-scale distance
 		b3Scalar distance = sphData.m_neighborTable[i].getDistance(j);
 		
 		b3Scalar c = FP.m_sphSmoothRadius - distance;
@@ -270,9 +270,9 @@ void computeForceNeighborTableSymmetric(const b3FluidSphParameters& FP, const b3
 		
 		b3Scalar dterm = c * sphData.m_invDensity[i] * sphData.m_invDensity[n];
 
-		b3Vector3 force = b3MakeVector3(  (pterm * difference.getX() + vterm * (particles.m_vel_eval[n].getX() - particles.m_vel_eval[i].getX())) * dterm,
-										(pterm * difference.getY() + vterm * (particles.m_vel_eval[n].getY() - particles.m_vel_eval[i].getY())) * dterm,
-										(pterm * difference.getZ() + vterm * (particles.m_vel_eval[n].getZ() - particles.m_vel_eval[i].getZ())) * dterm );
+		b3Vector3 force = b3MakeVector3(  (pterm * difference.getX() + vterm * (particles.m_velocityEval[n].getX() - particles.m_velocityEval[i].getX())) * dterm,
+										(pterm * difference.getY() + vterm * (particles.m_velocityEval[n].getY() - particles.m_velocityEval[i].getY())) * dterm,
+										(pterm * difference.getZ() + vterm * (particles.m_velocityEval[n].getZ() - particles.m_velocityEval[i].getZ())) * dterm );
 		
 		sphData.m_sphForce[i] += force;
 		sphData.m_sphForce[n] += -force;

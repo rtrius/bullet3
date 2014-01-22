@@ -14,41 +14,63 @@ subject to the following restrictions:
 */
 #include "b3FluidSphOpenCL.h"
 
-#include "Bullet3Fluids/Sph/b3FluidSphParameters.h"
-#include "Bullet3Fluids/Sph/b3FluidParticles.h"
+#include "Bullet3Fluids/Sph/b3FluidSph.h"
 
-void b3FluidSphOpenCL::writeToOpenCL(cl_command_queue queue, const b3FluidSphParameters& FP, b3FluidParticles& particles)
+b3FluidSphOpenCL::b3FluidSphOpenCL(cl_context context, cl_command_queue queue) :
+	m_parameters(context, queue),
+	m_position(context, queue),
+	m_velocity(context, queue),
+	m_velocityEval(context, queue),
+	m_accumulatedForce(context, queue),
+	m_sph_force(context, queue),
+	m_density(context, queue),
+	m_cellIndex(context, queue)
 {
-	if(m_initialized) return;
-
 	m_parameters.resize(1);
-	m_parameters.copyFromHostPointer(&FP, 1, 0, false);
-	
-	int numParticles = particles.size();
-	m_pos.resize(numParticles);
-	m_vel.resize(numParticles);
-	m_vel_eval.resize(numParticles);
-	m_accumulatedForce.resize(numParticles);
-	m_sph_force.resize(numParticles);
-	m_density.resize(numParticles);
-	m_cellIndex.resize(numParticles);
-	
-	m_pos.copyFromHost(particles.m_pos, false);
-	m_vel.copyFromHost(particles.m_vel, false);
-	m_vel_eval.copyFromHost(particles.m_vel_eval, false);
-	m_accumulatedForce.copyFromHost(particles.m_accumulatedForce, false);
-	
-	clFinish(queue);
-	m_initialized = true;
 }
 	
-void b3FluidSphOpenCL::readFromOpenCL(cl_command_queue queue, b3FluidParticles& particles, b3AlignedObjectArray<b3Vector3>& sphForce)
+	
+void b3FluidSphOpenCL::writeToOpenCL(cl_command_queue queue, b3FluidSph* fluid)
 {
-	m_pos.copyToHost(particles.m_pos, false);
-	/*m_vel.copyToHost(particles.m_vel, false);
-	m_vel_eval.copyToHost(particles.m_vel_eval, false);
-	m_accumulatedForce.copyToHost(particles.m_accumulatedForce, false);
-	m_sph_force.copyToHost(sphForce, false);*/
+	const b3FluidParticles& particles = fluid->getParticles();
+	const b3FluidSphParameters& FP = fluid->getParameters();
+	m_parameters.copyFromHostPointer(&FP, 1, 0, false);
+		
+	if( fluid->needsWriteStateToGpu() )
+	{
+		fluid->shouldWriteStateToGpu(false);
+		
+		int numParticles = particles.size();
+		m_position.resize(numParticles);
+		m_velocity.resize(numParticles);
+		m_velocityEval.resize(numParticles);
+		m_accumulatedForce.resize(numParticles);
+		
+		m_sph_force.resize(numParticles);
+		m_density.resize(numParticles);
+		m_cellIndex.resize(numParticles);
+	
+		m_position.copyFromHost(particles.m_position, false);
+		m_velocity.copyFromHost(particles.m_velocity, false);
+		m_velocityEval.copyFromHost(particles.m_velocityEval, false);
+		m_accumulatedForce.copyFromHost(particles.m_accumulatedForce, false);
+	}
+	
+	clFinish(queue);
+}
+	
+void b3FluidSphOpenCL::readFromOpenCL(cl_command_queue queue, b3FluidSph* fluid)
+{
+	const b3FluidSphSyncronizationFlags& syncFlags = fluid->getGpuSyncFlags();
+	
+	b3FluidParticles& particles = fluid->internalGetParticles();
+
+	if(syncFlags.m_syncPosition) m_position.copyToHost(particles.m_position, false);
+	if(syncFlags.m_syncVelocity) m_velocity.copyToHost(particles.m_velocity, false);
+	if(syncFlags.m_syncVelocityEval) m_velocityEval.copyToHost(particles.m_velocityEval, false);
+	
+	//m_sph_force.copyToHost(sphForce, false);
+	
 	clFinish(queue);
 }
 	

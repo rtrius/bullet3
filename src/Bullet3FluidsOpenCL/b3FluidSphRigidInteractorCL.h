@@ -247,7 +247,7 @@ public:
 		B3_PROFILE("b3FluidSphRigidInteractorCL::interact()");
 	
 		int numRigidBodies = rigidBodyData.m_numRigidBodies;
-		int numFluidParticles = fluidData->m_pos.size();
+		int numFluidParticles = fluidData->m_position.size();
 		int numGridCells = (gridData) ? gridData->getNumActiveCells() : B3_FLUID_HASH_GRID_NUM_CELLS;
 		
 		if(!numRigidBodies || !numFluidParticles || !numGridCells) return;
@@ -314,7 +314,7 @@ public:
 				b3BufferInfoCL bufferInfo[] = 
 				{
 					b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-					b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+					b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 				
 					b3BufferInfoCL( rigidBodyData.m_worldSpaceAabbs ),
 					b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
@@ -350,7 +350,7 @@ public:
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 				
 				b3BufferInfoCL( gridData->m_activeCells.getBufferCL() ),
 				b3BufferInfoCL( gridData->m_cellContents.getBufferCL() ),
@@ -378,7 +378,7 @@ public:
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 				
 				b3BufferInfoCL( moduloGridData->m_cellContents.getBufferCL() ),
 				
@@ -409,7 +409,7 @@ public:
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 				
 				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
 				b3BufferInfoCL( rigidBodyData.m_collidables ),
@@ -439,7 +439,7 @@ public:
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( fluidData->m_parameters.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 				b3BufferInfoCL( m_pairs.getBufferCL() ),
 				
 				b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
@@ -461,9 +461,9 @@ public:
 			clFinish(m_commandQueue);
 		}
 		
-		//m_resolveFluidRigidCollisionsKernel, executed below, overwrites fluid particle velocities(m_vel);
+		//m_resolveFluidRigidCollisionsKernel, executed below, overwrites fluid particle velocities(m_velocity);
 		//the pre-collision particle velocities are needed to calculate impulses for the dynamic rigid bodies
-		m_fluidVelocities.copyFromOpenCLArray(fluidData->m_vel);
+		m_fluidVelocities.copyFromOpenCLArray(fluidData->m_velocity);
 		
 		//Resolve Collisions - apply impulses to fluid particles
 		{
@@ -477,8 +477,8 @@ public:
 				b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
 				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
 				
-				b3BufferInfoCL( fluidData->m_vel.getBufferCL() ),
-				b3BufferInfoCL( fluidData->m_vel_eval.getBufferCL() )
+				b3BufferInfoCL( fluidData->m_velocity.getBufferCL() ),
+				b3BufferInfoCL( fluidData->m_velocityEval.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_resolveFluidRigidCollisionsKernel);

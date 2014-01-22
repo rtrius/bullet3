@@ -134,7 +134,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 			clFinish(commandQueue);
 		}
 		
-		//
+		//Perform prefix sum on the array filled with 1 and 0; this gives the index for each active grid cell
 		{
 			B3_PROFILE("Prefix sum and resize");
 			
@@ -250,7 +250,7 @@ void b3FluidSortingGridOpenCLProgram::insertParticlesIntoGrid(cl_context context
 	//
 	{
 		B3_PROFILE("generateValueIndexPairs()");
-		generateValueIndexPairs( commandQueue, numFluidParticles, fluid->getGrid().getCellSize(), fluidData->m_pos.getBufferCL() );
+		generateValueIndexPairs( commandQueue, numFluidParticles, fluid->getGrid().getCellSize(), fluidData->m_position.getBufferCL() );
 		
 		clFinish(commandQueue);
 	}
@@ -270,14 +270,14 @@ void b3FluidSortingGridOpenCLProgram::insertParticlesIntoGrid(cl_context context
 	{
 		B3_PROFILE("rearrange device");
 		
-		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_pos.getBufferCL() );
-		fluidData->m_pos.copyFromOpenCLArray(m_tempBufferCL);
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_position.getBufferCL() );
+		fluidData->m_position.copyFromOpenCLArray(m_tempBufferCL);
 		
-		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_vel.getBufferCL() );
-		fluidData->m_vel.copyFromOpenCLArray(m_tempBufferCL);
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_velocity.getBufferCL() );
+		fluidData->m_velocity.copyFromOpenCLArray(m_tempBufferCL);
 		
-		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_vel_eval.getBufferCL() );
-		fluidData->m_vel_eval.copyFromOpenCLArray(m_tempBufferCL);
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_velocityEval.getBufferCL() );
+		fluidData->m_velocityEval.copyFromOpenCLArray(m_tempBufferCL);
 		
 		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_accumulatedForce.getBufferCL() );
 		fluidData->m_accumulatedForce.copyFromOpenCLArray(m_tempBufferCL);
@@ -327,9 +327,9 @@ void b3FluidSortingGridOpenCLProgram::rearrangeParticlesOnHost(b3FluidSph* fluid
 	B3_PROFILE("rearrange host");
 		
 	b3FluidParticles& particles = fluid->internalGetParticles();
-	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_pos);
-	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_vel);
-	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_vel_eval);
+	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_position);
+	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_velocity);
+	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_velocityEval);
 	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVector, particles.m_accumulatedForce);
 	rearrangeToMatchSortedValues2(m_valueIndexPairsHost, m_tempBufferVoid, particles.m_userPointer);
 }

@@ -22,44 +22,23 @@ subject to the following restrictions:
 #include "Bullet3Geometry/b3AabbUtil.h"		//b3TestPointAgainstAabb2()
 
 #include "b3FluidSortingGrid.h"
-//#include "b3FluidSphCollisionShape.h"
 
 b3FluidSph::b3FluidSph(b3FluidSphSolver* solver, int maxNumParticles)
 {
 	m_solver = solver;
 
 	m_solverData = 0;
-	m_fluidDataCL = 0;
-	m_gridDataCL = 0;
+	
+	m_solverDataGpu = 0;
+	m_gridDataGpu = 0;
+	
+	m_copyParticleDataToGpu = true;
 	
 	setMaxParticles(maxNumParticles);
 	m_grid.setCellSize(m_parameters.m_simulationScale, m_parameters.m_sphSmoothRadius);
-	
-	//b3CollisionObject
-	///BULLET_2_TO_3_PLACEHOLDER
-	/*
-	{
-		m_worldTransform.setIdentity();
-		m_internalType = CO_USER_TYPE;	// replace later with CO_FLUID_SPH
-		
-		void* ptr = b3AlignedAlloc( sizeof(b3FluidSphCollisionShape), 16 );
-		m_collisionShape = new(ptr) b3FluidSphCollisionShape(this);
-		m_collisionShape->setMargin( b3Scalar(0.25) );	//Arbitrary value
-		
-		m_rootCollisionShape = m_collisionShape;
-	}
-	*/
 }
 b3FluidSph::~b3FluidSph()
 {
-	//b3CollisionObject
-	///BULLET_2_TO_3_PLACEHOLDER
-	/*
-	{
-		m_collisionShape->~b3CollisionShape();
-		b3AlignedFree(m_collisionShape);
-	}
-	*/
 }
 
 void b3FluidSph::setMaxParticles(int maxNumParticles)
@@ -72,7 +51,7 @@ void b3FluidSph::removeAllParticles()
 {
 	m_particles.resize(0);
 	
-	m_removedFluidIndicies.resize(0);
+	m_updates.clear();
 	
 	m_grid.clear();
 }
@@ -98,20 +77,55 @@ void makeUniqueInt(b3AlignedObjectArray<int>& out_unique)
 	out_unique.resize(uniqueSize);
 }
 struct AscendingSortPredicate { inline bool operator() (const int& a, const int& b) const { return (a < b); } };
-void b3FluidSph::removeMarkedParticles()
+void b3FluidSph::applyUpdates()
 {
-	//makeUnique() assumes that the array is sorted
-	//m_removedFluidIndicies.heapSort( AscendingSortPredicate() );
-	m_removedFluidIndicies.quickSort( AscendingSortPredicate() );
+	//Create particles
+	{
+		int numCreatedParticles = m_updates.m_addedParticlePositions.size();
+		printf("numCreatedParticles : %d \n", numCreatedParticles);
+		for(int i = 0; i < numCreatedParticles; ++i)
+		{
+			int particleIndex = m_particles.addParticle(m_updates.m_addedParticlePositions[i]);
+			if( particleIndex != numParticles() ) 
+			{
+				m_particles.m_velocity[particleIndex] = m_updates.m_addedParticleVelocities[i];
+				m_particles.m_velocityEval[particleIndex] = m_updates.m_addedParticleVelocities[i];
+			}
+		}
+	}
 	
-	//Remove duplicate indicies
-	makeUniqueInt(m_removedFluidIndicies);
+	//Set position and velocity
+	{
+		for(int i = 0; i < m_updates.m_updatedPositions.size(); ++i)
+		{
+			int particleIndex = m_updates.m_updatedPositionsIndex[i];
+			m_particles.m_position[particleIndex] = m_updates.m_updatedPositions[i];
+		}
+		
+		for(int i = 0; i < m_updates.m_updatedVelocities.size(); ++i)
+		{
+			int particleIndex = m_updates.m_updatedVelocitiesIndex[i];
+			m_particles.m_velocity[particleIndex] = m_updates.m_updatedVelocities[i];
+			m_particles.m_velocityEval[particleIndex] = m_updates.m_updatedVelocities[i];
+		}
+	}
 	
-	//Since removing elements from the array invalidates(higher) indicies,
-	//elements should be removed in descending order.
-	for(int i = m_removedFluidIndicies.size() - 1; i >= 0; --i) m_particles.removeParticle( m_removedFluidIndicies[i] );
+	//Remove marked particles
+	{
+		//makeUnique() assumes that the array is sorted
+		//m_updates.m_removedParticleIndices.heapSort( AscendingSortPredicate() );
+		m_updates.m_removedParticleIndices.quickSort( AscendingSortPredicate() );
+		
+		//Remove duplicate indicies
+		makeUniqueInt(m_updates.m_removedParticleIndices);
+		
+		//Since removing elements from the array invalidates(higher) indicies,
+		//elements should be removed in descending order.
+		for(int i = m_updates.m_removedParticleIndices.size() - 1; i >= 0; --i) 
+			m_particles.removeParticle( m_updates.m_removedParticleIndices[i] );
+	}
 	
-	m_removedFluidIndicies.resize(0);
+	m_updates.clear();
 }
 
 void b3FluidSph::insertParticlesIntoGrid()
@@ -131,6 +145,7 @@ void b3FluidSph::insertParticlesIntoGrid()
 // /////////////////////////////////////////////////////////////////////////////
 void b3FluidEmitter::emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing)
 {
+	/*
 	int x = static_cast<int>( b3Sqrt(static_cast<b3Scalar>(numParticles)) );
 	
 	for(int i = 0; i < numParticles; i++) 
@@ -156,6 +171,7 @@ void b3FluidEmitter::emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing)
 			fluid->setVelocity(index, dir);
 		}
 	}
+	*/
 }
 void b3FluidEmitter::addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3Vector3& max, b3Scalar spacing)
 {
@@ -163,38 +179,6 @@ void b3FluidEmitter::addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3
 		for(b3Scalar y = min.getY(); y <= max.getY(); y += spacing) 
 			for(b3Scalar x = min.getX(); x <= max.getX(); x += spacing) 
 			{
-				fluid->addParticle( b3MakeVector3(x,y,z) );
+				fluid->addParticleCached( b3MakeVector3(x,y,z) );
 			}
-}
-
-
-// /////////////////////////////////////////////////////////////////////////////
-// struct b3FluidAbsorber
-// /////////////////////////////////////////////////////////////////////////////
-struct b3FluidAbsorberCallback : public b3FluidSortingGrid::AabbCallback
-{
-	b3FluidSph* m_fluidSph;
-
-	const b3Vector3& m_min;
-	const b3Vector3& m_max;
-
-	b3FluidAbsorberCallback(b3FluidSph* fluidSph, const b3Vector3& min, const b3Vector3& max) 
-	: m_fluidSph(fluidSph), m_min(min), m_max(max) {}
-	
-	virtual bool processParticles(const b3FluidGridIterator FI, const b3Vector3& aabbMin, const b3Vector3& aabbMax)
-	{
-		for(int n = FI.m_firstIndex; n <= FI.m_lastIndex; ++n)
-		{
-			if( b3TestPointAgainstAabb2( m_min, m_max, m_fluidSph->getPosition(n) ) ) m_fluidSph->markParticleForRemoval(n);
-		}
-	
-		return true;
-	}
-};
-void b3FluidAbsorber::absorb(b3FluidSph* fluid)
-{
-	const b3FluidSortingGrid& grid = fluid->getGrid();
-	
-	b3FluidAbsorberCallback absorber(fluid, m_min, m_max);
-	grid.forEachGridCell(m_min, m_max, absorber);
 }

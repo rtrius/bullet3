@@ -83,7 +83,7 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 	//
 	{
 		B3_PROFILE("generateValueIndexPairsModulo()");
-		generateValueIndexPairsModulo( commandQueue, numFluidParticles, gridCellSize, fluidData->m_pos.getBufferCL() );
+		generateValueIndexPairsModulo( commandQueue, numFluidParticles, gridCellSize, fluidData->m_position.getBufferCL() );
 		
 		clFinish(commandQueue);
 	}
@@ -103,14 +103,14 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 	{
 		B3_PROFILE("rearrange device");
 		
-		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_pos.getBufferCL() );
-		fluidData->m_pos.copyFromOpenCLArray(m_tempBufferCL);
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_position.getBufferCL() );
+		fluidData->m_position.copyFromOpenCLArray(m_tempBufferCL);
 		
-		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_vel.getBufferCL() );
-		fluidData->m_vel.copyFromOpenCLArray(m_tempBufferCL);
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_velocity.getBufferCL() );
+		fluidData->m_velocity.copyFromOpenCLArray(m_tempBufferCL);
 		
-		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_vel_eval.getBufferCL() );
-		fluidData->m_vel_eval.copyFromOpenCLArray(m_tempBufferCL);
+		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_velocityEval.getBufferCL() );
+		fluidData->m_velocityEval.copyFromOpenCLArray(m_tempBufferCL);
 		
 		rearrangeParticleArrays( commandQueue, numFluidParticles, fluidData->m_accumulatedForce.getBufferCL() );
 		fluidData->m_accumulatedForce.copyFromOpenCLArray(m_tempBufferCL);
@@ -136,7 +136,7 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 	{
 		b3BufferInfoCL bufferInfo[] = 
 		{
-			b3BufferInfoCL( fluidData->m_pos.getBufferCL() ),
+			b3BufferInfoCL( fluidData->m_position.getBufferCL() ),
 			b3BufferInfoCL( m_valueIndexPairs.getBufferCL() ),
 			b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 		};

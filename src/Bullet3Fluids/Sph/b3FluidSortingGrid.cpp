@@ -80,9 +80,9 @@ void sortParticlesByValues(b3FluidParticles& particles, b3AlignedObjectArray<b3F
 	{
 		B3_PROFILE("sortParticlesByValues() - move data");
 		
-		rearrangeToMatchSortedValues(values, tempVector, particles.m_pos);
-		rearrangeToMatchSortedValues(values, tempVector, particles.m_vel);
-		rearrangeToMatchSortedValues(values, tempVector, particles.m_vel_eval);
+		rearrangeToMatchSortedValues(values, tempVector, particles.m_position);
+		rearrangeToMatchSortedValues(values, tempVector, particles.m_velocity);
+		rearrangeToMatchSortedValues(values, tempVector, particles.m_velocityEval);
 		rearrangeToMatchSortedValues(values, tempVector, particles.m_accumulatedForce);
 		rearrangeToMatchSortedValues(values, tempVoid, particles.m_userPointer);
 	}
@@ -101,7 +101,7 @@ void b3FluidSortingGrid::insertParticles(b3FluidParticles& particles)
 			m_pointMax.setValue(-B3_LARGE_FLOAT, -B3_LARGE_FLOAT, -B3_LARGE_FLOAT);
 			for(int i = 0; i < particles.size(); ++i) 
 			{
-				const b3Vector3& position = particles.m_pos[i];
+				const b3Vector3& position = particles.m_position[i];
 			
 				m_pointMin.setMin(position);
 				m_pointMax.setMax(position);
