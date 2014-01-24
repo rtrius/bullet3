@@ -793,3 +793,43 @@ __kernel void sphComputeForceModulo(__constant b3FluidSphParameters* FP,
 	
 	fluidSphForce[i] = force * FP->m_sphParticleMass;
 }
+
+// ////////////////////////////////////////////////////////////////////////////
+// Incremental Update Kernels
+// ////////////////////////////////////////////////////////////////////////////
+__kernel void setCreatedParticleAttributes(__global b3Vector3* createdPosition, __global b3Vector3* createdVelocity, 
+											__global b3Vector3* position, __global b3Vector3* velocity, __global b3Vector3* velocityEval,
+											int newParticleOffset, int numCreatedParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numCreatedParticles) return;
+	
+	position[newParticleOffset + i] = createdPosition[i];
+	
+	velocity[newParticleOffset + i] = createdVelocity[i];
+	velocityEval[newParticleOffset + i] = createdVelocity[i];
+}
+
+__kernel void applyParticleUpdates(__global int* updatedIndices, __global b3Vector3* updatedData, 
+									__global b3Vector3* positionsOrVelocities, int numUpdates)
+{
+	int i = get_global_id(0);
+	if(i >= numUpdates) return;
+
+	positionsOrVelocities[ updatedIndices[i] ] = updatedData[i];
+}
+
+__kernel void swapRemovedParticles(__global int* sourceIndicies, __global int* targetIndicies,
+									__global b3Vector3* position, __global b3Vector3* velocity, __global b3Vector3* velocityEval,
+									int numSwappedParticles)
+{
+	int i = get_global_id(0);
+	if(i >= numSwappedParticles) return;
+	
+	int source = sourceIndicies[i];
+	int target = targetIndicies[i];
+	
+	position[target] = position[source];
+	velocity[target] = velocity[source];
+	velocityEval[target] = velocityEval[source];
+}

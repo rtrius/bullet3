@@ -1,5 +1,5 @@
-#ifndef B3_FLUID_SPH_UPDATE_PACKET
-#define B3_FLUID_SPH_UPDATE_PACKET
+#ifndef B3_FLUID_SPH_UPDATE_PACKET_H
+#define B3_FLUID_SPH_UPDATE_PACKET_H
 
 #include "Bullet3Common/b3AlignedObjectArray.h"
 #include "Bullet3Common/b3Vector3.h"
@@ -11,6 +11,9 @@
 /// - First, added particles are created.
 /// - Next, the position and velocity is set.
 /// - Last, particles are removed.
+///@par 
+///The update data still has to be transferred to the GPU every frame, so creating
+///a large number of updates will decrease performance.
 struct b3FluidSphUpdatePacket
 {
 	///The lengths of each pair of arrays is equal, for example m_updatedPositionsIndex.size() == m_updatedPositions.size()
@@ -30,7 +33,6 @@ struct b3FluidSphUpdatePacket
 	{
 		UT_Position,	///<Set the position of a particle
 		UT_Velocity,	///<Set the velocity of a particle
-		//UT_Force,		///<Set the force on a particle(total force, does not accumulate with previously applied force)
 	};
 
 	void clear()
@@ -81,6 +83,29 @@ struct b3FluidSphUpdatePacket
 	
 	///Duplicate indices are ignored, so a particle may be marked twice without any issues
 	void markParticleForRemoval(int index) { m_removedParticleIndices.push_back(index); }
+	
+	
+	//Assumes that out_unique is already sorted.
+	//Removes duplicates; rearranges array such that all unique values are in the range [0, uniqueSize).
+	static void makeUniqueInt(b3AlignedObjectArray<int>& out_unique)
+	{
+		int uniqueSize = 0;
+		if( out_unique.size() ) 
+		{
+			uniqueSize = 1;
+			for(int i = 1; i < out_unique.size(); ++i)
+			{
+				if( out_unique[i] != out_unique[i-1] )
+				{
+					out_unique[uniqueSize] = out_unique[i];
+					++uniqueSize;
+				}
+			}
+		}
+		
+		out_unique.resize(uniqueSize);
+	}
+	struct AscendingSortPredicate { inline bool operator() (const int& a, const int& b) const { return (a < b); } };
 };
 
 #endif

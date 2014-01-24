@@ -20,6 +20,7 @@ subject to the following restrictions:
 #include "Bullet3Fluids/Sph/b3FluidSphSolver.h"
 
 #include "Bullet3FluidsOpenCL/b3FluidSphRigidInteractorCL.h"
+#include "Bullet3FluidsOpenCL/b3FluidSphParticleUpdaterCL.h"
 
 #include "b3FluidSphOpenCL.h"
 #include "b3FluidSortingGridOpenCL.h"
@@ -49,6 +50,8 @@ class b3FluidSphSolverOpenCL : public b3FluidSphSolver
 	cl_kernel m_collideAabbImpulseKernel;
 	cl_kernel m_integratePositionKernel;
 	
+	b3FluidSphParticleUpdaterCL m_updater;
+	
 	b3FluidSortingGridOpenCLProgram m_sortingGridProgram;
 	b3FluidHashGridOpenCLProgram m_hashGridProgram;
 	b3FluidSphRigidInteractorCL m_fluidRigidInteractor;
@@ -68,6 +71,8 @@ public:
 	virtual void stepSimulation(b3FluidSph* fluid, RigidBodyGpuData& rbData);
 	
 protected:
+	void allocateSolverData(b3FluidSph* fluid);
+
 	void findNeighborCells(int numActiveGridCells, int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData);
 	void sphComputePressure(int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);
 	void sphComputeForce(int numFluidParticles, b3FluidSortingGridOpenCL* gridData, b3FluidSphOpenCL* fluidData, b3Scalar cellSize);

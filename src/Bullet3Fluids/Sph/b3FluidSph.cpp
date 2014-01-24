@@ -32,7 +32,7 @@ b3FluidSph::b3FluidSph(b3FluidSphSolver* solver, int maxNumParticles)
 	m_solverDataGpu = 0;
 	m_gridDataGpu = 0;
 	
-	m_copyParticleDataToGpu = true;
+	m_copyParticleDataToGpu = false;	//Use incremental update by default
 	
 	setMaxParticles(maxNumParticles);
 	m_grid.setCellSize(m_parameters.m_simulationScale, m_parameters.m_sphSmoothRadius);
@@ -43,42 +43,25 @@ b3FluidSph::~b3FluidSph()
 
 void b3FluidSph::setMaxParticles(int maxNumParticles)
 {
+	m_copyParticleDataToGpu = true;
+	
 	if( maxNumParticles < m_particles.size() )m_particles.resize(maxNumParticles);
 	m_particles.setMaxParticles(maxNumParticles);
 }
 
 void b3FluidSph::removeAllParticles()
 {
+	m_copyParticleDataToGpu = true;
+	
 	m_particles.resize(0);
-	
 	m_updates.clear();
-	
 	m_grid.clear();
 }
 
-//Assumes that out_unique is already sorted.
-//Removes duplicates; rearranges array such that all unique values are in the range [0, uniqueSize).
-void makeUniqueInt(b3AlignedObjectArray<int>& out_unique)
-{
-	int uniqueSize = 0;
-	if( out_unique.size() ) 
-	{
-		uniqueSize = 1;
-		for(int i = 1; i < out_unique.size(); ++i)
-		{
-			if( out_unique[i] != out_unique[i-1] )
-			{
-				out_unique[uniqueSize] = out_unique[i];
-				++uniqueSize;
-			}
-		}
-	}
-	
-	out_unique.resize(uniqueSize);
-}
-struct AscendingSortPredicate { inline bool operator() (const int& a, const int& b) const { return (a < b); } };
 void b3FluidSph::applyUpdates()
 {
+	m_copyParticleDataToGpu = true;
+
 	//Create particles
 	{
 		int numCreatedParticles = m_updates.m_addedParticlePositions.size();
@@ -110,14 +93,14 @@ void b3FluidSph::applyUpdates()
 		}
 	}
 	
+	//	replace this with GPU equivalent algorithm
 	//Remove marked particles
 	{
-		//makeUnique() assumes that the array is sorted
-		//m_updates.m_removedParticleIndices.heapSort( AscendingSortPredicate() );
-		m_updates.m_removedParticleIndices.quickSort( AscendingSortPredicate() );
+		//makeUniqueInt() assumes that the array is sorted
+		m_updates.m_removedParticleIndices.quickSort( b3FluidSphUpdatePacket::AscendingSortPredicate() );
 		
 		//Remove duplicate indicies
-		makeUniqueInt(m_updates.m_removedParticleIndices);
+		b3FluidSphUpdatePacket::makeUniqueInt(m_updates.m_removedParticleIndices);
 		
 		//Since removing elements from the array invalidates(higher) indicies,
 		//elements should be removed in descending order.
@@ -130,6 +113,8 @@ void b3FluidSph::applyUpdates()
 
 void b3FluidSph::insertParticlesIntoGrid()
 {	
+	m_copyParticleDataToGpu = true;
+	
 	B3_PROFILE("b3FluidSph::insertParticlesIntoGrid()");
 	
 	m_grid.setCellSize(m_parameters.m_simulationScale, m_parameters.m_sphSmoothRadius);

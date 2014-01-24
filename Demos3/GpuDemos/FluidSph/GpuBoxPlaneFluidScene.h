@@ -99,7 +99,6 @@ public:
 			b3Vector3 MIN = b3MakeVector3(-EXTENT, b3Scalar(0.0), -EXTENT);
 			b3Vector3 MAX = b3MakeVector3(EXTENT, EXTENT, EXTENT);
 			b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3) );
-			m_sphFluid->applyUpdates();
 		}
 	}
 	

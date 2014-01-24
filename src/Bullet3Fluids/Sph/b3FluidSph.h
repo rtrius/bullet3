@@ -36,7 +36,7 @@ struct b3FluidSphSyncronizationFlags
 	//bool m_syncGridState;			///<If true, the state of the b3FluidSortingGrid is copied back to CPU every frame
 	//boom m_syncRigidContacts;		///<If true, data from collision with rigid bodies is copied back to GPU every frame
 	
-	//bool m_writeForces;			///<If false, applied forces are not written to GPU( b3FluidSph::applyForce() will have no effect )
+	bool m_writeForces;			///<If false, applied forces are not written to GPU( b3FluidSph::applyForce() will have no effect )
 	
 	b3FluidSphSyncronizationFlags()
 	{
@@ -48,7 +48,7 @@ struct b3FluidSphSyncronizationFlags
 		//m_syncGridState = false;
 		//m_syncRigidContacts = false;
 		
-		//m_writeForces = false;
+		m_writeForces = false;
 	}
 };
 
@@ -63,7 +63,7 @@ class b3FluidSphTypedData;
 /// - b3FluidSortingGrid, a uniform grid broadphase for accelerating the SPH force calculation
 /// - b3FluidSphUpdatePacket, which is used to incrementally add particles, remove particles, and set per-particle properities 
 /// - b3FluidSphSyncronizationFlags, which is used to specify data copied back to and from the CPU every frame(can be ignored if using a CPU solver)
-///Each b3FluidSph cannot interact with another b3FluidSph.
+///@remarks Each b3FluidSph cannot interact with another b3FluidSph.
 ///By defining another b3FluidSphSolver, it is also possible to use this as a generic particle system.
 class b3FluidSph
 {
@@ -125,6 +125,7 @@ public:
 	void shouldWriteStateToGpu(bool transferCpuToGpuNextFrame) { m_copyParticleDataToGpu = transferCpuToGpuNextFrame; }
 		
 	//These functions assume that the data on CPU is current; if a GPU solver is being used they should only be called during initialization
+	//and even then the incremental update functions such as addParticleCached() should be used.
 	///@name Calling any of these functions will overwrite the GPU data with the CPU data on the next frame( shouldWriteStateToGpu(true) ).
 	///@{
 		void setMaxParticles(int maxNumParticles);	///<Removes particles if( maxNumParticles < numParticles() ).
@@ -134,7 +135,9 @@ public:
 		void insertParticlesIntoGrid(); ///<Automatically called during b3FluidRigidDynamicsWorld::stepSimulation(); updates the grid.
 	///@}
 
-	///@name Cached particle update. Note that these changes are not applied until applyUpdates() is called.
+	//If using a GPU solver, adding and removing particles will cause the CPU particle arrays to be resized, 
+	//but the data is not copied over unless getGpuSyncFlags() is set.
+	///@name Cached particle update. Note that these changes are not applied until applyUpdates(), or (for GPU solvers) stepSimulation() is called.
 	///@{
 		///Returns a particle index; creates a new particle if numParticles() < getMaxParticles(), returns numParticles() otherwise.
 		///The particle indicies change during each internal simulation step, so the returned index should be used only for initialization.

@@ -44,6 +44,8 @@ public:
 	
 	void writeToOpenCL(cl_command_queue queue, b3FluidSph* fluid);
 	void readFromOpenCL(cl_command_queue queue, b3FluidSph* fluid);
+	
+	void resize(int size);
 };
 
 #endif
