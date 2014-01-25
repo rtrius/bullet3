@@ -18,14 +18,20 @@ subject to the following restrictions:
 #ifndef B3_FLUID_SPH_H
 #define B3_FLUID_SPH_H
 
+#include "Bullet3Common/b3Quaternion.h"
+
 #include "b3FluidParticles.h"
 #include "b3FluidSphParameters.h"
 #include "b3FluidSortingGrid.h"
 #include "b3FluidSphUpdatePacket.h"
 
-///Specifies the data copied between the CPU and GPU every frame.
+///@brief Specifies the data copied between the CPU and GPU every frame.
+///@remarks
 /// - Members beginning with m_sync* determine a copy from GPU to CPU
 /// - Members beginning with m_write* determine a copy from CPU to GPU
+///@par
+///The transfer to particle data from CPU to GPU and back is a fairly expensive operation,
+///so as many flags as possible should be set to false.
 struct b3FluidSphSyncronizationFlags
 {
 	bool m_syncPosition;			///<b3FluidParticles.m_position ( b3FluidSph::getParticles() )
@@ -113,17 +119,17 @@ public:
 	const b3FluidParticles& getParticles() const { return m_particles; }
 	const b3FluidSortingGrid& getGrid() const { return m_grid; }
 	const b3FluidSphUpdatePacket& getUpdates() const { return m_updates; }
-		
+	
 	///Does not distinguish whether the data on CPU or GPU is current; use with caution. 
 	b3FluidParticles& internalGetParticles() { return m_particles; }
 	b3FluidSortingGrid& internalGetGrid() { return m_grid; }
 	b3FluidSphUpdatePacket& internalGetUpdates() { return m_updates; }
 	
-	///If true, CPU position, velocity, accumulated force is copied to GPU on next simulation step and all incremental updates are discarded.
+	///If true, CPU position, velocity, accumulated force is copied to GPU on next simulation step.
 	///This is automatically set to false after the data is copied.
 	bool needsWriteStateToGpu() const { return m_copyParticleDataToGpu; }
 	void shouldWriteStateToGpu(bool transferCpuToGpuNextFrame) { m_copyParticleDataToGpu = transferCpuToGpuNextFrame; }
-		
+	
 	//These functions assume that the data on CPU is current; if a GPU solver is being used they should only be called during initialization
 	//and even then the incremental update functions such as addParticleCached() should be used.
 	///@name Calling any of these functions will overwrite the GPU data with the CPU data on the next frame( shouldWriteStateToGpu(true) ).
@@ -142,19 +148,19 @@ public:
 		///Returns a particle index; creates a new particle if numParticles() < getMaxParticles(), returns numParticles() otherwise.
 		///The particle indicies change during each internal simulation step, so the returned index should be used only for initialization.
 		int addParticleCached( const b3Vector3& position, const b3Vector3& velocity = b3MakeVector3(0,0,0) ) 
-		{ 
+		{
 			return m_updates.addParticle( getMaxParticles(), numParticles(), position, velocity); 
 		}
 		
 		///Do not use the same index twice; will result in thread collisions.
-		///Avoid placing particles at the same position; particles with same position and velocity .
-		///will experience identical SPH forces and not seperate.
-		void setPositionCached(int index, const b3Vector3& position) { m_updates.addUpdate(b3FluidSphUpdatePacket::UT_Position, index, position); }
+		///Avoid placing particles at the same position; particles with same position and velocity,
+		///as they will experience identical SPH forces and not seperate.
+		void setPositionCached(int index, const b3Vector3& position) { m_updates.setPosition(index, position); }
 		
 		///Do not use the same index twice; will result in thread collisions.
 		///Velocity is at simulation scale; make sure to multiply by getParameters().m_simulationScale before applying if at world scale.
-		void setVelocityCached(int index, const b3Vector3& velocity) { m_updates.addUpdate(b3FluidSphUpdatePacket::UT_Velocity, index, velocity); }
-	
+		void setVelocityCached(int index, const b3Vector3& velocity) { m_updates.setVelocity(index, velocity); }
+		
 		///Do not use the same index twice; will result in thread collisions.
 		//void setParticleUserPointer(int index, void* userPointer) { m_particles.m_userPointer[index] = userPointer; }
 		
@@ -178,34 +184,55 @@ public:
 };
 
 ///@brief Adds particles to a b3FluidSph.
-struct b3FluidEmitter
+class b3FluidEmitter
 {
-	b3Vector3 m_position;
-
-	b3Scalar m_velocity;
+public:
+	b3FluidSph* m_fluid;
 	
-	b3Scalar m_yaw;
-	b3Scalar m_pitch;
+	///If this is nonzero, m_position is also offset by the btCollisionObjects' position and orientation
+	///must be either a btCollisionObject or btRigidBody
+	//btCollisionObject* m_attachTo;	
 	
-	b3Scalar m_yawSpread;
-	b3Scalar m_pitchSpread;
+	///Each position in this array corresponds to a particle created when emit() is called
+	b3AlignedObjectArray<b3Vector3> m_positions;
 	
-	bool m_useRandomIfAllParticlesAllocated;
+	///This transform is applied to m_positions and m_direction; it defines the world transform of the emitter
+	b3Vector3 m_center;
+	b3Quaternion m_rotation;
+	
+	///Must have length() == 1.0; by default points at -z; it is generally better to change m_rotation instead of this
+	b3Vector3 m_direction;
+	b3Scalar m_speed;
+	
+	///Emit particles if true
+	bool m_active;
+	
+	///If the maximum number of particles in a btFluidSph is reached,
+	///reset and use a randomly selected existing particle
+	//bool m_useRandomIfAllParticlesAllocated;
+	
+	///Contains the indicies of particles emitted on the last call to emit()
+	//btAlignedObjectArray<int> m_particleIndicies;
 	
 	b3FluidEmitter()
 	{
-		m_position.setValue(0,0,0);
-		m_yaw = b3Scalar(0);
-		m_pitch = b3Scalar(0); 
-		m_velocity = b3Scalar(0);
-		m_yawSpread = b3Scalar(0);
-		m_pitchSpread = b3Scalar(0);
-		m_useRandomIfAllParticlesAllocated = true;
+		m_fluid = 0;
+		//m_attachTo = 0;
+		
+		m_center = b3MakeVector3(0, 0, 0);
+		m_rotation = b3Quaternion(0, 0, 0, 1);
+		m_direction = b3MakeVector3(0, 0, -1);
+		m_speed = b3Scalar(1.0);
+		
+		m_active = true;
+		//m_useRandomIfAllParticlesAllocated = true;
 	}
 	
-	void emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing);
+	///This does not need to be called if the emitter is attached using btFluidRigidDynamicsWorld::addSphEmitter()
+	void emit();
 
-	static void addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3Vector3& max, b3Scalar spacing);
+
+	static void addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3Vector3& max, b3Scalar spacing, int maxCreated);
 };
 
 #endif

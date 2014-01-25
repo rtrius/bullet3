@@ -368,8 +368,8 @@ const char generateSurfaceFragmentShader[] = STRINGIFY(
 		vec3 color = baseColor.xyz * absorptionAndTransparency.xyz * diffuse + specular;
 		float alpha = MINIMUM_ALPHA + absorptionAndTransparency.w * (1.0 - MINIMUM_ALPHA);
 		
-		//fragColor = vec4(color, alpha);
-		fragColor = vec4(baseColor.xyz * diffuse + specular, 1.0);
+		fragColor = vec4(color, alpha);
+		//fragColor = vec4(baseColor.xyz * diffuse + specular, 1.0);
 		
 		//Convert depth from Normalized Device Coordinates(NDC) to Window/Screen coordinates
 		gl_FragDepth = (gl_DepthRange.diff*depth + gl_DepthRange.near + gl_DepthRange.far) * 0.5;

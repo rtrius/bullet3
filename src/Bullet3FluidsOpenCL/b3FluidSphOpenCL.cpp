@@ -67,8 +67,6 @@ void b3FluidSphOpenCL::readFromOpenCL(cl_command_queue queue, b3FluidSph* fluid)
 	if(syncFlags.m_syncVelocity) m_velocity.copyToHost(particles.m_velocity, false);
 	if(syncFlags.m_syncVelocityEval) m_velocityEval.copyToHost(particles.m_velocityEval, false);
 	
-	//m_sph_force.copyToHost(sphForce, false);
-	
 	clFinish(queue);
 }
 
@@ -83,6 +81,5 @@ void b3FluidSphOpenCL::resize(int size)
 	m_sph_force.resize(size, copyOldContents);
 	m_density.resize(size, copyOldContents);
 	m_cellIndex.resize(size, copyOldContents);
-	
 }
-	
+

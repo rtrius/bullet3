@@ -34,13 +34,11 @@ protected:
 	b3OpenCLArray<int> m_removeSwapSource;
 	b3OpenCLArray<int> m_removeSwapTarget;
 	
-	b3AlignedObjectArray<int> m_removeSwapSourceCpu;
-	b3AlignedObjectArray<int> m_removeSwapTargetCpu;
-	
 public:
 	b3FluidSphParticleUpdaterCL(cl_context context, cl_device_id device, cl_command_queue queue);
 	virtual ~b3FluidSphParticleUpdaterCL();
 
+	//GPU version to b3FluidSph::applyUpdates()
 	void createParticlesApplyUpdatesAndRemoveParticles(b3FluidSph* fluid, b3FluidSphOpenCL* fluidDataCL);
 };
 

@@ -93,19 +93,30 @@ void b3FluidSph::applyUpdates()
 		}
 	}
 	
-	//	replace this with GPU equivalent algorithm
 	//Remove marked particles
+	int numRemovedParticles = m_updates.m_removedParticleIndices.size();
+	if(numRemovedParticles)
 	{
-		//makeUniqueInt() assumes that the array is sorted
-		m_updates.m_removedParticleIndices.quickSort( b3FluidSphUpdatePacket::AscendingSortPredicate() );
+		int numParticlesBeforeRemove = numParticles();
+		int numParticlesAfterRemove = numParticlesBeforeRemove - numRemovedParticles;
 		
-		//Remove duplicate indicies
-		b3FluidSphUpdatePacket::makeUniqueInt(m_updates.m_removedParticleIndices);
+		//Load indices into updates.m_removeSwapSourceCpu and updates.m_removeSwapTargetCpu
+		m_updates.prepareToRemoveParticles(numParticlesBeforeRemove);
 		
-		//Since removing elements from the array invalidates(higher) indicies,
-		//elements should be removed in descending order.
-		for(int i = m_updates.m_removedParticleIndices.size() - 1; i >= 0; --i) 
-			m_particles.removeParticle( m_updates.m_removedParticleIndices[i] );
+		for(int i = 0; i < numRemovedParticles; ++i)
+		{
+			int source = m_updates.m_removeSwapSourceCpu[i];	//Non-removed particle index
+			int target = m_updates.m_removeSwapTargetCpu[i];	//Removed particle index
+			
+			m_particles.m_position[target] = m_particles.m_position[source];
+			m_particles.m_velocity[target] = m_particles.m_velocity[source];
+			m_particles.m_velocityEval[target] = m_particles.m_velocityEval[source];
+			//m_particles.m_userPointer[target] = m_particles.m_userPointer[source];
+			
+			m_particles.m_accumulatedForce[target] = m_particles.m_accumulatedForce[source];
+		}
+		
+		m_particles.resize(numParticlesAfterRemove);
 	}
 	
 	m_updates.clear();
@@ -128,42 +139,53 @@ void b3FluidSph::insertParticlesIntoGrid()
 // /////////////////////////////////////////////////////////////////////////////
 // struct b3FluidEmitter
 // /////////////////////////////////////////////////////////////////////////////
-void b3FluidEmitter::emit(b3FluidSph* fluid, int numParticles, b3Scalar spacing)
+void b3FluidEmitter::emit()
 {
-	/*
-	int x = static_cast<int>( b3Sqrt(static_cast<b3Scalar>(numParticles)) );
+	b3Assert(m_fluid);
 	
-	for(int i = 0; i < numParticles; i++) 
+	//m_particleIndicies.resize(0);
+	
+	if(!m_active) return;
+	
+	b3Quaternion rigidRotation = b3Quaternion::getIdentity();
+	//if(m_attachTo) m_attachTo->getWorldTransform().getBasis().getRotation(rigidRotation);
+	
+	b3Vector3 velocity = b3QuatRotate(rigidRotation * m_rotation, m_direction) * m_speed;
+	
+	for(int i = 0; i < m_positions.size(); ++i)
 	{
-		b3Scalar ang_rand = ( static_cast<b3Scalar>(b3rand()*b3Scalar(2.0)/B3_RAND_MAX) - b3Scalar(1.0) ) * m_yawSpread;
-		b3Scalar tilt_rand = ( static_cast<b3Scalar>(b3rand()*b3Scalar(2.0)/B3_RAND_MAX) - b3Scalar(1.0) ) * m_pitchSpread;
+		b3Vector3 position = b3QuatRotate(m_rotation, m_positions[i]) + m_center;
+		//if(m_attachTo) position = b3QuatRotate(rigidRotation, position) + m_attachTo->getWorldTransform().getOrigin();
 		
-		b3Vector3 dir = b3MakeVector3( 	b3Cos((m_yaw + ang_rand) * B3_RADS_PER_DEG) * b3Sin((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity,
-										b3Cos((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity,
-										b3Sin((m_yaw + ang_rand) * B3_RADS_PER_DEG) * b3Sin((m_pitch + tilt_rand) * B3_RADS_PER_DEG) * m_velocity );
-		
-		b3Vector3 position = b3MakeVector3( spacing*(i/x), spacing*(i%x), 0 );
-		position += m_position;
-		
-		int index = fluid->addParticle(position);
-		
-		if( index != fluid->numParticles() ) fluid->setVelocity(index, dir);
+		int index = m_fluid->addParticleCached(position, velocity);
+		//if( index != m_fluid->numParticles() ) m_particleIndicies.push_back(index);
+		/*
+		if( index != m_fluid->numParticles() ) 
+		{
+			m_fluid->setVelocity(index, velocity);
+			m_particleIndicies.push_back(index);
+		}
 		else if(m_useRandomIfAllParticlesAllocated)
 		{
-			index = ( fluid->numParticles() - 1 ) * b3rand() / B3_RAND_MAX;		//Random index
+			index = ( m_fluid->numParticles() - 1 ) * GEN_rand() / GEN_RAND_MAX;		//Random index
 		
-			fluid->setPosition(index, position);
-			fluid->setVelocity(index, dir);
-		}
+			m_fluid->setPosition(index, position);
+			m_fluid->setVelocity(index, velocity);
+			m_particleIndicies.push_back(index);
+		}*/
 	}
-	*/
 }
-void b3FluidEmitter::addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3Vector3& max, b3Scalar spacing)
+void b3FluidEmitter::addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3Vector3& max, b3Scalar spacing, int maxCreated)
 {
+	int numAdded = 0;
+
 	for(b3Scalar z = max.getZ(); z >= min.getZ(); z -= spacing) 
 		for(b3Scalar y = min.getY(); y <= max.getY(); y += spacing) 
 			for(b3Scalar x = min.getX(); x <= max.getX(); x += spacing) 
 			{
 				fluid->addParticleCached( b3MakeVector3(x,y,z) );
+				++numAdded;
+				
+				if(numAdded >= maxCreated) return;
 			}
 }

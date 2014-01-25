@@ -238,6 +238,7 @@ __kernel void storeUniquesAndIndexRanges(__global b3FluidGridValueIndexPair* val
 	}
 }
 
+//Serial kernel for testing
 __kernel void generateUniques(__global b3FluidGridValueIndexPair* sortedPairs, 
 							  __global b3FluidGridCombinedPos* out_activeCells, __global b3FluidGridIterator* out_cellContents,
 							  __global int* out_numActiveCells, int numSortedPairs )
@@ -798,7 +799,8 @@ __kernel void sphComputeForceModulo(__constant b3FluidSphParameters* FP,
 // Incremental Update Kernels
 // ////////////////////////////////////////////////////////////////////////////
 __kernel void setCreatedParticleAttributes(__global b3Vector3* createdPosition, __global b3Vector3* createdVelocity, 
-											__global b3Vector3* position, __global b3Vector3* velocity, __global b3Vector3* velocityEval,
+											__global b3Vector3* position, __global b3Vector3* velocity,
+											__global b3Vector3* velocityEval, __global b3Vector3* accumulatedForce,
 											int newParticleOffset, int numCreatedParticles)
 {
 	int i = get_global_id(0);
@@ -808,6 +810,8 @@ __kernel void setCreatedParticleAttributes(__global b3Vector3* createdPosition, 
 	
 	velocity[newParticleOffset + i] = createdVelocity[i];
 	velocityEval[newParticleOffset + i] = createdVelocity[i];
+	
+	accumulatedForce[newParticleOffset + i] = (b3Vector3){ 0.0f, 0.0f, 0.0f, 0.0f };
 }
 
 __kernel void applyParticleUpdates(__global int* updatedIndices, __global b3Vector3* updatedData, 
@@ -820,7 +824,8 @@ __kernel void applyParticleUpdates(__global int* updatedIndices, __global b3Vect
 }
 
 __kernel void swapRemovedParticles(__global int* sourceIndicies, __global int* targetIndicies,
-									__global b3Vector3* position, __global b3Vector3* velocity, __global b3Vector3* velocityEval,
+									__global b3Vector3* position, __global b3Vector3* velocity,
+									__global b3Vector3* velocityEval, __global b3Vector3* accumulatedForce,
 									int numSwappedParticles)
 {
 	int i = get_global_id(0);
@@ -832,4 +837,5 @@ __kernel void swapRemovedParticles(__global int* sourceIndicies, __global int* t
 	position[target] = position[source];
 	velocity[target] = velocity[source];
 	velocityEval[target] = velocityEval[source];
+	accumulatedForce[target] = accumulatedForce[source];
 }

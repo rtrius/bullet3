@@ -66,9 +66,6 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 		b3Assert( m_createdPosition.size() == m_createdVelocity.size() );
 		b3Assert( m_updatedPositionIndices.size() == m_updatedPosition.size() );
 		b3Assert( m_updatedVelocityIndices.size() == m_updatedVelocity.size() );
-		printf("createdSize: %d, %d\n", m_createdPosition.size(), m_createdVelocity.size() );
-		printf("setposSize: %d, %d\n", m_updatedPositionIndices.size(), m_updatedPosition.size() );
-		printf("setvelSize: %d, %d\n", m_updatedVelocityIndices.size(), m_updatedVelocity.size() );
 	}
 
 	//Create particles and resize arrays, including CPU
@@ -89,7 +86,8 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 			
 			b3BufferInfoCL( fluidDataCL->m_position.getBufferCL() ),
 			b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() ),
-			b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
+			b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() ),
+			b3BufferInfoCL( fluidDataCL->m_accumulatedForce.getBufferCL() )
 		};
 		
 		b3LauncherCL launcher(m_commandQueue, m_setCreatedParticleAttributesKernel);
@@ -155,74 +153,20 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 	
 	clFlush(m_commandQueue);
 	
-	//Remove marked particles
-	b3AlignedObjectArray<int>& removedIndices = updates.m_removedParticleIndices;
-		
-	int numParticlesBeforeRemove = fluid->numParticles();
-	int numRemovedParticles = removedIndices.size();
-	int numParticlesAfterRemove = numParticlesBeforeRemove - numRemovedParticles;
-	
+	//Remove particles
+	int numRemovedParticles = updates.m_removedParticleIndices.size();
 	if(numRemovedParticles)
 	{
-		//Process for removing particles:
-		//For instance there can be the array of particles:
-		// N R N R N N R N N R
-		//Where N is an index that is not marked to be removed, and R is marked to be removed.
-		//In this case there are 10 particles, with 6 marked N and 4 marked R.
-		//
-		//Split the array at the last index after particles are removed(6 particles remain, so split occurs at 6th particle).
-		// N R N R N N / R N N R
-		//The main point is to notice that when the array is divided at the number of particles remaining,
-		//the number of particles marked R to the left of the split is always the same as the number of particles marked N to the right.
-		//
-		//As a result, we can swap the particles marked N on the right with the particles marked R on the left.
-		//
-		//       |-Swap 3, 8-| 
-		//       |           |
-		// N R N R N N / R N N R        <-- 2 R on left, 2 N on right
-		// 0 1 2 3 4 5   6 7 8 9
-		//   |             |
-		//   |- Swap 1, 7 -|
-		//
-		// N N N N N N / R R R R
-		//and finally resize/truncate the array to eliminate the removed particles.
-		//
-		//In order to ensure that the result is deterministic, the array of marked particles
-		//is sorted in ascending order and the source and target arrays for the swap are also 
-		//sorted in ascending order.
+		int numParticlesBeforeRemove = fluid->numParticles();
+		int numParticlesAfterRemove = numParticlesBeforeRemove - numRemovedParticles;
 		
-		
-		//makeUniqueInt() assumes that the array is sorted
-		removedIndices.quickSort( b3FluidSphUpdatePacket::AscendingSortPredicate() );
-	
-		//Remove duplicate indicies
-		b3FluidSphUpdatePacket::makeUniqueInt(removedIndices);
-		
-		//Find indices to the right of the split that are marked N(that is, not marked for remove) and use them as the swap source.
-		{
-			m_removeSwapSourceCpu.resize(0);
-		
-			int removedIndex = 0;
-			for(int i = numParticlesAfterRemove; i < numParticlesBeforeRemove; ++i) 
-			{
-				while( i > removedIndices[removedIndex] && removedIndex < removedIndices.size() ) ++removedIndex;
-			
-				if(i != removedIndices[removedIndex]) m_removeSwapSourceCpu.push_back(i);
-			}
-		}
-		
-		//Find indices to the left of the split that are marked R(remove), and use them as the swap target.
-		m_removeSwapTargetCpu.resize(0);
-		for(int i = 0; i < numRemovedParticles; ++i)
-		{
-			if(removedIndices[i] < numParticlesAfterRemove) m_removeSwapTargetCpu.push_back(removedIndices[i]);
-			else break;
-		}
+		//Load indices into updates.m_removeSwapSourceCpu and updates.m_removeSwapTargetCpu
+		updates.prepareToRemoveParticles(numParticlesBeforeRemove);
 		
 		//Copy swap data from CPU to GPU
 		{
-			m_removeSwapSource.copyFromHost(m_removeSwapSourceCpu, false);
-			m_removeSwapTarget.copyFromHost(m_removeSwapTargetCpu, false);
+			m_removeSwapSource.copyFromHost(updates.m_removeSwapSourceCpu, false);
+			m_removeSwapTarget.copyFromHost(updates.m_removeSwapTargetCpu, false);
 			clFinish(m_commandQueue);
 		}
 		
@@ -230,7 +174,7 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 		{
 			int numSwappedParticles = m_removeSwapSource.size();
 			b3Assert( m_removeSwapSource.size() == m_removeSwapTarget.size() );
-		
+			
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( m_removeSwapSource.getBufferCL() ),
@@ -238,7 +182,8 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 				
 				b3BufferInfoCL( fluidDataCL->m_position.getBufferCL() ),
 				b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() ),
-				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
+				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() ),
+				b3BufferInfoCL( fluidDataCL->m_accumulatedForce.getBufferCL() )
 			};
 			
 			b3LauncherCL launcher(m_commandQueue, m_swapRemovedParticlesKernel);

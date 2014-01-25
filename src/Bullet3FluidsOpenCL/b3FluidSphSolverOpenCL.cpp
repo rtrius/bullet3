@@ -218,7 +218,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);
+			b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);		//After applying force, also sets accumulated force to 0
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			

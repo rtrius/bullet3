@@ -33,6 +33,8 @@ void b3Matrix4x4Mul16(const float aIn[16], const float bIn[16], float result[16]
 class GpuBoxPlaneFluidScene : public BASE_DEMO_CLASS
 {
 public:
+	static const int MAX_FLUID_PARTICLES = 131072;
+	static const int INITIAL_NUM_FLUID_PARTICLES = 131072;
 
 	b3FluidSphSolverOpenCL* m_solver;
 
@@ -40,7 +42,7 @@ public:
 	
 	GpuBoxPlaneFluidScene()
 	{
-		m_sphFluid = new b3FluidSph(0, 131072);
+		m_sphFluid = new b3FluidSph(0, MAX_FLUID_PARTICLES);
 		
 		b3FluidSphParameters FP = m_sphFluid->getParameters();
 		
@@ -98,7 +100,7 @@ public:
 			
 			b3Vector3 MIN = b3MakeVector3(-EXTENT, b3Scalar(0.0), -EXTENT);
 			b3Vector3 MAX = b3MakeVector3(EXTENT, EXTENT, EXTENT);
-			b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3) );
+			b3FluidEmitter::addVolume( m_sphFluid, MIN + OFFSET, MAX + OFFSET, b3Scalar(1.3), INITIAL_NUM_FLUID_PARTICLES );
 		}
 	}
 	
@@ -165,6 +167,54 @@ public:
 		{
 			counter = 0;
 			printf("m_sphFluid->numParticles(): %d \n", m_sphFluid->numParticles());
+		}
+		
+		const bool TEST_PARTICLE_ADD = true;
+		if(TEST_PARTICLE_ADD)
+		{
+			b3FluidEmitter emitter;
+			emitter.m_fluid = m_sphFluid;
+			
+			emitter.m_center = b3MakeVector3(20, 50, 0);
+			emitter.m_rotation = b3Quaternion(0, 75, 0);
+			emitter.m_speed = 2.5;
+			
+			b3Scalar spacing = m_sphFluid->getEmitterSpacing() * 2.0f;
+			emitter.m_positions.push_back( b3MakeVector3(0, 0, 0) );
+			
+			emitter.m_positions.push_back( b3MakeVector3(spacing, 0, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(-spacing, 0, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(0, spacing, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(0, -spacing, 0) );
+			
+			emitter.m_positions.push_back( b3MakeVector3(spacing, spacing, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(spacing, -spacing, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(-spacing, spacing, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(-spacing, -spacing, 0) );
+			
+			emitter.m_positions.push_back( b3MakeVector3(spacing*2.0, 0, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(-spacing*2.0, 0, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(0, spacing*2.0, 0) );
+			emitter.m_positions.push_back( b3MakeVector3(0, -spacing*2.0, 0) );
+
+			emitter.emit();
+		}
+		
+		const bool TEST_PARTICLE_REMOVE = true;
+		if(TEST_PARTICLE_REMOVE)
+		{
+			const b3Scalar EXTENT(10.0);
+			b3Vector3 min = b3MakeVector3(-EXTENT, 0.0, -EXTENT);
+			b3Vector3 max = b3MakeVector3(EXTENT, 60.0, EXTENT);
+			
+			for(int i = 0; i < m_sphFluid->numParticles(); ++i)
+			{
+				const b3Vector3& position = m_sphFluid->getParticles().m_position[i];
+			
+				if( min.x < position.x && position.x < max.x
+				 && min.y < position.y && position.y < max.y
+				 && min.z < position.z && position.z < max.z ) m_sphFluid->markParticleForRemoval(i);
+			}
 		}
 		
 		BASE_DEMO_CLASS::clientMoveAndDisplay();
