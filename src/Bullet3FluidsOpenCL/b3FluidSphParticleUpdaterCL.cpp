@@ -11,6 +11,7 @@
 #include "fluidSphCL.h"
 
 b3FluidSphParticleUpdaterCL::b3FluidSphParticleUpdaterCL(cl_context context, cl_device_id device, cl_command_queue queue) :
+	m_fill(context, device, queue),
 	m_createdPosition(context, queue), m_createdVelocity(context, queue),
 	m_updatedPositionIndices(context, queue), m_updatedPosition(context, queue),
 	m_updatedVelocityIndices(context, queue), m_updatedVelocity(context, queue),
@@ -29,8 +30,6 @@ b3FluidSphParticleUpdaterCL::b3FluidSphParticleUpdaterCL(cl_context context, cl_
 																	additionalMacros, CL_PROGRAM_PATH);
 	b3Assert(m_fluidsProgram);
 	
-	m_setCreatedParticleAttributesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "setCreatedParticleAttributes", &error, m_fluidsProgram, additionalMacros );
-	b3Assert(m_setCreatedParticleAttributesKernel);
 	m_applyParticleUpdatesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "applyParticleUpdates", &error, m_fluidsProgram, additionalMacros );
 	b3Assert(m_applyParticleUpdatesKernel);
 	m_swapRemovedParticlesKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "swapRemovedParticles", &error, m_fluidsProgram, additionalMacros );
@@ -39,7 +38,6 @@ b3FluidSphParticleUpdaterCL::b3FluidSphParticleUpdaterCL(cl_context context, cl_
 
 b3FluidSphParticleUpdaterCL::~b3FluidSphParticleUpdaterCL()
 {
-	clReleaseKernel(m_setCreatedParticleAttributesKernel);
 	clReleaseKernel(m_applyParticleUpdatesKernel);
 	clReleaseKernel(m_swapRemovedParticlesKernel);
 	
@@ -67,7 +65,6 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 		b3Assert( m_updatedPositionIndices.size() == m_updatedPosition.size() );
 		b3Assert( m_updatedVelocityIndices.size() == m_updatedVelocity.size() );
 	}
-
 	//Create particles and resize arrays, including CPU
 	int numCreatedParticles = m_createdPosition.size();
 	if(numCreatedParticles)
@@ -79,23 +76,14 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 		fluidDataCL->resize(numParticlesAfterAddingNew);
 		particlesCpu.resize(numParticlesAfterAddingNew);	//Also resize on CPU, to ensure that fluid->numParticles() is correct
 	
-		b3BufferInfoCL bufferInfo[] = 
-		{
-			b3BufferInfoCL( m_createdPosition.getBufferCL() ),
-			b3BufferInfoCL( m_createdVelocity.getBufferCL() ),
-			
-			b3BufferInfoCL( fluidDataCL->m_position.getBufferCL() ),
-			b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() ),
-			b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() ),
-			b3BufferInfoCL( fluidDataCL->m_accumulatedForce.getBufferCL() )
-		};
+		m_createdPosition.copyToCL(fluidDataCL->m_position.getBufferCL(), numCreatedParticles, 0, numParticlesBeforeAddingNew);
+		m_createdVelocity.copyToCL(fluidDataCL->m_velocity.getBufferCL(), numCreatedParticles, 0, numParticlesBeforeAddingNew);
+		m_createdVelocity.copyToCL(fluidDataCL->m_velocityEval.getBufferCL(), numCreatedParticles, 0, numParticlesBeforeAddingNew);
 		
-		b3LauncherCL launcher(m_commandQueue, m_setCreatedParticleAttributesKernel);
-		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-		launcher.setConst(numParticlesBeforeAddingNew);
-		launcher.setConst(numCreatedParticles);
-		
-		launcher.launch1D(numCreatedParticles);
+		//b3FillCL::execute() operates on an array of floats, so there will be issues if b3Scalar == double
+		b3Assert( sizeof(b3Scalar) == 4 && sizeof(b3Vector3) == 16 );
+		m_fill.execute( reinterpret_cast<b3OpenCLArray<float>&>(fluidDataCL->m_accumulatedForce), 
+						b3Scalar(0.0f), numCreatedParticles * 4, numParticlesBeforeAddingNew * 4 );
 	}
 	
 	//Apply particle position updates

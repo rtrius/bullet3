@@ -179,7 +179,7 @@ public:
 			emitter.m_rotation = b3Quaternion(0, 75, 0);
 			emitter.m_speed = 2.5;
 			
-			b3Scalar spacing = m_sphFluid->getEmitterSpacing() * 2.0f;
+			b3Scalar spacing = m_sphFluid->getEmitterSpacing() * 1.5f;
 			emitter.m_positions.push_back( b3MakeVector3(0, 0, 0) );
 			
 			emitter.m_positions.push_back( b3MakeVector3(spacing, 0, 0) );

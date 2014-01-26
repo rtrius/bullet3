@@ -4,6 +4,7 @@
 
 #include "Bullet3Common/b3Vector3.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3OpenCLArray.h"
+#include "Bullet3OpenCL/ParallelPrimitives/b3FillCL.h"
 
 class b3FluidSph;
 class b3FluidSphOpenCL;
@@ -16,9 +17,10 @@ protected:
 	cl_command_queue m_commandQueue;
 	
 	cl_program m_fluidsProgram;
-	cl_kernel m_setCreatedParticleAttributesKernel;
 	cl_kernel m_applyParticleUpdatesKernel;
 	cl_kernel m_swapRemovedParticlesKernel;
+	
+	b3FillCL m_fill;
 	
 	//
 	b3OpenCLArray<b3Vector3> m_createdPosition;

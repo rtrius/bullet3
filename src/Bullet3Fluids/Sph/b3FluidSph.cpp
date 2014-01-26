@@ -183,9 +183,10 @@ void b3FluidEmitter::addVolume(b3FluidSph* fluid, const b3Vector3& min, const b3
 		for(b3Scalar y = min.getY(); y <= max.getY(); y += spacing) 
 			for(b3Scalar x = min.getX(); x <= max.getX(); x += spacing) 
 			{
+				if(numAdded >= maxCreated) return;
+				
 				fluid->addParticleCached( b3MakeVector3(x,y,z) );
 				++numAdded;
 				
-				if(numAdded >= maxCreated) return;
 			}
 }

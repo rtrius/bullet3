@@ -798,22 +798,6 @@ __kernel void sphComputeForceModulo(__constant b3FluidSphParameters* FP,
 // ////////////////////////////////////////////////////////////////////////////
 // Incremental Update Kernels
 // ////////////////////////////////////////////////////////////////////////////
-__kernel void setCreatedParticleAttributes(__global b3Vector3* createdPosition, __global b3Vector3* createdVelocity, 
-											__global b3Vector3* position, __global b3Vector3* velocity,
-											__global b3Vector3* velocityEval, __global b3Vector3* accumulatedForce,
-											int newParticleOffset, int numCreatedParticles)
-{
-	int i = get_global_id(0);
-	if(i >= numCreatedParticles) return;
-	
-	position[newParticleOffset + i] = createdPosition[i];
-	
-	velocity[newParticleOffset + i] = createdVelocity[i];
-	velocityEval[newParticleOffset + i] = createdVelocity[i];
-	
-	accumulatedForce[newParticleOffset + i] = (b3Vector3){ 0.0f, 0.0f, 0.0f, 0.0f };
-}
-
 __kernel void applyParticleUpdates(__global int* updatedIndices, __global b3Vector3* updatedData, 
 									__global b3Vector3* positionsOrVelocities, int numUpdates)
 {
