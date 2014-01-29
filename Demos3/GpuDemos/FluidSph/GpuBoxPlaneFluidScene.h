@@ -18,10 +18,10 @@
 #include "../rigidbody/ConcaveScene.h"
 #include "../rigidbody/GpuCompoundScene.h"
 
-//#define BASE_DEMO_CLASS ConcaveScene
-#define BASE_DEMO_CLASS GpuBoxPlaneScene
+#define BASE_DEMO_CLASS ConcaveScene
+//#define BASE_DEMO_CLASS GpuBoxPlaneScene
 //#define BASE_DEMO_CLASS GpuCompoundPlaneScene
-const bool CONCAVE_SCENE = false;
+const bool CONCAVE_SCENE = true;
 
 void b3Matrix4x4Mul16(const float aIn[16], const float bIn[16], float result[16])
 {
@@ -94,7 +94,7 @@ public:
 			
 			if(CONCAVE_SCENE)
 			{
-				OFFSET = b3MakeVector3(125, 0, 0);
+				OFFSET = b3MakeVector3(0, 20, 0);
 				EXTENT = b3Scalar(45.0);
 			}
 			
@@ -169,7 +169,7 @@ public:
 			printf("m_sphFluid->numParticles(): %d \n", m_sphFluid->numParticles());
 		}
 		
-		const bool TEST_PARTICLE_ADD = true;
+		const bool TEST_PARTICLE_ADD = false;
 		if(TEST_PARTICLE_ADD)
 		{
 			b3FluidEmitter emitter;
@@ -200,7 +200,7 @@ public:
 			emitter.emit();
 		}
 		
-		const bool TEST_PARTICLE_REMOVE = true;
+		const bool TEST_PARTICLE_REMOVE = false;
 		if(TEST_PARTICLE_REMOVE)
 		{
 			const b3Scalar EXTENT(10.0);

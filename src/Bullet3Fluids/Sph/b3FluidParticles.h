@@ -22,9 +22,12 @@ class b3Vector3;
 
 ///@brief Coordinates the parallel arrays used to store fluid particles.
 ///@remarks
-///Members of this struct should not be accessed directly, except for:
-/// - b3FluidParticlesSyncronization m_gpuSyncronization
-/// - Calling b3AlignedObjectArray::operator[]() or b3AlignedObjectArray::at()
+///Members of this struct should not be accessed directly, except for calling:
+/// - b3AlignedObjectArray::operator[]() 
+/// - b3AlignedObjectArray::at()
+///@par
+///If using a GPU solver, make sure that the b3FluidSph::getGpuSyncFlags() are set correctly
+///or these arrays will not be updated.
 struct b3FluidParticles
 {
 	int m_maxParticles;

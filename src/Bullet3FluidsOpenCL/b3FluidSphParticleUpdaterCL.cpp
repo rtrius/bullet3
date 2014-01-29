@@ -65,6 +65,7 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 		b3Assert( m_updatedPositionIndices.size() == m_updatedPosition.size() );
 		b3Assert( m_updatedVelocityIndices.size() == m_updatedVelocity.size() );
 	}
+	
 	//Create particles and resize arrays, including CPU
 	int numCreatedParticles = m_createdPosition.size();
 	if(numCreatedParticles)

@@ -183,43 +183,23 @@ inline int binarySearch(__global b3FluidGridCombinedPos *sortGridValues, int sor
 
 #define B3_EPSILON FLT_EPSILON
 
+
+
 //Syncronize with defines b3FluidSphRigidInteractorCL.h
-#define MAX_FLUID_RIGID_PAIRS 32
-#define MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE 16
-#define MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID 256
-
-///Contains the indicies of rigid bodies whose AABB intersects with that of a single fluid particle
 typedef struct
 {
-	int m_numIndicies;
-	int m_rigidIndicies[MAX_FLUID_RIGID_PAIRS];
-	int m_rigidSubIndicies[MAX_FLUID_RIGID_PAIRS];	//Only used if the rigid has triangle mesh or compound shape
-	
-} FluidRigidPairs;
+	int m_fluidParticleIndex;
+	int m_rigidIndex;
+	int m_rigidSubIndex;		//Only used if the rigid has triangle mesh or compound shape
+	int m_rigidShapeType;		//For sorting
+} FluidRigidPair;
 
 typedef struct
 {
-	int m_numContacts;
-	int m_rigidIndicies[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
-	b3Scalar m_distances[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];
-	b3Vector3 m_pointsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space point
-	b3Vector3 m_normalsOnRigid[MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE];		//World space normal
-	
-} FluidRigidContacts;
-
-
-
-///Contains indicies of fluid particles that are colliding with dynamic(invMass != 0.0) rigid bodies
-///If the rigid body is static, m_numContacts should be 0; this struct is used to apply fluid-rigid impulses to the rigid bodies
-typedef struct
-{
-	int m_numContacts;
-	
-	//Fluid particle indicies; actual contact data is stored in the FluidRigidContact struct(1 per particle)
-	int m_fluidIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];
-	int m_contactIndicies[MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID];		//range [0, MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE - 1]
-	
-} RigidFluidContacts;
+	b3Scalar m_distance;
+	b3Vector3 m_pointOnRigid;
+	b3Vector3 m_normalOnRigid;
+} FluidRigidContact;
 
 
 // -----------------------------------------------------------------------------
@@ -932,7 +912,9 @@ void getIntersectingBvhLeaves(__global const btCollidableGpu* collidables,
 							b3Vector3 particleAabbMin, 
 							b3Vector3 particleAabbMax,
 							
-							__global FluidRigidPairs* out_pairs)
+							__global int* out_numPairs,
+							__global FluidRigidPair* out_pairs,
+							int maxFluidRigidPairs)
 {
 	btCollidableGpu trimeshCollidable = collidables[trimeshCollidableIndex];
 	if(trimeshCollidable.m_shapeType != SHAPE_CONCAVE_TRIMESH) return;
@@ -977,11 +959,16 @@ void getIntersectingBvhLeaves(__global const btCollidableGpu* collidables,
 					{
 						int triangleIndex = getTriangleIndex(&rootNode);
 						
-						int pairIndex = atomic_inc(&out_pairs[particleIndex].m_numIndicies);
-						if(pairIndex < MAX_FLUID_RIGID_PAIRS) 
+						int pairIndex = atomic_inc(out_numPairs);
+						if(pairIndex < maxFluidRigidPairs) 
 						{
-							out_pairs[particleIndex].m_rigidIndicies[pairIndex] = rigidBodyIndex;
-							out_pairs[particleIndex].m_rigidSubIndicies[pairIndex] = triangleIndex;
+							FluidRigidPair pair;
+							pair.m_fluidParticleIndex = particleIndex;
+							pair.m_rigidIndex = rigidBodyIndex;
+							pair.m_rigidSubIndex = triangleIndex;
+							pair.m_rigidShapeType = trimeshCollidable.m_shapeType;
+							
+							out_pairs[pairIndex] = pair;
 						}
 					} 
 					curIndex++;
@@ -1055,37 +1042,26 @@ bool computeContactSphereSphere(float4 particlePos, float particleRadius,
 }
 
 
-__kernel void clearFluidRigidPairsAndContacts(__global FluidRigidPairs* pairs, __global FluidRigidPairs* midphasePairs,
-											__global FluidRigidContacts* contacts, int numFluidParticles)
-{
-	int i = get_global_id(0);
-	if(i >= numFluidParticles) return;
-	
-	pairs[i].m_numIndicies = 0;
-	midphasePairs[i].m_numIndicies = 0;
-	contacts[i].m_numContacts = 0;
-}
-
 __kernel void detectLargeAabbRigids(__constant b3FluidSphParameters* FP,  
 									__global btAabbCL* rigidBodyWorldAabbs,
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 									__global int* out_numLargeAabbRigids, __global int* out_largeAabbRigidIndicies, 
 									int maxLargeRigidAabbs, int numRigidBodies)
 {
-	int i = get_global_id(0);
-	if(i >= numRigidBodies) return;
+	int rigidIndex = get_global_id(0);
+	if(rigidIndex >= numRigidBodies) return;
 	
 	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
 	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
-	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
+	btAabbCL rigidAabb = rigidBodyWorldAabbs[rigidIndex];
 	
 	b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
 	b3Scalar rigidAabbCornerDistance = b3Sqrt( b3Vector3_length2(expandedRigidAabbMax - expandedRigidAabbMin) );
 	
-	BodyData rigidBody = rigidBodies[i];
+	BodyData rigidBody = rigidBodies[rigidIndex];
 	int collidableIndex = rigidBody.m_collidableIdx;
 	
 	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;
@@ -1099,26 +1075,27 @@ __kernel void detectLargeAabbRigids(__constant b3FluidSphParameters* FP,
 	 || collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH )
 	{
 		int largeRigidIndex = atomic_inc(out_numLargeAabbRigids);	//out_numLargeAabbRigids is assumed to be 0 before the kernel is executed
-		if(largeRigidIndex < maxLargeRigidAabbs) out_largeAabbRigidIndicies[largeRigidIndex] = i;
+		if(largeRigidIndex < maxLargeRigidAabbs) out_largeAabbRigidIndicies[largeRigidIndex] = rigidIndex;
 	}
 }
 __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParameters* FP, 
 										__global b3Vector3* fluidPosition, __global btAabbCL* rigidBodyWorldAabbs,
 										__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 										__global int* numLargeAabbRigids, __global int* largeAabbRigidIndicies,
-										__global FluidRigidPairs* out_pairs, __global FluidRigidPairs* out_midphasePairs, 
-										int maxLargeRigidAabbs, int numFluidParticles)
+										__global int* out_numPairs, __global int* out_numMidphasePairs, 
+										__global FluidRigidPair* out_pairs, __global FluidRigidPair* out_midphasePairs, 
+										int maxLargeRigidAabbs, int maxFluidRigidPairs, int maxMidphasePairs, int numFluidParticles)
 {
-	int i = get_global_id(0);
-	if(i >= numFluidParticles) return;
+	int fluidParticleIndex = get_global_id(0);
+	if(fluidParticleIndex >= numFluidParticles) return;
 	
 	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
 	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
-	b3Vector3 particlePos = fluidPosition[i];
+	b3Vector3 particlePos = fluidPosition[fluidParticleIndex];
 	
-	int numValidLargeAabbRigids = min(*numLargeAabbRigids, maxLargeRigidAabbs);
+	int numValidLargeAabbRigids = min(*numLargeAabbRigids, maxLargeRigidAabbs);		//Also checked on host
 	if( get_global_id(0) == 0 ) *numLargeAabbRigids = numValidLargeAabbRigids;
 	
 	for(int n = 0; n < numValidLargeAabbRigids; ++n)
@@ -1131,7 +1108,9 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParameters* FP,
 		bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
 							|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
 						
-		__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
+		int maxPairs = (needsMidphase) ? maxMidphasePairs : maxFluidRigidPairs;
+		__global int* outputNumPairs = (needsMidphase) ? out_numMidphasePairs : out_numPairs;
+		__global FluidRigidPair* output = (needsMidphase) ? out_midphasePairs : out_pairs;
 	
 		btAabbCL rigidAabb = rigidBodyWorldAabbs[rigidIndex];
 		b3Vector3 expandedRigidAabbMin = rigidAabb.m_min - radiusAabbExtent;
@@ -1141,9 +1120,17 @@ __kernel void fluidLargeRigidBroadphase(__constant b3FluidSphParameters* FP,
 		 && expandedRigidAabbMin.y <= particlePos.y && particlePos.y <= expandedRigidAabbMax.y
 		 && expandedRigidAabbMin.z <= particlePos.z && particlePos.z <= expandedRigidAabbMax.z )
 		{
-			int pairIndex = output[i].m_numIndicies++;
-			if(pairIndex < MAX_FLUID_RIGID_PAIRS) output[i].m_rigidIndicies[pairIndex] = rigidIndex;
-			else return;
+			int pairIndex = atomic_inc(outputNumPairs);
+			if(pairIndex < maxPairs) 
+			{
+				FluidRigidPair pair;
+				pair.m_fluidParticleIndex = fluidParticleIndex;
+				pair.m_rigidIndex = rigidIndex;
+				pair.m_rigidSubIndex = -1;		//If (needsMidphase) this is overwritten in the midphase kernel
+				pair.m_rigidShapeType = collidables[collidableIndex].m_shapeType;
+			
+				output[pairIndex] = pair;
+			}
 		}
 	}
 }
@@ -1152,17 +1139,18 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParameters* FP,
 									__global b3Vector3* fluidPosition, __global b3FluidGridCombinedPos* cellValues, 
 									__global b3FluidGridIterator* cellContents, __global btAabbCL* rigidBodyWorldAabbs,
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
-									__global FluidRigidPairs* out_pairs, __global FluidRigidPairs* out_midphasePairs,			
-									int numGridCells, int numRigidBodies)
+									__global int* out_numPairs, __global int* out_numMidphasePairs, 
+									__global FluidRigidPair* out_pairs, __global FluidRigidPair* out_midphasePairs,			
+									int maxFluidRigidPairs, int maxMidphasePairs, int numGridCells, int numRigidBodies)
 {
-	int i = get_global_id(0);
-	if(i >= numRigidBodies) return;
+	int rigidIndex = get_global_id(0);
+	if(rigidIndex >= numRigidBodies) return;
 	
 	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
 	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
-	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
+	btAabbCL rigidAabb = rigidBodyWorldAabbs[rigidIndex];
 	//rigidAabb.m_min.w = 0.0f;	//	check if necessary(if using vector functions for point-AABB test)
 	//rigidAabb.m_max.w = 0.0f;
 	
@@ -1170,12 +1158,15 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParameters* FP,
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
 	b3Scalar rigidAabbCornerDistance = b3Sqrt( b3Vector3_length2(expandedRigidAabbMax - expandedRigidAabbMin) );
 	
-	BodyData rigidBody = rigidBodies[i];
+	BodyData rigidBody = rigidBodies[rigidIndex];
 	int collidableIndex = rigidBody.m_collidableIdx;
 	
 	bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
 						|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
-	__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
+						
+	int maxPairs = (needsMidphase) ? maxMidphasePairs : maxFluidRigidPairs;
+	__global int* outputNumPairs = (needsMidphase) ? out_numMidphasePairs : out_numPairs;
+	__global FluidRigidPair* output = (needsMidphase) ? out_midphasePairs : out_pairs;
 	
 	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;
 	if( fabs(expandedRigidAabbMin.x) > maxAabbExtent
@@ -1214,8 +1205,17 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParameters* FP,
 						 && expandedRigidAabbMin.y <= particlePos.y && particlePos.y <= expandedRigidAabbMax.y
 						 && expandedRigidAabbMin.z <= particlePos.z && particlePos.z <= expandedRigidAabbMax.z )
 						{
-							int pairIndex = atomic_inc(&output[particleIndex].m_numIndicies);
-							if(pairIndex < MAX_FLUID_RIGID_PAIRS) output[particleIndex].m_rigidIndicies[pairIndex] = i;
+							int pairIndex = atomic_inc(outputNumPairs);
+							if(pairIndex < maxPairs) 
+							{
+								FluidRigidPair pair;
+								pair.m_fluidParticleIndex = particleIndex;
+								pair.m_rigidIndex = rigidIndex;
+								pair.m_rigidSubIndex = -1;		//If (needsMidphase) this is overwritten in the midphase kernel
+								pair.m_rigidShapeType = collidables[collidableIndex].m_shapeType;
+							
+								output[pairIndex] = pair;
+							}
 						}
 					}
 				}
@@ -1224,6 +1224,7 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParameters* FP,
 			}
 }
 
+/*
 // ////////////////////////////////////////////////////////////////////////////
 // Modulo Hash Grid Only
 // ////////////////////////////////////////////////////////////////////////////
@@ -1318,200 +1319,247 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParameters* F
 // ////////////////////////////////////////////////////////////////////////////
 // Modulo Hash Grid Only
 // ////////////////////////////////////////////////////////////////////////////
-
+*/
+//Convert each entry in midphasePairs into several entries in out_pairs
 __kernel void fluidRigidMidphase(__constant b3FluidSphParameters* FP, __global b3Vector3* fluidPosition, 
 								__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 								__global b3BvhInfo* bvhInfos, __global btBvhSubtreeInfo* bvhSubtreeInfo, __global btQuantizedBvhNode* bvhNodes,
-								__global FluidRigidPairs* midphasePairs, __global FluidRigidPairs* out_pairs, int numFluidParticles)
+								__global FluidRigidPair* midphasePairs, __global int* out_numPairs,
+								__global FluidRigidPair* out_pairs,	int maxFluidRigidPairs, int numMidphasePairs)
 {
 	int i = get_global_id(0);
-	if(i >= numFluidParticles) return;
+	if(i >= numMidphasePairs) return;
 	
 	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
-	b3Vector3 fluidAabbMin = fluidPosition[i] - radiusAabbExtent;
-	b3Vector3 fluidAabbmax = fluidPosition[i] + radiusAabbExtent;
+	int particleIndex = midphasePairs[i].m_fluidParticleIndex;
+	b3Vector3 fluidAabbMin = fluidPosition[particleIndex] - radiusAabbExtent;
+	b3Vector3 fluidAabbmax = fluidPosition[particleIndex] + radiusAabbExtent;
 	
-	//Convert each entry in midphasePairs into several entries in out_pairs
-	int numIndicies = min(midphasePairs[i].m_numIndicies, MAX_FLUID_RIGID_PAIRS);
-	midphasePairs[i].m_numIndicies = numIndicies;
+	int rigidIndex = midphasePairs[i].m_rigidIndex;
+	BodyData rigidBody = rigidBodies[rigidIndex];
+	int collidableIndex = rigidBody.m_collidableIdx;
 	
-	for(int n = 0; n < numIndicies; ++n)
+	if(collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH)
 	{
-		int rigidIndex = midphasePairs[i].m_rigidIndicies[n];
-		BodyData rigidBody = rigidBodies[rigidIndex];
-		int collidableIndex = rigidBody.m_collidableIdx;
-		
-		if(collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH)
+		//Traverse the triangle mesh BVH with particle AABB, adding 1 element to out_pairs
+		//for each leaf(triangle) that intersects with the particle AABB
+		 getIntersectingBvhLeaves(collidables, bvhSubtreeInfo, bvhNodes, bvhInfos, 
+									rigidIndex, collidableIndex, particleIndex, fluidAabbMin, fluidAabbmax, 
+									out_numPairs, out_pairs, maxFluidRigidPairs);
+	}
+	else if(collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
+	{
+		for(int childShape = 0; childShape < collidables[collidableIndex].m_numChildShapes; ++childShape)
 		{
-			//Traverse the triangle mesh BVH with particle AABB, adding 1 element to out_pairs
-			//for each leaf(triangle) that intersects with the particle AABB
-			 getIntersectingBvhLeaves(collidables, bvhSubtreeInfo, bvhNodes, bvhInfos, 
-										rigidIndex, collidableIndex,
-										i, fluidAabbMin, fluidAabbmax, out_pairs);
-		}
-		else if(collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
-		{
-			for(int childShape = 0; childShape < collidables[collidableIndex].m_numChildShapes; ++childShape)
+			int childShapeIndex = collidables[collidableIndex].m_shapeIndex + childShape;
+			
+			int pairIndex = atomic_inc(out_numPairs);
+			if(pairIndex < maxFluidRigidPairs) 
 			{
-				int childShapeIndex = collidables[collidableIndex].m_shapeIndex + childShape;
+				FluidRigidPair pair;
+				pair.m_fluidParticleIndex = particleIndex;
+				pair.m_rigidIndex = rigidIndex;
+				pair.m_rigidSubIndex = childShapeIndex;
+				pair.m_rigidShapeType = collidables[collidableIndex].m_shapeType;
 				
-				int pairIndex = atomic_inc(&out_pairs[i].m_numIndicies);
-				if(pairIndex < MAX_FLUID_RIGID_PAIRS) 
-				{
-					out_pairs[i].m_rigidIndicies[pairIndex] = rigidIndex;
-					out_pairs[i].m_rigidSubIndicies[pairIndex] = childShapeIndex;
-				}
+				out_pairs[pairIndex] = pair;
 			}
 		}
 	}
 }
 
+#define B3_LARGE_FLOAT 1e30		//Bullet3Common/b3Scalar.h
+
 __kernel void fluidRigidNarrowphase(__constant b3FluidSphParameters* FP, 
-									__global b3Vector3* fluidPosition, __global FluidRigidPairs* pairs, 
+									__global b3Vector3* fluidPosition, __global FluidRigidPair* pairs, 
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
 									__global ConvexPolyhedronCL* convexShapes, __global btGpuFace* faces,
 									__global int* convexIndices, __global float4* convexVertices, 
-									__global btGpuChildShape* gpuChildShapes, __global FluidRigidContacts* out_contact,
-									int numFluidParticles)
+									__global btGpuChildShape* gpuChildShapes, __global FluidRigidContact* out_contact,
+									int numFluidRigidPairs)
+{
+	int pairIndex = get_global_id(0);
+	if(pairIndex >= numFluidRigidPairs) return;
+	
+	FluidRigidPair pair = pairs[pairIndex];
+	int rigidIndex = pair.m_rigidIndex;
+	int rigidSubIndex = pair.m_rigidSubIndex;
+	
+	b3Vector3 particlePosition = fluidPosition[pair.m_fluidParticleIndex];
+	
+	BodyData rigidBody = rigidBodies[rigidIndex];
+	
+	int collidableIndex = rigidBody.m_collidableIdx;
+	
+	bool isColliding = false;
+	float distance;
+	float4 normalOnRigid;
+	float4 pointOnRigid;
+	
+	int shapeType = collidables[collidableIndex].m_shapeType;
+	int shapeIndex = collidables[collidableIndex].m_shapeIndex;
+	float4 rigidPosition = rigidBody.m_pos;
+	float4 rigidOrientation = rigidBody.m_quat;
+	
+	if(shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
+	{
+		int childShapeIndex = rigidSubIndex;
+		int childShapeCollidableIndex = gpuChildShapes[childShapeIndex].m_shapeIndex;
+		float4 childWorldPosition = qtRotate(rigidOrientation, gpuChildShapes[childShapeIndex].m_childPosition) + rigidPosition;
+		float4 childWorldOrientation = qtMul(rigidOrientation, gpuChildShapes[childShapeIndex].m_childOrientation);
+		
+		//Replace shape, position, orientation with that of the child shape
+		shapeType = collidables[childShapeCollidableIndex].m_shapeType;
+		shapeIndex = collidables[childShapeCollidableIndex].m_shapeIndex;
+		rigidPosition = childWorldPosition;
+		rigidOrientation = childWorldOrientation;
+	}
+	
+	switch(shapeType)
+	{
+		case SHAPE_CONVEX_HULL:
+		{
+			isColliding = computeContactSphereConvex( collidableIndex, collidables, convexShapes, convexVertices, convexIndices, faces,
+													particlePosition, FP->m_particleRadius, rigidPosition, rigidOrientation,
+													&distance, &normalOnRigid, &pointOnRigid );
+			normalOnRigid = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
+		}
+			break;
+			
+		case SHAPE_PLANE:
+		{
+			float4 rigidPlaneEquation = faces[shapeIndex].m_plane;
+	
+			isColliding = computeContactSpherePlane(particlePosition, FP->m_particleRadius, 
+													rigidPosition, rigidOrientation, rigidPlaneEquation,
+													&distance, &normalOnRigid, &pointOnRigid );
+		}
+			break;
+		
+		case SHAPE_SPHERE:
+		{
+			float rigidSphereRadius = collidables[collidableIndex].m_radius;
+		
+			isColliding = computeContactSphereSphere(particlePosition, FP->m_particleRadius,
+													rigidPosition, rigidSphereRadius,
+													&distance, &normalOnRigid, &pointOnRigid);
+		}
+			break;
+			
+		case SHAPE_CONCAVE_TRIMESH:
+		{
+			int triangleIndex = rigidSubIndex;
+			btGpuFace face = faces[ convexShapes[shapeIndex].m_faceOffset + triangleIndex ];
+	
+			float4 triangleVertices[3];
+			for (int j=0;j<3;j++)
+			{
+				int index = convexIndices[face.m_indexOffset + j];
+				float4 vertex = convexVertices[ convexShapes[shapeIndex].m_vertexOffset + index];
+				triangleVertices[j] = vertex;
+			}
+			
+			isColliding = computeContactSphereTriangle(triangleVertices, particlePosition, FP->m_particleRadius,
+														rigidPosition, rigidOrientation,
+														&distance, &normalOnRigid, &pointOnRigid);									
+			normalOnRigid = -normalOnRigid;
+		}
+			break;
+	}
+	
+	
+	//if(isColliding)		//Since 1 contact exists for each pair, this might only increase divergence
+	{
+		FluidRigidContact contact;
+		contact.m_distance = (isColliding) ? distance : B3_LARGE_FLOAT;
+		contact.m_pointOnRigid = pointOnRigid;
+		contact.m_normalOnRigid = normalOnRigid;		
+		
+		out_contact[pairIndex] = contact;
+		
+		//since the pairs/contacts are sorted by fluid particle index in the next stage, 
+		//set non-colliding broadphase pairs to have a very high particle index so that
+		//the non colliding contacts are moved to the end of the array
+		//this allows removing of the non-colliding contacts with a simple resize()
+		//if(!isColliding) pairs[pairIndex].m_fluidParticleIndex = 1000000000;
+	}
+}
+
+
+typedef struct
+{
+	unsigned int m_key;
+	unsigned int m_value;
+} SortDataCL;
+
+__kernel void loadSortData(__global FluidRigidPair* pairs, __global SortDataCL* out_sortData, int numFluidRigidPairs)
+{
+	int pairAndContactIndex = get_global_id(0);
+	if(pairAndContactIndex >= numFluidRigidPairs) return;
+	
+	out_sortData[pairAndContactIndex].m_key = pairs[pairAndContactIndex].m_fluidParticleIndex;
+	out_sortData[pairAndContactIndex].m_value = pairAndContactIndex;
+}
+
+__kernel void rearrangePairsAndContacts(__global SortDataCL* sortData,
+										__global FluidRigidPair* pairs,  __global FluidRigidContact* contacts, 
+										__global FluidRigidPair* out_pairs,  __global FluidRigidContact* out_contacts, 
+										int numFluidRigidPairs)
 {
 	int i = get_global_id(0);
-	if(i >= numFluidParticles) return;
+	if(i >= numFluidRigidPairs) return;
 	
-	int numFluidRigidPairs = min(pairs[i].m_numIndicies, MAX_FLUID_RIGID_PAIRS);
-	pairs[i].m_numIndicies = numFluidRigidPairs;
+	int newIndex = i;
+	int oldIndex = sortData[i].m_value;
 	
-	FluidRigidPairs currentPairs = pairs[i];
-	for(int pair = 0; pair < numFluidRigidPairs; ++pair)
-	{
-		int rigidIndex = currentPairs.m_rigidIndicies[pair];
+	out_pairs[newIndex] = pairs[oldIndex];
+	out_contacts[newIndex] = contacts[oldIndex];
+}
+
+__kernel void findPerParticleContactRange(__global FluidRigidPair* pairs, __global int* out_firstContactIndexPerParticle, 
+											__global int* out_numContactsPerParticle, int numFluidRigidPairs)
+{
+	int contactIndex = get_global_id(0);
+	if(contactIndex >= numFluidRigidPairs) return;
 	
-		BodyData rigidBody = rigidBodies[rigidIndex];
-		
-		int collidableIndex = rigidBody.m_collidableIdx;
-		
-		bool isColliding = false;
-		float distance;
-		float4 normalOnRigid;
-		float4 pointOnRigid;
-		
-		int shapeType = collidables[collidableIndex].m_shapeType;
-		int shapeIndex = collidables[collidableIndex].m_shapeIndex;
-		float4 rigidPosition = rigidBody.m_pos;
-		float4 rigidOrientation = rigidBody.m_quat;
-		
-		if(shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS)
-		{
-			int childShapeIndex = currentPairs.m_rigidSubIndicies[pair];
-			int childShapeCollidableIndex = gpuChildShapes[childShapeIndex].m_shapeIndex;
-			float4 childWorldPosition = qtRotate(rigidOrientation, gpuChildShapes[childShapeIndex].m_childPosition) + rigidPosition;
-			float4 childWorldOrientation = qtMul(rigidOrientation, gpuChildShapes[childShapeIndex].m_childOrientation);
-			
-			//Replace shape, position, orientation with that of the child shape
-			shapeType = collidables[childShapeCollidableIndex].m_shapeType;
-			shapeIndex = collidables[childShapeCollidableIndex].m_shapeIndex;
-			rigidPosition = childWorldPosition;
-			rigidOrientation = childWorldOrientation;
-		}
-		
-		switch(shapeType)
-		{
-			case SHAPE_CONVEX_HULL:
-			{
-				isColliding = computeContactSphereConvex( collidableIndex, collidables, convexShapes, convexVertices, convexIndices, faces,
-														fluidPosition[i], FP->m_particleRadius, rigidPosition, rigidOrientation,
-														&distance, &normalOnRigid, &pointOnRigid );
-				normalOnRigid = -normalOnRigid;		//	computeContactSphereConvex() actually returns normal on particle?
-			}
-				break;
-				
-			case SHAPE_PLANE:
-			{
-				float4 rigidPlaneEquation = faces[shapeIndex].m_plane;
-		
-				isColliding = computeContactSpherePlane(fluidPosition[i], FP->m_particleRadius, 
-														rigidPosition, rigidOrientation, rigidPlaneEquation,
-														&distance, &normalOnRigid, &pointOnRigid );
-			}
-				break;
-			
-			case SHAPE_SPHERE:
-			{
-				float rigidSphereRadius = collidables[collidableIndex].m_radius;
-			
-				isColliding = computeContactSphereSphere(fluidPosition[i], FP->m_particleRadius,
-														rigidPosition, rigidSphereRadius,
-														&distance, &normalOnRigid, &pointOnRigid);
-			}
-				break;
-				
-			case SHAPE_CONCAVE_TRIMESH:
-			{
-				int rigidSubIndex = currentPairs.m_rigidSubIndicies[pair];
-			
-				float4 triangleVertices[3];
-				
-				btGpuFace face = faces[ convexShapes[shapeIndex].m_faceOffset + rigidSubIndex ];
-		
-				for (int j=0;j<3;j++)
-				{
-					int index = convexIndices[face.m_indexOffset + j];
-					float4 vertex = convexVertices[ convexShapes[shapeIndex].m_vertexOffset + index];
-					triangleVertices[j] = vertex;
-				}
-				
-				isColliding = computeContactSphereTriangle(triangleVertices, fluidPosition[i], FP->m_particleRadius,
-															rigidPosition, rigidOrientation,
-															&distance, &normalOnRigid, &pointOnRigid);									
-				normalOnRigid = -normalOnRigid;
-			}
-				break;
-			
-			default:
-				continue;
-		}
-		
-		
-		if(isColliding)
-		{
-			int contactIndex = out_contact[i].m_numContacts;
-			
-			out_contact[i].m_rigidIndicies[contactIndex] = rigidIndex;
-			out_contact[i].m_distances[contactIndex] = distance;
-			out_contact[i].m_pointsOnRigid[contactIndex] = pointOnRigid;
-			out_contact[i].m_normalsOnRigid[contactIndex] = normalOnRigid;		
-			
-			++out_contact[i].m_numContacts;
-		}
-		
-		if(out_contact[i].m_numContacts >= MAX_RIGID_CONTACTS_PER_FLUID_PARTICLE) return;
-	}
+	int particleIndex = pairs[contactIndex].m_fluidParticleIndex;
+	
+	atomic_min( &out_firstContactIndexPerParticle[particleIndex], contactIndex );
+	atomic_inc( &out_numContactsPerParticle[particleIndex] );
 }
 
 __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParameters* FP, 
 											__global BodyData* rigidBodies, __global InertiaTensor* rigidInertias,
-											__global FluidRigidContacts* contacts, 
-											__global b3Vector3* fluidVel, __global b3Vector3* fluidVelEval, int numFluidParticles)
+											
+											__global FluidRigidPair* pairs, __global FluidRigidContact* contacts,
+											__global int* firstContactIndexPerParticle, __global int* numContactsPerParticle,
+											
+											__global b3Vector3* fluidVel, int numFluidParticles)
 {
-	int i = get_global_id(0);
-	if(i >= numFluidParticles) return;
+	int particleIndex = get_global_id(0);
+	if(particleIndex >= numFluidParticles) return;
 	
-	for(int contactIndex = 0; contactIndex < contacts[i].m_numContacts; ++contactIndex)
+	for(int contact = 0; contact < numContactsPerParticle[particleIndex]; ++contact)
 	{
-		b3Vector3 fluidVelocity = fluidVel[i];
-		FluidRigidContacts contact = contacts[i];
+		int pairAndContactIndex = firstContactIndexPerParticle[particleIndex] + contact;
 	
-		int rigidIndex = contact.m_rigidIndicies[contactIndex];
-		b3Scalar distance = contact.m_distances[contactIndex];
-		b3Vector3 normalOnRigid = contact.m_normalsOnRigid[contactIndex];
-		b3Vector3 pointOnRigid = contact.m_pointsOnRigid[contactIndex];
+		FluidRigidPair pair = pairs[pairAndContactIndex];
+		FluidRigidContact contact = contacts[pairAndContactIndex];
+	
+		int rigidIndex = pair.m_rigidIndex;
+		b3Scalar distance = contact.m_distance;
+		b3Vector3 normalOnRigid = contact.m_normalOnRigid;
+		b3Vector3 pointOnRigid = contact.m_pointOnRigid;
 		
 		b3Vector3 rigidPosition = rigidBodies[rigidIndex].m_pos;
 		b3Vector3 rigidLinearVelocity = rigidBodies[rigidIndex].m_linVel;
 		b3Vector3 rigidAngularVelocity = rigidBodies[rigidIndex].m_angVel;
 		b3Scalar rigidInvMass = rigidBodies[rigidIndex].m_invMass;
 		Matrix3x3 rigidInertiaTensor = rigidInertias[rigidIndex].m_invInertia;
+		
+		b3Vector3 fluidVelocity = fluidVel[particleIndex];
 		
 		if( distance < 0.0f )
 		{
@@ -1559,11 +1607,12 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParameters* FP,
 			
 			//Leapfrog integration
 			b3Vector3 velNext = fluidVelocity + particleImpulse;
-			fluidVel[i] = velNext;
+			fluidVel[particleIndex] = velNext;
 		}
 	}
 }
 
+/*
 
 __kernel void clearRigidFluidContacts(__global RigidFluidContacts* out_rigidFluidContacts, int numRigidBodies)
 {
@@ -1685,3 +1734,4 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParameters* FP,
 	rigidBodies[rigidIndex].m_linVel = rigidLinearVelocity;
 	rigidBodies[rigidIndex].m_angVel = rigidAngularVelocity;
 }
+*/

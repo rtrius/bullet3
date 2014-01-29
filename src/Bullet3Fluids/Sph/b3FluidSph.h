@@ -30,7 +30,7 @@ subject to the following restrictions:
 /// - Members beginning with m_sync* determine a copy from GPU to CPU
 /// - Members beginning with m_write* determine a copy from CPU to GPU
 ///@par
-///The transfer to particle data from CPU to GPU and back is a fairly expensive operation,
+///The transfer of particle data from CPU to GPU and back is a fairly expensive operation,
 ///so as many flags as possible should be set to false.
 struct b3FluidSphSyncronizationFlags
 {
@@ -40,7 +40,7 @@ struct b3FluidSphSyncronizationFlags
 	//bool m_syncUserPointer;			///<b3FluidParticles.m_userPointer ( b3FluidSph::getParticles() )
 	
 	//bool m_syncGridState;			///<If true, the state of the b3FluidSortingGrid is copied back to CPU every frame
-	//boom m_syncRigidContacts;		///<If true, data from collision with rigid bodies is copied back to GPU every frame
+	//boom m_syncRigidContacts;		///<If true, data from collision with rigid bodies is copied back to CPU every frame
 	
 	bool m_writeForces;			///<If false, applied forces are not written to GPU( b3FluidSph::applyForce() will have no effect )
 	
