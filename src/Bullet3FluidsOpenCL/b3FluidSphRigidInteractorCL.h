@@ -142,18 +142,24 @@ class b3FluidSphRigidInteractorCL
 	b3FillCL m_fill;
 	b3RadixSort32CL m_radixSorter;
 	
+	//1 element per pair of fluid particle and (convex hull, triangle, or sphere shape) rigid with intersecting AABB
 	b3OpenCLArray<int> m_numPairs;
 	b3OpenCLArray<FluidRigidPair> m_pairs;
 	b3OpenCLArray<FluidRigidContact> m_fluidRigidContacts;
 	b3OpenCLArray<FluidRigidPair> m_pairsTemp;
 	b3OpenCLArray<FluidRigidContact> m_fluidRigidContactsTemp;
-	b3OpenCLArray<b3SortData> m_sortData;
+	b3OpenCLArray<b3SortData> m_sortByFluidIndexData;
+	b3OpenCLArray<b3SortData> m_fluidToRigidMap;		//m_key == rigid body index, m_value == contact index
 	
+	//1 element per rigid body
+	b3OpenCLArray<int> m_firstContactIndexPerRigid;	//Contains indices of m_fluidToRigidMap, which is where the per rigid contact indices are 
+	b3OpenCLArray<int> m_numContactsPerRigid;
+	
+	//1 element per pair of fluid particle and (trimesh or compound shape) rigid with intersecting AABB
 	b3OpenCLArray<int> m_numMidphasePairs;
 	b3OpenCLArray<FluidRigidPair> m_midphasePairs;
 	
-	//b3OpenCLArray<RigidFluidContacts> m_rigidFluidContacts;
-	
+	//1 element per fluid particle
 	b3OpenCLArray<int> m_firstContactIndexPerParticle;
 	b3OpenCLArray<int> m_numContactsPerParticle;
 	b3OpenCLArray<b3Vector3> m_fluidVelocities;
@@ -176,19 +182,35 @@ class b3FluidSphRigidInteractorCL
 	cl_kernel m_findPerParticleContactRangeKernel;
 	cl_kernel m_resolveFluidRigidCollisionsKernel;
 	
-	//cl_kernel m_clearRigidFluidContactsKernel;
-	//cl_kernel m_mapRigidFluidContactsKernel;
-	//cl_kernel m_resolveRigidFluidCollisionsKernel;
+	cl_kernel m_mapFluidToRigidContactsKernel;
+	cl_kernel m_findPerRigidContactRangeKernel;
+	cl_kernel m_resolveRigidFluidCollisionsKernel;
 	
 public:
 	b3FluidSphRigidInteractorCL(cl_context context, cl_device_id device, cl_command_queue queue) 
-	:	m_fill(context, device, queue), m_radixSorter(context, device, queue),
-		m_numPairs(context, queue), m_pairs(context, queue), m_fluidRigidContacts(context, queue),
-		m_pairsTemp(context, queue), m_fluidRigidContactsTemp(context, queue), m_sortData(context, queue), 
-		m_numMidphasePairs(context, queue), m_midphasePairs(context, queue),
-		/*m_rigidFluidContacts(context, queue),*/ m_fluidVelocities(context, queue), 
-		m_firstContactIndexPerParticle(context, queue), m_numContactsPerParticle(context, queue),
-		m_numLargeAabbRigid(context, queue), m_largeAabbRigidIndicies(context, queue)
+	:	m_fill(context, device, queue), 
+		m_radixSorter(context, device, queue),
+		
+		m_numPairs(context, queue), 
+		m_pairs(context, queue), 
+		m_fluidRigidContacts(context, queue),
+		m_pairsTemp(context, queue), 
+		m_fluidRigidContactsTemp(context, queue), 
+		m_sortByFluidIndexData(context, queue), 
+		m_fluidToRigidMap(context, queue), 
+		
+		m_firstContactIndexPerRigid(context, queue), 
+		m_numContactsPerRigid(context, queue),
+		
+		m_numMidphasePairs(context, queue), 
+		m_midphasePairs(context, queue),
+		
+		m_fluidVelocities(context, queue), 
+		m_firstContactIndexPerParticle(context, queue), 
+		m_numContactsPerParticle(context, queue),
+		
+		m_numLargeAabbRigid(context, queue), 
+		m_largeAabbRigidIndicies(context, queue)
 	{
 		m_context = context;
 		m_commandQueue = queue;
@@ -200,7 +222,8 @@ public:
 			m_fluidRigidContacts.resize(MAX_FLUID_RIGID_PAIRS);
 			m_pairsTemp.resize(MAX_FLUID_RIGID_PAIRS);
 			m_fluidRigidContactsTemp.resize(MAX_FLUID_RIGID_PAIRS);
-			m_sortData.resize(MAX_FLUID_RIGID_PAIRS);
+			m_sortByFluidIndexData.resize(MAX_FLUID_RIGID_PAIRS);
+			m_fluidToRigidMap.resize(MAX_FLUID_RIGID_PAIRS);
 			
 			m_numMidphasePairs.resize(1);
 			m_midphasePairs.resize(MAX_MIDPHASE_PAIRS);
@@ -239,12 +262,12 @@ public:
 		m_resolveFluidRigidCollisionsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resolveFluidRigidCollisions", &error, m_fluidRigidProgram, additionalMacros );
 		b3Assert(m_resolveFluidRigidCollisionsKernel);
 		
-		//m_clearRigidFluidContactsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "clearRigidFluidContacts", &error, m_fluidRigidProgram, additionalMacros );
-		//b3Assert(m_clearRigidFluidContactsKernel);
-		//m_mapRigidFluidContactsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "mapRigidFluidContacts", &error, m_fluidRigidProgram, additionalMacros );
-		//b3Assert(m_mapRigidFluidContactsKernel);
-		//m_resolveRigidFluidCollisionsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resolveRigidFluidCollisions", &error, m_fluidRigidProgram, additionalMacros );
-		//b3Assert(m_resolveRigidFluidCollisionsKernel);
+		m_mapFluidToRigidContactsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "mapFluidToRigidContacts", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_mapFluidToRigidContactsKernel);
+		m_findPerRigidContactRangeKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "findPerRigidContactRange", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_findPerRigidContactRangeKernel);
+		m_resolveRigidFluidCollisionsKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "resolveRigidFluidCollisions", &error, m_fluidRigidProgram, additionalMacros );
+		b3Assert(m_resolveRigidFluidCollisionsKernel);
 	}
 	
 	virtual ~b3FluidSphRigidInteractorCL()
@@ -260,9 +283,9 @@ public:
 		clReleaseKernel(m_findPerParticleContactRangeKernel);
 		clReleaseKernel(m_resolveFluidRigidCollisionsKernel);
 		
-		//clReleaseKernel(m_clearRigidFluidContactsKernel);
-		//clReleaseKernel(m_mapRigidFluidContactsKernel);
-		//clReleaseKernel(m_resolveRigidFluidCollisionsKernel);
+		clReleaseKernel(m_mapFluidToRigidContactsKernel);
+		clReleaseKernel(m_findPerRigidContactRangeKernel);
+		clReleaseKernel(m_resolveRigidFluidCollisionsKernel);
 		
 		clReleaseProgram(m_fluidRigidProgram);
 	}
@@ -286,6 +309,9 @@ public:
 		
 		if( m_firstContactIndexPerParticle.size() < numFluidParticles ) m_firstContactIndexPerParticle.resize(numFluidParticles);
 		if( m_numContactsPerParticle.size() < numFluidParticles ) m_numContactsPerParticle.resize(numFluidParticles);
+		
+		if( m_firstContactIndexPerRigid.size() < numRigidBodies ) m_firstContactIndexPerRigid.resize(numRigidBodies);
+		if( m_numContactsPerRigid.size() < numRigidBodies ) m_numContactsPerRigid.resize(numRigidBodies);
 		
 		//Set number of pairs, contacts, and midphase pairs to 0 (numPairs == numContacts)
 		{
@@ -560,16 +586,18 @@ public:
 			m_numPairs.copyToHostPointer(&numFluidRigidPairs, 1);
 			clFinish(m_commandQueue);
 				
-			//Load each entry in m_sortData with:
+			//Load each entry in m_sortByFluidIndexData with:
 			//b3SortData.m_key == fluid particle index (value to sort by)
 			//b3SortData.m_value == fluid-rigid pair index
 			{
 				B3_PROFILE("m_loadSortDataKernel");
 				
+				m_sortByFluidIndexData.resize(numFluidRigidPairs);
+				
 				b3BufferInfoCL bufferInfo[] = 
 				{
 					b3BufferInfoCL( m_pairs.getBufferCL() ),
-					b3BufferInfoCL( m_sortData.getBufferCL() )
+					b3BufferInfoCL( m_sortByFluidIndexData.getBufferCL() )
 				};
 				
 				b3LauncherCL launcher(m_commandQueue, m_loadSortDataKernel);
@@ -581,9 +609,8 @@ public:
 			}
 			
 			{
-				B3_PROFILE("radix sort");
-				m_sortData.resize(numFluidRigidPairs);
-				m_radixSorter.execute(m_sortData, 32);
+				B3_PROFILE("radix sort m_sortByFluidIndexData");
+				m_radixSorter.execute(m_sortByFluidIndexData, 32);
 				
 				clFinish(m_commandQueue);
 			}
@@ -605,7 +632,7 @@ public:
 			
 				b3BufferInfoCL bufferInfo[] = 
 				{
-					b3BufferInfoCL( m_sortData.getBufferCL() ),
+					b3BufferInfoCL( m_sortByFluidIndexData.getBufferCL() ),
 					
 					b3BufferInfoCL( m_pairsTemp.getBufferCL() ),
 					b3BufferInfoCL( m_fluidRigidContactsTemp.getBufferCL() ),
@@ -684,47 +711,74 @@ public:
 			clFinish(m_commandQueue);
 		}
 		
-		/**
-		const bool APPLY_IMPULSES_TO_RIGID_BODIES = false;
+		const bool APPLY_IMPULSES_TO_RIGID_BODIES = true;
 		if(APPLY_IMPULSES_TO_RIGID_BODIES)
 		{
-			//Map fluid contacts to rigid bodies
+			//	duplicated (see above x3)
+			int numFluidRigidPairs = -1;
+			m_numPairs.copyToHostPointer(&numFluidRigidPairs, 1);
+			clFinish(m_commandQueue);
+			
 			//Since applying impulses simultaneously(in 1 kernel) to both fluid and rigid body would require
 			//syncronization between threads, we instead run 2 kernels - the first iterates through all contacts with
 			//1 thread per fluid particle, and the second does the same with 1 thread per rigid body.
+			
+			//Clear rigid side contacts
 			{
-				//Clear rigid side contacts
+				const int firstContactIndex = numFluidRigidPairs;
+				const int numContacts = 0;
+				m_fill.execute(m_firstContactIndexPerRigid, firstContactIndex, numRigidBodies, 0);
+				m_fill.execute(m_numContactsPerRigid, numContacts, numRigidBodies, 0);
+				clFinish(m_commandQueue);
+			}
+			
+			//Map contacts, which are sorted by fluid particle index, to each rigid body.
+			//Rather than duplicating the contact data and sorting that by the rigid body index,
+			//create an array of {rigid index, contact index} pairs and sort that instead.
+			{
+				//Load each entry in m_fluidToRigidMap with:
+				//b3SortData.m_key == rigid body index (value to sort by)
+				//b3SortData.m_value == contact index (same as pair index)
 				{
-					B3_PROFILE("m_clearRigidFluidContactsKernel");
-				
+					B3_PROFILE("m_mapFluidToRigidContactsKernel");
+					
+					m_fluidToRigidMap.resize(numFluidRigidPairs);
+					
 					b3BufferInfoCL bufferInfo[] = 
-					{ 
-						b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+					{
+						b3BufferInfoCL( m_pairs.getBufferCL() ),
+						b3BufferInfoCL( m_fluidToRigidMap.getBufferCL() )
 					};
 					
-					b3LauncherCL launcher(m_commandQueue, m_clearRigidFluidContactsKernel);
+					b3LauncherCL launcher(m_commandQueue, m_mapFluidToRigidContactsKernel);
 					launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-					launcher.setConst(numRigidBodies);
+					launcher.setConst(numFluidRigidPairs);
 					
-					launcher.launch1D(numRigidBodies);
+					launcher.launch1D(numFluidRigidPairs);
 					clFinish(m_commandQueue);
 				}
 				
-				//Map fluid to rigid
 				{
-					B3_PROFILE("m_mapRigidFluidContactsKernel");
+					B3_PROFILE("radix sort m_fluidToRigidMap");
+					m_radixSorter.execute(m_fluidToRigidMap, 32);
 					
+					clFinish(m_commandQueue);
+				}
+				
+				//Use atomic_min and atomic_inc to find the range of indices in m_fluidToRigidMap for each rigid body
+				{
 					b3BufferInfoCL bufferInfo[] = 
-					{ 
-						b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
-						b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() )
+					{
+						b3BufferInfoCL( m_fluidToRigidMap.getBufferCL() ),
+						b3BufferInfoCL( m_firstContactIndexPerRigid.getBufferCL() ),
+						b3BufferInfoCL( m_numContactsPerRigid.getBufferCL() )
 					};
 					
-					b3LauncherCL launcher(m_commandQueue, m_mapRigidFluidContactsKernel);
+					b3LauncherCL launcher(m_commandQueue, m_findPerRigidContactRangeKernel);
 					launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-					launcher.setConst(numFluidParticles);
+					launcher.setConst(numFluidRigidPairs);
 					
-					launcher.launch1D(numFluidParticles);
+					launcher.launch1D(numFluidRigidPairs);
 					clFinish(m_commandQueue);
 				}
 			}
@@ -739,8 +793,12 @@ public:
 					
 					b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
 					b3BufferInfoCL( rigidBodyData.m_rigidBodyInertias ),
+					
+					b3BufferInfoCL( m_pairs.getBufferCL() ),
 					b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() ),
-					b3BufferInfoCL( m_rigidFluidContacts.getBufferCL() ),
+					b3BufferInfoCL( m_fluidToRigidMap.getBufferCL() ),
+					b3BufferInfoCL( m_firstContactIndexPerRigid.getBufferCL() ),
+					b3BufferInfoCL( m_numContactsPerRigid.getBufferCL() ),
 					
 					b3BufferInfoCL( m_fluidVelocities.getBufferCL() )
 				};
@@ -753,7 +811,7 @@ public:
 				clFinish(m_commandQueue);
 			}
 		}
-		**/
+		
 		clFinish(m_commandQueue);
 	}
 	

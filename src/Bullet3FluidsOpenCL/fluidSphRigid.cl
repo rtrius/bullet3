@@ -1612,39 +1612,35 @@ __kernel void resolveFluidRigidCollisions(__constant b3FluidSphParameters* FP,
 	}
 }
 
-/*
 
-__kernel void clearRigidFluidContacts(__global RigidFluidContacts* out_rigidFluidContacts, int numRigidBodies)
+__kernel void mapFluidToRigidContacts(__global FluidRigidPair* pairs, __global SortDataCL* out_fluidToRigidMap, int numFluidRigidPairs)
 {
-	int rigidIndex = get_global_id(0);
-	if(rigidIndex >= numRigidBodies) return;
+	int pairAndContactIndex = get_global_id(0);
+	if(pairAndContactIndex >= numFluidRigidPairs) return;
 	
-	out_rigidFluidContacts[rigidIndex].m_numContacts = 0;
+	out_fluidToRigidMap[pairAndContactIndex].m_key = pairs[pairAndContactIndex].m_rigidIndex;
+	out_fluidToRigidMap[pairAndContactIndex].m_value = pairAndContactIndex;
 }
 
-__kernel void mapRigidFluidContacts(__global FluidRigidContacts* fluidRigidContacts,
-									__global RigidFluidContacts* out_rigidFluidContacts, int numFluidParticles)
+__kernel void findPerRigidContactRange(__global SortDataCL* fluidToRigidMap, __global int* out_firstContactIndexPerRigid, 
+										__global int* out_numContactsPerRigid, int numFluidRigidPairs)
 {
-	int particleIndex = get_global_id(0);
-	if(particleIndex >= numFluidParticles) return;
+	int mappedPairIndex = get_global_id(0);
+	if(mappedPairIndex >= numFluidRigidPairs) return;
 	
-	__global FluidRigidContacts* contacts = &fluidRigidContacts[particleIndex];
-	for(int n = 0; n < contacts->m_numContacts; ++n)
-	{
-		int rigidIndex = contacts->m_rigidIndicies[n];
-		
-		int pairIndex = atomic_inc(&out_rigidFluidContacts[rigidIndex].m_numContacts);
-		if(pairIndex < MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID) 
-		{
-			out_rigidFluidContacts[rigidIndex].m_fluidIndicies[pairIndex] = particleIndex;
-			out_rigidFluidContacts[rigidIndex].m_contactIndicies[pairIndex] = n;
-		}
-	}
+	int rigidIndex = fluidToRigidMap[mappedPairIndex].m_key;
+	
+	atomic_min( &out_firstContactIndexPerRigid[rigidIndex], mappedPairIndex );
+	atomic_inc( &out_numContactsPerRigid[rigidIndex] );
 }
 
 __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParameters* FP, 
 											__global BodyData* rigidBodies, __global InertiaTensor* rigidInertias,
-											__global FluidRigidContacts* fluidContacts, __global RigidFluidContacts* rigidContacts, 
+											
+											__global FluidRigidPair* pairs, __global FluidRigidContact* contacts,
+											__global SortDataCL* fluidToRigidMap,
+											__global int* firstContactIndexPerRigid, __global int* numContactsPerRigid,
+											
 											__global b3Vector3* fluidVel, int numRigidBodies)
 {
 	int rigidIndex = get_global_id(0);
@@ -1661,19 +1657,18 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParameters* FP,
 	b3Vector3 accumulatedForce = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 	b3Vector3 accumulatedTorque = (b3Vector3){0.0f, 0.0f, 0.0f, 0.0f};
 	
-	int numContacts = min(rigidContacts[rigidIndex].m_numContacts, MAX_FLUID_CONTACTS_PER_DYNAMIC_RIGID);
-	rigidContacts[rigidIndex].m_numContacts = numContacts;
-	
-	for(int i = 0; i < numContacts; ++i)
+	for(int contact = 0; contact < numContactsPerRigid[rigidIndex]; ++contact)
 	{
-		int particleIndex = rigidContacts[rigidIndex].m_fluidIndicies[i];
-		int contactIndex = rigidContacts[rigidIndex].m_contactIndicies[i];
+		int mapIndex = firstContactIndexPerRigid[rigidIndex] + contact;
+		int pairAndContactIndex = fluidToRigidMap[mapIndex].m_value;
+	
+		int particleIndex = pairs[pairAndContactIndex].m_fluidParticleIndex;
 		
 		b3Vector3 fluidVelocity = fluidVel[particleIndex];
 		
-		b3Scalar distance = fluidContacts[particleIndex].m_distances[contactIndex];
-		b3Vector3 pointOnRigid = fluidContacts[particleIndex].m_pointsOnRigid[contactIndex];
-		b3Vector3 normalOnRigid = fluidContacts[particleIndex].m_normalsOnRigid[contactIndex];
+		b3Scalar distance = contacts[pairAndContactIndex].m_distance;
+		b3Vector3 pointOnRigid = contacts[pairAndContactIndex].m_pointOnRigid;
+		b3Vector3 normalOnRigid = contacts[pairAndContactIndex].m_normalOnRigid;
 		
 		if( distance < 0.0f )
 		{
@@ -1734,4 +1729,3 @@ __kernel void resolveRigidFluidCollisions(__constant b3FluidSphParameters* FP,
 	rigidBodies[rigidIndex].m_linVel = rigidLinearVelocity;
 	rigidBodies[rigidIndex].m_angVel = rigidAngularVelocity;
 }
-*/

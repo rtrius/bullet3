@@ -18,10 +18,10 @@
 #include "../rigidbody/ConcaveScene.h"
 #include "../rigidbody/GpuCompoundScene.h"
 
-#define BASE_DEMO_CLASS ConcaveScene
-//#define BASE_DEMO_CLASS GpuBoxPlaneScene
+//#define BASE_DEMO_CLASS ConcaveScene
+#define BASE_DEMO_CLASS GpuBoxPlaneScene
 //#define BASE_DEMO_CLASS GpuCompoundPlaneScene
-const bool CONCAVE_SCENE = true;
+const bool CONCAVE_SCENE = false;
 
 void b3Matrix4x4Mul16(const float aIn[16], const float bIn[16], float result[16])
 {
