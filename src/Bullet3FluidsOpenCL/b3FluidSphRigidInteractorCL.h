@@ -174,7 +174,7 @@ class b3FluidSphRigidInteractorCL
 	cl_kernel m_detectLargeAabbRigidsKernel;
 	cl_kernel m_fluidLargeRigidBroadphaseKernel;
 	cl_kernel m_fluidSmallRigidBroadphaseKernel;
-	//cl_kernel m_fluidSmallRigidBroadphaseModuloKernel;
+	cl_kernel m_fluidSmallRigidBroadphaseModuloKernel;
 	cl_kernel m_fluidRigidMidphaseKernel;
 	cl_kernel m_fluidRigidNarrowphaseKernel;
 	cl_kernel m_loadSortDataKernel;

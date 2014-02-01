@@ -1224,7 +1224,7 @@ __kernel void fluidSmallRigidBroadphase(__constant b3FluidSphParameters* FP,
 			}
 }
 
-/*
+
 // ////////////////////////////////////////////////////////////////////////////
 // Modulo Hash Grid Only
 // ////////////////////////////////////////////////////////////////////////////
@@ -1245,17 +1245,18 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParameters* F
 									__global b3Vector3* fluidPosition, 
 									__global b3FluidGridIterator* cellContents, __global btAabbCL* rigidBodyWorldAabbs,
 									__global BodyData* rigidBodies, __global btCollidableGpu* collidables,
-									__global FluidRigidPairs* out_pairs, __global FluidRigidPairs* out_midphasePairs,			
-									int numRigidBodies)
+									__global int* out_numPairs, __global int* out_numMidphasePairs, 
+									__global FluidRigidPair* out_pairs, __global FluidRigidPair* out_midphasePairs,			
+									int maxFluidRigidPairs, int maxMidphasePairs, int numRigidBodies)
 {
-	int i = get_global_id(0);
-	if(i >= numRigidBodies) return;
+	int rigidIndex = get_global_id(0);
+	if(rigidIndex >= numRigidBodies) return;
 	
 	b3Scalar gridCellSize = FP->m_sphSmoothRadius / FP->m_simulationScale;
 	b3Scalar particleRadius = FP->m_particleRadius;
 	b3Vector3 radiusAabbExtent = (b3Vector3){ particleRadius, particleRadius, particleRadius, 0.0f };
 	
-	btAabbCL rigidAabb = rigidBodyWorldAabbs[i];
+	btAabbCL rigidAabb = rigidBodyWorldAabbs[rigidIndex];
 	//rigidAabb.m_min.w = 0.0f;	//	check if necessary(if using vector functions for point-AABB test)
 	//rigidAabb.m_max.w = 0.0f;
 	
@@ -1263,13 +1264,15 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParameters* F
 	b3Vector3 expandedRigidAabbMax = rigidAabb.m_max + radiusAabbExtent;
 	b3Scalar rigidAabbCornerDistance = b3Sqrt( b3Vector3_length2(expandedRigidAabbMax - expandedRigidAabbMin) );
 	
-	BodyData rigidBody = rigidBodies[i];
+	BodyData rigidBody = rigidBodies[rigidIndex];
 	int collidableIndex = rigidBody.m_collidableIdx;
 	
 	bool needsMidphase = ( collidables[collidableIndex].m_shapeType == SHAPE_CONCAVE_TRIMESH 
 						|| collidables[collidableIndex].m_shapeType == SHAPE_COMPOUND_OF_CONVEX_HULLS );
 						
-	__global FluidRigidPairs* output = (needsMidphase) ? out_midphasePairs : out_pairs;
+	int maxPairs = (needsMidphase) ? maxMidphasePairs : maxFluidRigidPairs;
+	__global int* outputNumPairs = (needsMidphase) ? out_numMidphasePairs : out_numPairs;
+	__global FluidRigidPair* output = (needsMidphase) ? out_midphasePairs : out_pairs;
 	
 	//	may need to use different criteria for modulo grid(use of B3_FLUID_GRID_COORD_RANGE_HALVED is arbitrary)
 	b3Scalar maxAabbExtent = gridCellSize * (b3Scalar)B3_FLUID_GRID_COORD_RANGE_HALVED;	
@@ -1307,8 +1310,17 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParameters* F
 						 && expandedRigidAabbMin.y <= particlePos.y && particlePos.y <= expandedRigidAabbMax.y
 						 && expandedRigidAabbMin.z <= particlePos.z && particlePos.z <= expandedRigidAabbMax.z )
 						{
-							int pairIndex = atomic_inc(&output[particleIndex].m_numIndicies);
-							if(pairIndex < MAX_FLUID_RIGID_PAIRS) output[particleIndex].m_rigidIndicies[pairIndex] = i;
+							int pairIndex = atomic_inc(outputNumPairs);
+							if(pairIndex < maxPairs) 
+							{
+								FluidRigidPair pair;
+								pair.m_fluidParticleIndex = particleIndex;
+								pair.m_rigidIndex = rigidIndex;
+								pair.m_rigidSubIndex = -1;		//If (needsMidphase) this is overwritten in the midphase kernel
+								pair.m_rigidShapeType = collidables[collidableIndex].m_shapeType;
+							
+								output[pairIndex] = pair;
+							}
 						}
 					}
 				}
@@ -1319,7 +1331,7 @@ __kernel void fluidSmallRigidBroadphaseModulo(__constant b3FluidSphParameters* F
 // ////////////////////////////////////////////////////////////////////////////
 // Modulo Hash Grid Only
 // ////////////////////////////////////////////////////////////////////////////
-*/
+
 //Convert each entry in midphasePairs into several entries in out_pairs
 __kernel void fluidRigidMidphase(__constant b3FluidSphParameters* FP, __global b3Vector3* fluidPosition, 
 								__global BodyData* rigidBodies, __global btCollidableGpu* collidables,

@@ -83,8 +83,8 @@ b3FluidSphRigidInteractorCL::b3FluidSphRigidInteractorCL(cl_context context, cl_
 	b3Assert(m_fluidLargeRigidBroadphaseKernel);
 	m_fluidSmallRigidBroadphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidSmallRigidBroadphase", &error, m_fluidRigidProgram, additionalMacros );
 	b3Assert(m_fluidSmallRigidBroadphaseKernel);
-//	m_fluidSmallRigidBroadphaseModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidSmallRigidBroadphaseModulo", &error, m_fluidRigidProgram, additionalMacros );
-//	b3Assert(m_fluidSmallRigidBroadphaseModuloKernel);
+	m_fluidSmallRigidBroadphaseModuloKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidSmallRigidBroadphaseModulo", &error, m_fluidRigidProgram, additionalMacros );
+	b3Assert(m_fluidSmallRigidBroadphaseModuloKernel);
 	m_fluidRigidMidphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidRigidMidphase", &error, m_fluidRigidProgram, additionalMacros );
 	b3Assert(m_fluidRigidMidphaseKernel);
 	m_fluidRigidNarrowphaseKernel = b3OpenCLUtils::compileCLKernelFromString( context, device, kernelSource, "fluidRigidNarrowphase", &error, m_fluidRigidProgram, additionalMacros );
@@ -111,7 +111,7 @@ b3FluidSphRigidInteractorCL::~b3FluidSphRigidInteractorCL()
 	clReleaseKernel(m_detectLargeAabbRigidsKernel);
 	clReleaseKernel(m_fluidLargeRigidBroadphaseKernel);
 	clReleaseKernel(m_fluidSmallRigidBroadphaseKernel);
-	//clReleaseKernel(m_fluidSmallRigidBroadphaseModuloKernel);
+	clReleaseKernel(m_fluidSmallRigidBroadphaseModuloKernel);
 	clReleaseKernel(m_fluidRigidMidphaseKernel);
 	clReleaseKernel(m_fluidRigidNarrowphaseKernel);
 	clReleaseKernel(m_loadSortDataKernel);
@@ -294,9 +294,6 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 	}
 	else if(moduloGridData)
 	{
-		b3Assert(0);
-	
-		/*
 		B3_PROFILE("m_fluidSmallRigidBroadphaseModuloKernel");
 		
 		b3BufferInfoCL bufferInfo[] = 
@@ -310,17 +307,20 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 			b3BufferInfoCL( rigidBodyData.m_rigidBodies ),
 			b3BufferInfoCL( rigidBodyData.m_collidables ),
 			
+			b3BufferInfoCL( m_numPairs.getBufferCL() ),
+			b3BufferInfoCL( m_numMidphasePairs.getBufferCL() ),
 			b3BufferInfoCL( m_pairs.getBufferCL() ),
 			b3BufferInfoCL( m_midphasePairs.getBufferCL() )
 		};
 		
 		b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseModuloKernel);
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+		launcher.setConst(MAX_FLUID_RIGID_PAIRS);
+		launcher.setConst(MAX_MIDPHASE_PAIRS);
 		launcher.setConst(numRigidBodies);
 		
 		launcher.launch1D(numRigidBodies);
 		clFinish(m_commandQueue);
-		*/
 	}
 	else
 	{
