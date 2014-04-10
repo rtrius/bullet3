@@ -34,6 +34,7 @@
 #include "rigidbody/GpuConvexScene.h"
 #include "rigidbody/GpuCompoundScene.h"
 #include "rigidbody/GpuSphereScene.h"
+#include "rigidbody/GpuFractureScene.h"
 #include "rigidbody/Bullet2FileDemo.h"
 #include "softbody/GpuSoftBodyDemo.h"
 #include "../btgui/Timing/b3Quickprof.h"
@@ -154,6 +155,7 @@ GpuDemo::CreateFunc* allDemos[]=
 	GpuCompoundPlaneScene::MyCreateFunc,
 
 	GpuSphereScene::MyCreateFunc,
+	GpuFractureScene::MyCreateFunc,
 
 	
 

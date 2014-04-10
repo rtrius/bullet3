@@ -70,7 +70,7 @@ public:
 
 	void updateShape(int shapeIndex, const float* vertices);
 
-	///vertices must be in the format x,y,z, nx,ny,nz, u,v
+	///vertices must be in the format x,y,z,w(unused), nx,ny,nz, u,v
 	int registerShape(const float* vertices, int numvertices, const int* indices, int numIndices, int primitiveType=B3_GL_TRIANGLES, int textureIndex=-1);
 	
 	int	registerTexture(const unsigned char* texels, int width, int height);
