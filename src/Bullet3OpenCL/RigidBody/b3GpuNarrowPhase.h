@@ -11,6 +11,7 @@ class b3GpuNarrowPhase
 protected:
 
 	struct b3GpuNarrowPhaseInternalData*	m_data;
+	struct b3GpuRigidBodyState*	m_rigidBodyState;
 	int m_acceleratedCompanionShapeIndex;
 	int m_planeBodyIndex;
 	int	m_static0Index;

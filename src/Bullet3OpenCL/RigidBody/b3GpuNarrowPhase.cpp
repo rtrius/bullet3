@@ -20,7 +20,7 @@
 
 
 b3GpuNarrowPhase::b3GpuNarrowPhase(cl_context ctx, cl_device_id device, cl_command_queue queue, const b3Config& config)
-:m_data(0) ,m_planeBodyIndex(-1),m_static0Index(-1),
+: m_data(0), m_rigidBodyState(0), m_planeBodyIndex(-1),m_static0Index(-1),
 m_context(ctx),
 m_device(device),
 m_queue(queue)
@@ -108,8 +108,17 @@ m_queue(queue)
 	//m_data->m_contactCGPU = new b3OpenCLArray<Constraint4>(ctx,queue,config.m_maxBroadphasePairs,false);
 	//m_data->m_frictionCGPU = new b3OpenCLArray<adl::Solver<adl::TYPE_CL>::allocateFrictionConstraint( m_data->m_deviceCL, config.m_maxBroadphasePairs);
  
-	
-
+	//
+	{
+		m_rigidBodyState = new b3GpuRigidBodyState();
+		memset( m_rigidBodyState, 0, sizeof(b3GpuRigidBodyState) );
+		
+		m_rigidBodyState->m_availableRigidIndicesCPU = new b3AlignedObjectArray<int>();
+		m_rigidBodyState->m_availableRigidIndicesGPU = new b3OpenCLArray<int>(ctx, queue);
+		
+		m_rigidBodyState->m_usedRigidIndicesCPU = new b3AlignedObjectArray<int>();
+		m_rigidBodyState->m_usedRigidIndicesGPU = new b3OpenCLArray<int>(ctx, queue);
+	}
 }
 
 
@@ -162,6 +171,16 @@ b3GpuNarrowPhase::~b3GpuNarrowPhase()
     
     delete m_data->m_convexData;
 	delete m_data;
+	
+	//
+	{
+		delete m_rigidBodyState->m_availableRigidIndicesCPU;
+		delete m_rigidBodyState->m_availableRigidIndicesGPU;
+		delete m_rigidBodyState->m_usedRigidIndicesCPU;
+		delete m_rigidBodyState->m_usedRigidIndicesGPU;
+		
+		delete m_rigidBodyState;
+	}
 }
 
 
@@ -908,6 +927,16 @@ int b3GpuNarrowPhase::registerRigidBody(int collidableIndex, float mass, const f
 		return -1;
 	}
     
+	//	should first check m_availableRigidIndicesCPU/GPU for an index first
+	//	for now, assume that rigid bodies created by this function will not be removed
+	{
+		int newRigidIndex = m_data->m_numAcceleratedRigidBodies;
+	
+		m_rigidBodyState->m_usedRigidIndicesCPU->push_back(newRigidIndex);
+		if (writeToGpu) m_rigidBodyState->m_usedRigidIndicesGPU->push_back(newRigidIndex);
+	}
+	
+	//
 	m_data->m_bodyBufferCPU->resize(m_data->m_numAcceleratedRigidBodies+1);
     
 	b3RigidBodyData& body = m_data->m_bodyBufferCPU->at(m_data->m_numAcceleratedRigidBodies);

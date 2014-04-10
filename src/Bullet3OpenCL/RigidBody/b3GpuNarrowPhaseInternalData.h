@@ -23,6 +23,26 @@
 
 class b3ConvexUtility;
 
+struct b3GpuRigidBodyState
+{
+	//Indices of m_bodyBufferGPU that are not used
+	b3AlignedObjectArray<int>* m_availableRigidIndicesCPU;
+	b3OpenCLArray<int>* m_availableRigidIndicesGPU;
+	
+	//Indices of m_bodyBufferGPU that contain rigid bodies
+	b3AlignedObjectArray<int>* m_usedRigidIndicesCPU;
+	b3OpenCLArray<int>* m_usedRigidIndicesGPU;
+	
+	//	could also move other per-rigid body attributes here
+	//int m_numAcceleratedRigidBodies;
+	
+	//b3AlignedObjectArray<b3RigidBodyData>* m_bodyBufferCPU;
+	//b3OpenCLArray<b3RigidBodyData>* m_bodyBufferGPU;
+	
+	//b3AlignedObjectArray<b3InertiaData>*	m_inertiaBufferCPU;
+	//b3OpenCLArray<b3InertiaData>*	m_inertiaBufferGPU;
+};
+
 struct b3GpuNarrowPhaseInternalData
 {
 	b3AlignedObjectArray<b3ConvexUtility*>* m_convexData;
@@ -59,7 +79,6 @@ struct b3GpuNarrowPhaseInternalData
 	int	m_currentContactBuffer;
 	b3AlignedObjectArray<b3Contact4>* m_pBufContactOutCPU;
 	
-    
 	b3AlignedObjectArray<b3RigidBodyData>* m_bodyBufferCPU;
 	b3OpenCLArray<b3RigidBodyData>* m_bodyBufferGPU;
     
