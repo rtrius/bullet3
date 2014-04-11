@@ -1024,7 +1024,7 @@ void  b3GpuSapBroadphase::calculateOverlappingPairs(int maxPairs)
 
 	bool syncOnHost = false;
 
-	int numSmallAabbs = m_smallAabbsMappingCPU.size();
+	int numSmallAabbs = m_smallAabbsMappingGPU.size();
 	if (m_prefixScanFloat4 && numSmallAabbs)
 	{
 		B3_PROFILE("GPU compute best variance axis");

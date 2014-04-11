@@ -23,6 +23,7 @@ subject to the following restrictions:
 #include "Bullet3Geometry/b3AabbUtil.h"
 #include "Bullet3OpenCL/BroadphaseCollision/b3SapAabb.h"
 #include "Bullet3OpenCL/BroadphaseCollision/b3GpuBroadphaseInterface.h"
+#include "Bullet3OpenCL/BroadphaseCollision/b3GpuSapBroadphase.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 #include "Bullet3Dynamics/ConstraintSolver/b3PgsJacobiSolver.h"
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3UpdateAabbs.h"
@@ -107,6 +108,9 @@ b3GpuRigidBodyPipeline::b3GpuRigidBodyPipeline(cl_context ctx,cl_device_id devic
 		b3Assert(errNum==CL_SUCCESS);
 		m_data->m_updateAabbsKernel = b3OpenCLUtils::compileCLKernelFromString(m_data->m_context, m_data->m_device,updateAabbsKernelCL, "initializeGpuAabbsFull",&errNum,prog);
 		b3Assert(errNum==CL_SUCCESS);
+		
+		m_data->m_loadLargeAndSmallAabbIndicesKernel = b3OpenCLUtils::compileCLKernelFromString(m_data->m_context, m_data->m_device,updateAabbsKernelCL, "loadLargeAndSmallAabbIndices",&errNum,prog);
+		b3Assert(errNum==CL_SUCCESS);
 
 
 		m_data->m_clearOverlappingPairsKernel = b3OpenCLUtils::compileCLKernelFromString(m_data->m_context, m_data->m_device,updateAabbsKernelCL, "clearOverlappingPairsKernel",&errNum,prog);
@@ -125,6 +129,9 @@ b3GpuRigidBodyPipeline::~b3GpuRigidBodyPipeline()
 	
 	if (m_data->m_updateAabbsKernel)
 		clReleaseKernel(m_data->m_updateAabbsKernel);
+	
+	if (m_data->m_loadLargeAndSmallAabbIndicesKernel)
+		clReleaseKernel(m_data->m_loadLargeAndSmallAabbIndicesKernel);
 	
 	if (m_data->m_clearOverlappingPairsKernel)
 		clReleaseKernel(m_data->m_clearOverlappingPairsKernel);
@@ -529,10 +536,11 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 	int numBodies = m_data->m_narrowphase->getNumRigidBodies();
 	if (!numBodies)
 		return;
-
+		
 	if (gCalcWorldSpaceAabbOnCpu)
 	{
-		
+		b3Assert(0);
+		/*
 		if (numBodies)
 		{
 			if (gUseDbvt)
@@ -556,11 +564,14 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 				//m_data->m_broadphaseSap->writeAabbsToGpu();
 			}
 		}
+		*/
 	} else
 	{
 		//__kernel void initializeGpuAabbsFull(  const int numNodes, __global Body* gBodies,__global Collidable* collidables, __global b3AABBCL* plocalShapeAABB, __global b3AABBCL* pAABB)
 		b3LauncherCL launcher(m_data->m_queue,m_data->m_updateAabbsKernel,"m_updateAabbsKernel");
 		launcher.setConst(numBodies);
+		cl_mem activeRigidIndices = m_data->m_narrowphase->getRigidBodyState()->m_usedRigidIndicesGPU->getBufferCL();
+		launcher.setBuffer(activeRigidIndices);
 		cl_mem bodies = m_data->m_narrowphase->getBodiesGpu();
 		launcher.setBuffer(bodies);
 		cl_mem collidables = m_data->m_narrowphase->getCollidablesGpu();
@@ -574,6 +585,9 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 			worldAabbs = m_data->m_allAabbsGPU->getBufferCL();
 		} else
 		{
+			b3OpenCLArray<b3SapAabb>& allAabbsGPU = m_data->m_broadphaseSap->getAllAabbsGPU();
+			allAabbsGPU.resize(numBodies);
+			
 			worldAabbs = m_data->m_broadphaseSap->getAabbBufferWS();
 		}
 		launcher.setBuffer(worldAabbs);
@@ -581,7 +595,40 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 	
 		oclCHECKERROR(ciErrNum, CL_SUCCESS);
 	}
-
+	
+	//Overwrite large/small AABB indices in broadphase
+	{
+		b3GpuRigidBodyState* rigidState = m_data->m_narrowphase->getRigidBodyState();
+		
+		b3OpenCLArray<int>& largeAabbIndices = m_data->m_broadphaseSap->getLargeAabbIndicesGPU();
+		b3OpenCLArray<int>& smallAabbIndices = m_data->m_broadphaseSap->getSmallAabbIndicesGPU();
+		largeAabbIndices.resize(rigidState->m_numLargeRigidBodies);
+		smallAabbIndices.resize(rigidState->m_numSmallRigidBodies);
+		
+		int reset = 0;
+		rigidState->m_numLargeAabbs_temp->copyFromHostPointer(&reset, 1);
+		rigidState->m_numSmallAabbs_temp->copyFromHostPointer(&reset, 1);
+		
+		b3BufferInfoCL bufferInfo[] = 
+		{ 
+			b3BufferInfoCL( rigidState->m_usedRigidIndicesGPU->getBufferCL(), true ), 
+			b3BufferInfoCL( m_data->m_narrowphase->getBodiesGpu(), true),
+			
+			b3BufferInfoCL( rigidState->m_numLargeAabbs_temp->getBufferCL() ),
+			b3BufferInfoCL( rigidState->m_numSmallAabbs_temp->getBufferCL() ),
+			b3BufferInfoCL( largeAabbIndices.getBufferCL() ),
+			b3BufferInfoCL( smallAabbIndices.getBufferCL() )
+		};
+			
+		b3LauncherCL launcher(m_data->m_queue, m_data->m_loadLargeAndSmallAabbIndicesKernel, "m_loadLargeAndSmallAabbIndicesKernel");
+		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
+		launcher.setConst(rigidState->m_numLargeRigidBodies);
+		launcher.setConst(rigidState->m_numSmallRigidBodies);
+		launcher.setConst(numBodies);
+		
+		launcher.launch1D(numBodies);
+	}
+	
 	/*
 	b3AlignedObjectArray<b3SapAabb> aabbs;
 	m_data->m_broadphaseSap->m_allAabbsGPU.copyToHost(aabbs);

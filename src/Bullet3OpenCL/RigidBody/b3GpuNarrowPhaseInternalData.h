@@ -33,6 +33,12 @@ struct b3GpuRigidBodyState
 	b3AlignedObjectArray<int>* m_usedRigidIndicesCPU;
 	b3OpenCLArray<int>* m_usedRigidIndicesGPU;
 	
+	int m_numLargeRigidBodies;		//inverted mass == 0
+	int m_numSmallRigidBodies;		//inverted mass != 0
+	
+	b3OpenCLArray<int>* m_numLargeAabbs_temp;
+	b3OpenCLArray<int>* m_numSmallAabbs_temp;
+	
 	//	could also move other per-rigid body attributes here
 	//int m_numAcceleratedRigidBodies;
 	

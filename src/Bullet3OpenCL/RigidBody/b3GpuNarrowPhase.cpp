@@ -118,6 +118,16 @@ m_queue(queue)
 		
 		m_rigidBodyState->m_usedRigidIndicesCPU = new b3AlignedObjectArray<int>();
 		m_rigidBodyState->m_usedRigidIndicesGPU = new b3OpenCLArray<int>(ctx, queue);
+		
+		m_rigidBodyState->m_numLargeRigidBodies = 0;
+		m_rigidBodyState->m_numSmallRigidBodies = 0;
+		
+		m_rigidBodyState->m_numLargeAabbs_temp = new b3OpenCLArray<int>(ctx, queue);
+		m_rigidBodyState->m_numSmallAabbs_temp = new b3OpenCLArray<int>(ctx, queue);
+		
+		//
+		m_rigidBodyState->m_numLargeAabbs_temp->resize(1);
+		m_rigidBodyState->m_numSmallAabbs_temp->resize(1);
 	}
 }
 
@@ -178,6 +188,9 @@ b3GpuNarrowPhase::~b3GpuNarrowPhase()
 		delete m_rigidBodyState->m_availableRigidIndicesGPU;
 		delete m_rigidBodyState->m_usedRigidIndicesCPU;
 		delete m_rigidBodyState->m_usedRigidIndicesGPU;
+		
+		delete m_rigidBodyState->m_numLargeAabbs_temp;
+		delete m_rigidBodyState->m_numSmallAabbs_temp;
 		
 		delete m_rigidBodyState;
 	}
@@ -930,6 +943,9 @@ int b3GpuNarrowPhase::registerRigidBody(int collidableIndex, float mass, const f
 	//	should first check m_availableRigidIndicesCPU/GPU for an index first
 	//	for now, assume that rigid bodies created by this function will not be removed
 	{
+		if( mass == b3Scalar(0.f) ) ++m_rigidBodyState->m_numLargeRigidBodies;
+		else ++m_rigidBodyState->m_numSmallRigidBodies;
+		
 		int newRigidIndex = m_data->m_numAcceleratedRigidBodies;
 	
 		m_rigidBodyState->m_usedRigidIndicesCPU->push_back(newRigidIndex);
@@ -1055,6 +1071,7 @@ void	b3GpuNarrowPhase::writeAllBodiesToGpu()
 	{
 		m_data->m_bodyBufferGPU->copyFromHostPointer(&m_data->m_bodyBufferCPU->at(0),m_data->m_numAcceleratedRigidBodies);
 		m_data->m_inertiaBufferGPU->copyFromHostPointer(&m_data->m_inertiaBufferCPU->at(0),m_data->m_numAcceleratedRigidBodies);
+		m_rigidBodyState->m_usedRigidIndicesGPU->copyFromHost(*m_rigidBodyState->m_usedRigidIndicesCPU);
 	}
     if (m_data->m_collidablesCPU.size())
 	{

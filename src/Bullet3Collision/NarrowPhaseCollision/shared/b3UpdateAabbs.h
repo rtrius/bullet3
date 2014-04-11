@@ -9,7 +9,7 @@
 
 
 
-void b3ComputeWorldAabb(  int bodyId, __global const b3RigidBodyData_t* bodies, __global const  b3Collidable_t* collidables, __global const  b3Aabb_t* localShapeAABB, __global b3Aabb_t* worldAabbs)
+void b3ComputeWorldAabb(int bodyId, int aabbId, __global const b3RigidBodyData_t* bodies, __global const  b3Collidable_t* collidables, __global const  b3Aabb_t* localShapeAABB, __global b3Aabb_t* worldAabbs)
 {
 	__global const b3RigidBodyData_t* body = &bodies[bodyId];
 
@@ -33,7 +33,7 @@ void b3ComputeWorldAabb(  int bodyId, __global const b3RigidBodyData_t* bodies, 
 		worldAabb.m_minIndices[3] = bodyId;
 		worldAabb.m_maxVec = aabbAMaxOut;
 		worldAabb.m_signedMaxIndices[3] = body[bodyId].m_invMass==0.f? 0 : 1;
-		worldAabbs[bodyId] = worldAabb;
+		worldAabbs[aabbId] = worldAabb;
 	}
 }
 

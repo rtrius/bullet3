@@ -102,6 +102,9 @@ public:
 	{
 			return m_data;
 	}
+	
+	const b3GpuRigidBodyState* getRigidBodyState() const { return m_rigidBodyState; }
+	b3GpuRigidBodyState* getRigidBodyState() { return m_rigidBodyState; }
 
 	const struct b3SapAabb& getLocalSpaceAabb(int collidableIndex) const;
 };
