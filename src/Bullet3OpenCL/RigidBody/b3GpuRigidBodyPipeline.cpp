@@ -500,6 +500,8 @@ void	b3GpuRigidBodyPipeline::integrate(float timeStep)
 
 	if (gIntegrateOnCpu)
 	{
+		b3Assert(0);
+		/*
 		if(numBodies)
 		{
 			b3GpuNarrowPhaseInternalData*	npData = m_data->m_narrowphase->getInternalData();
@@ -513,9 +515,11 @@ void	b3GpuRigidBodyPipeline::integrate(float timeStep)
 			}
 			npData->m_bodyBufferGPU->copyFromHost(*npData->m_bodyBufferCPU);
 		}
+		*/
 	} else
 	{
 		b3LauncherCL launcher(m_data->m_queue,m_data->m_integrateTransformsKernel,"m_integrateTransformsKernel");
+		launcher.setBuffer( m_data->m_narrowphase->getRigidBodyState()->m_usedRigidIndicesGPU->getBufferCL() );
 		launcher.setBuffer(m_data->m_narrowphase->getBodiesGpu());
 		
 		launcher.setConst(numBodies);

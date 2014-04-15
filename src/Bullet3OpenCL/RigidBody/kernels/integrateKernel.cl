@@ -21,12 +21,15 @@ subject to the following restrictions:
 
 
 __kernel void 
-  integrateTransformsKernel( __global b3RigidBodyData_t* bodies,const int numNodes, float timeStep, float angularDamping, float4 gravityAcceleration)
+  integrateTransformsKernel(__global int* activeRigidIndices,
+							__global b3RigidBodyData_t* bodies,
+							const int numNodes, float timeStep, 
+							float angularDamping, float4 gravityAcceleration)
 {
 	int nodeID = get_global_id(0);
 	
 	if( nodeID < numNodes)
 	{
-		integrateSingleTransform(bodies,nodeID, timeStep, angularDamping,gravityAcceleration);
+		integrateSingleTransform(bodies, activeRigidIndices[nodeID], timeStep, angularDamping, gravityAcceleration);
 	}
 }
