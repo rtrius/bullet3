@@ -3,12 +3,14 @@
 #include "OpenGLWindow/GLInstancingRenderer.h"
 
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3Collidable.h"
+#include "Bullet3Geometry/b3AabbUtil.h"
 
 #include "Bullet3OpenCL/RigidBody/b3GpuRigidBodyPipeline.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhaseInternalData.h"
 
 #include "GpuRigidBodyDemoInternalData.h"
+#include "b3RigidBodyStateUpdater.h"
 
 void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 {
@@ -28,6 +30,8 @@ void GpuFractureScene::renderScene()
 	{
 		B3_PROFILE("Reset rendersystem state");
 		
+		static b3AlignedObjectArray<int> m_usedRigidIndicesCpu;
+		
 		static b3AlignedObjectArray<b3RigidBodyData> m_rigidBodiesCpu;
 		
 		static b3AlignedObjectArray<b3Collidable> m_collidableCpu;
@@ -39,6 +43,10 @@ void GpuFractureScene::renderScene()
 		
 		{
 			B3_PROFILE("Transfer rigid bodies/shapes to CPU");
+			
+			const b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+			rigidState->m_usedRigidIndicesGPU->copyToHost(m_usedRigidIndicesCpu);
+			
 			const b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
 			npInternalData->m_bodyBufferGPU->copyToHost(m_rigidBodiesCpu);
 			
@@ -122,23 +130,28 @@ void GpuFractureScene::renderScene()
 			int renderShapeIndex = m_instancingRenderer->registerShape( reinterpret_cast<const float*>(&vertices[0]), numVertices, 
 																		&triangleIndices[0], triangleIndices.size() );
 			collidableToRenderShapeMapping[i] = renderShapeIndex;
-		}
-	
-		
-		//Re-add rigid body instances
-		{
-			const float COLOR[4] = { 0.0f, 0.7f, 1.0f, 1.0f };
-			const float SCALING[3] = { 1.0f, 1.0f, 1.0f };
-		
-			int numRigidBodies = m_rigidBodiesCpu.size();
-			for(int i = 0; i < numRigidBodies; ++i) 
-			{
-				const b3RigidBodyData& rigid = m_rigidBodiesCpu[i];
 			
-				int renderShapeIndex = collidableToRenderShapeMapping[rigid.m_collidableIdx];
-				if(renderShapeIndex != INVALID_RENDER_SHAPE)
-					m_instancingRenderer->registerGraphicsInstance(renderShapeIndex, reinterpret_cast<const float*>(&rigid.m_pos), 
-																reinterpret_cast<const float*>(&rigid.m_quat), COLOR, SCALING);
+			
+			//Re-add rigid body instances
+			//Current renderer implementation requires that 
+			//all instances of a shape are added right after registerShape()
+			{
+				const float COLOR[4] = { 0.0f, 0.7f, 1.0f, 1.0f };
+				const float SCALING[3] = { 1.0f, 1.0f, 1.0f };
+				
+				int numRigidBodies = m_usedRigidIndicesCpu.size();
+				
+				int collidableIndex = i;
+				for(int n = 0; n < numRigidBodies; ++n) 
+				{
+					const b3RigidBodyData& rigid = m_rigidBodiesCpu[ m_usedRigidIndicesCpu[n] ];
+				
+					//Render instances must be added in order, from lowest shape index to highest
+					int renderShapeIndex = collidableToRenderShapeMapping[rigid.m_collidableIdx];
+					if(renderShapeIndex != INVALID_RENDER_SHAPE && renderShapeIndex == collidableIndex)
+						m_instancingRenderer->registerGraphicsInstance(renderShapeIndex, reinterpret_cast<const float*>(&rigid.m_pos), 
+																	reinterpret_cast<const float*>(&rigid.m_quat), COLOR, SCALING);
+				}
 			}
 		}
 		
@@ -146,4 +159,102 @@ void GpuFractureScene::renderScene()
 	}
 	
 	GpuBoxPlaneScene::renderScene();
+}
+
+b3RigidBodyStateUpdater rigidUpdater;
+	
+void GpuFractureScene::clientMoveAndDisplay()
+{
+	b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
+	b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+	
+	const bool TEST_RIGID_REMOVE = false;
+	if(TEST_RIGID_REMOVE)
+	{
+		static b3AlignedObjectArray<b3RigidBodyData> m_rigidBodiesCpu;
+		static b3AlignedObjectArray<int> m_usedRigidIndices;
+		
+		{
+			B3_PROFILE("Transfer rigid data to CPU");
+			npInternalData->m_bodyBufferGPU->copyToHost(m_rigidBodiesCpu);
+			rigidState->m_usedRigidIndicesGPU->copyToHost(m_usedRigidIndices);
+		}
+		
+		b3SapAabb removeAabb;
+		removeAabb.m_minVec = b3MakeVector3(-10.f, 0.f, -10.f);
+		removeAabb.m_maxVec = b3MakeVector3(10.f, 2.f, 10.f);
+		
+		for(int i = 0; i < m_usedRigidIndices.size(); ++i)
+		{
+			int activeIndex = m_usedRigidIndices[i];
+		
+			if( b3TestPointAgainstAabb2(removeAabb.m_minVec, removeAabb.m_maxVec, m_rigidBodiesCpu[activeIndex].m_pos) ) 
+				rigidUpdater.markRigidBodyForRemoval(activeIndex);
+		}
+	}
+	
+	/*const bool TEST_RIGID_ADD = false;
+	if(TEST_RIGID_ADD)
+	{
+		static int counter = 0;
+		counter++;
+		
+		if(counter < 2000 && counter % 2)
+		{
+			const int COLLIDABLE_INDEX = 1;
+			const b3Scalar MASS(1.0);
+			rigidUpdater.addRigidBody(COLLIDABLE_INDEX, b3MakeVector3(0, 60, 0), b3Quaternion(0,0,0,1), MASS);
+		}
+	}*/
+	
+	rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
+	
+	{
+		B3_PROFILE("stepSimulation");
+		m_data->m_rigidBodyPipeline->stepSimulation(1./60.f);
+	}
+}
+
+
+bool GpuFractureScene::mouseMoveCallback(float x,float y)
+{
+	return false;
+}
+
+bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float y)
+{
+	//Button 0 == Left Mouse, State 1 == Pressed
+	if ( button == 0 && state == 1 && (m_data->m_altPressed == 0 && m_data->m_controlPressed == 0) )
+	{
+		b3AlignedObjectArray<b3RayInfo> rays;
+		b3AlignedObjectArray<b3RayHit> hitResults;
+		
+		b3Vector3 camPos;
+		m_instancingRenderer->getCameraPosition(camPos);
+
+		b3RayInfo ray;
+		ray.m_from = camPos;
+		ray.m_to = getRayTo(x,y);
+		rays.push_back(ray);
+		
+		b3RayHit hit;
+		hit.m_hitFraction = 1.f;
+		hitResults.push_back(hit);
+		
+		m_data->m_rigidBodyPipeline->castRays(rays, hitResults);
+		if ( hitResults[0].m_hitFraction < b3Scalar(1.0) )
+		{
+			int rigidBodyIndex = hitResults[0].m_hitBody;
+			b3RigidBodyData rigidBody = m_data->m_np->getInternalData()->m_bodyBufferGPU->at(rigidBodyIndex);
+			
+			if ( rigidBody.m_invMass != b3Scalar(0.0) )
+			{
+				rigidUpdater.markRigidBodyForRemoval(rigidBodyIndex);
+			
+				return true;
+			}
+		}
+	}
+	
+	return false;
 }

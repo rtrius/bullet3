@@ -596,7 +596,8 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 		oclCHECKERROR(ciErrNum, CL_SUCCESS);
 	}
 	
-	//Overwrite large/small AABB indices in broadphase
+	//	for testing/experimentation, just overwrite the broadphase AABB state every frame
+	//	instead of tracking available and used AABB indices
 	{
 		b3GpuRigidBodyState* rigidState = m_data->m_narrowphase->getRigidBodyState();
 		

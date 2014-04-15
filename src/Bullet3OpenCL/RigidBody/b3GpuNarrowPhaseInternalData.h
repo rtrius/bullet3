@@ -26,7 +26,7 @@ class b3ConvexUtility;
 struct b3GpuRigidBodyState
 {
 	//Indices of m_bodyBufferGPU that are not used
-	b3AlignedObjectArray<int>* m_availableRigidIndicesCPU;
+	b3AlignedObjectArray<int>* m_availableRigidIndicesCPU;	//If this is changed into a non-pointer class, cannot use memset() in b3GpuNarrowPhase
 	b3OpenCLArray<int>* m_availableRigidIndicesGPU;
 	
 	//Indices of m_bodyBufferGPU that contain rigid bodies

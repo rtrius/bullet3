@@ -22,6 +22,11 @@ public:
 	virtual void setupScene(const ConstructionInfo& ci);
 	
 	virtual void renderScene();
+	
+	virtual void clientMoveAndDisplay();
+	
+	virtual bool mouseMoveCallback(float x, float y);
+	virtual bool mouseButtonCallback(int button, int state, float x, float y);
 };
 
 #endif //GPU_FRACTURE_SCENE_H
