@@ -155,55 +155,59 @@ public:
 			}
 			
 			//Allocate new rigid indices
-			m_tempNewRigidIndices.resize(0);
-			
-			if( availableIndicesCpu->size() >= numAddedRigids )
 			{
-				//There are enough gaps in narrowphaseInternalData->m_bodyBufferCPU/GPU
-				for(int i = 0; i < numAddedRigids; ++i)
+				m_tempNewRigidIndices.resize(0);
+				
+				if( availableIndicesCpu->size() >= numAddedRigids )
 				{
-					m_tempNewRigidIndices.push_back( (*availableIndicesCpu)[ availableIndicesCpu->size() - 1 ] );
-					availableIndicesCpu->pop_back();
+					//There are enough gaps in narrowphaseInternalData->m_bodyBufferCPU/GPU
+					for(int i = 0; i < numAddedRigids; ++i)
+					{
+						m_tempNewRigidIndices.push_back( (*availableIndicesCpu)[ availableIndicesCpu->size() - 1 ] );
+						availableIndicesCpu->pop_back();
+					}
 				}
-			}
-			else
-			{
-				//Not enough empty rigids, need to resize the array(allocate completely new indices)
-				m_tempNewRigidIndices = (*availableIndicesCpu);
-				availableIndicesCpu->resize(0);
-				
-				//	for now, assume that m_bodyBufferCPU/GPU is large enough
-				int numNewRigidsInNewArraySlots = numAddedRigids - availableIndicesCpu->size();
-				b3Assert( narrowphaseInternalData->m_numAcceleratedRigidBodies + numNewRigidsInNewArraySlots > rigidBodiesCpu->size() );
-				
-				//int newArraySize = narrowphaseInternalData->m_numAcceleratedRigidBodies + numNewRigidsInNewArraySlots;
-				//if( newArraySize > rigidBodiesCpu->size() )
-				//{
-				//	rigidBodiesCpu->resize(newArraySize);
-				//	inertiaCpu->resize(newArraySize);
-				//}
-				
-				int firstNewIndex = narrowphaseInternalData->m_numAcceleratedRigidBodies;
-				for(int i = 0; i < numNewRigidsInNewArraySlots; ++i) m_tempNewRigidIndices.push_back(firstNewIndex + i);
+				else
+				{
+					//Not enough empty rigids, need to resize the arrays(allocate completely new indices)
+					m_tempNewRigidIndices = (*availableIndicesCpu);
+					availableIndicesCpu->resize(0);
+					
+					int numNewRigidsInNewArraySlots = numAddedRigids - availableIndicesCpu->size();
+					
+					int newArraySize = narrowphaseInternalData->m_numAcceleratedRigidBodies + numNewRigidsInNewArraySlots;
+					if( newArraySize > rigidBodiesCpu->size() )
+					{
+						rigidBodiesCpu->resize(newArraySize);
+						inertiaCpu->resize(newArraySize);
+					}
+					
+					int firstNewIndex = narrowphaseInternalData->m_numAcceleratedRigidBodies;
+					for(int i = 0; i < numNewRigidsInNewArraySlots; ++i) m_tempNewRigidIndices.push_back(firstNewIndex + i);
+				}
 			}
 			
 			//Update arrays and rigid body count
-			int numNewLargeRigids = 0;
-			int numNewSmallRigids = 0;
-			
-			for(int i = 0; i < numAddedRigids; ++i)
 			{
-				int rigidIndex = m_tempNewRigidIndices[i];
-				(*rigidBodiesCpu)[rigidIndex] = m_addedRigid[i];
-				(*inertiaCpu)[rigidIndex] = m_tempAddedInertia[i];
+				int numNewLargeRigids = 0;
+				int numNewSmallRigids = 0;
 				
-				if( m_addedRigid[i].m_invMass == b3Scalar(0.0) ) ++numNewLargeRigids;
-				else ++numNewSmallRigids;
+				for(int i = 0; i < numAddedRigids; ++i)
+				{
+					int rigidIndex = m_tempNewRigidIndices[i];
+					(*rigidBodiesCpu)[rigidIndex] = m_addedRigid[i];
+					(*inertiaCpu)[rigidIndex] = m_tempAddedInertia[i];
+					
+					if( m_addedRigid[i].m_invMass == b3Scalar(0.0) ) ++numNewLargeRigids;
+					else ++numNewSmallRigids;
+					
+					usedIndicesCpu->push_back(rigidIndex);
+				}
+				
+				rigidState->m_numLargeRigidBodies += numNewLargeRigids;
+				rigidState->m_numSmallRigidBodies += numNewSmallRigids;
+				narrowphaseInternalData->m_numAcceleratedRigidBodies += numAddedRigids;
 			}
-			
-			rigidState->m_numLargeRigidBodies += numNewLargeRigids;
-			rigidState->m_numSmallRigidBodies += numNewSmallRigids;
-			narrowphaseInternalData->m_numAcceleratedRigidBodies += numAddedRigids;
 			
 			m_addedRigid.resize(0);
 		}

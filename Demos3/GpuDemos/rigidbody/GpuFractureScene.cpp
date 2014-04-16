@@ -193,19 +193,19 @@ void GpuFractureScene::clientMoveAndDisplay()
 		}
 	}
 	
-	/*const bool TEST_RIGID_ADD = false;
+	const bool TEST_RIGID_ADD = true;
 	if(TEST_RIGID_ADD)
 	{
 		static int counter = 0;
 		counter++;
 		
-		if(counter < 2000 && counter % 2)
+		if(0 < counter && counter < 2000 && counter % 2)
 		{
 			const int COLLIDABLE_INDEX = 1;
 			const b3Scalar MASS(1.0);
-			rigidUpdater.addRigidBody(COLLIDABLE_INDEX, b3MakeVector3(0, 60, 0), b3Quaternion(0,0,0,1), MASS);
+			rigidUpdater.addRigidBody(COLLIDABLE_INDEX, b3MakeVector3(5, 60, 5), b3Quaternion(0,0,0,1), MASS);
 		}
-	}*/
+	}
 	
 	rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
 	
