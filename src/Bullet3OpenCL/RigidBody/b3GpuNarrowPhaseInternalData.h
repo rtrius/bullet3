@@ -25,11 +25,11 @@ class b3ConvexUtility;
 
 struct b3GpuRigidBodyState
 {
-	//Indices of m_bodyBufferGPU that are not used
+	//Indices of m_bodyBufferGPU and m_inertiaBufferGPU that are not used
 	b3AlignedObjectArray<int>* m_availableRigidIndicesCPU;	//If this is changed into a non-pointer class, cannot use memset() in b3GpuNarrowPhase
 	b3OpenCLArray<int>* m_availableRigidIndicesGPU;
 	
-	//Indices of m_bodyBufferGPU that contain rigid bodies
+	//Indices of m_bodyBufferGPU and m_inertiaBufferGPU that contain rigid bodies
 	b3AlignedObjectArray<int>* m_usedRigidIndicesCPU;
 	b3OpenCLArray<int>* m_usedRigidIndicesGPU;
 	
@@ -47,6 +47,37 @@ struct b3GpuRigidBodyState
 	
 	//b3AlignedObjectArray<b3InertiaData>*	m_inertiaBufferCPU;
 	//b3OpenCLArray<b3InertiaData>*	m_inertiaBufferGPU;
+};
+
+
+struct b3GpuRigidShapeState
+{
+	//Indices of m_collidablesGPU and m_localShapeAABBGPU that are not used
+	b3AlignedObjectArray<int>* m_availableShapeIndicesCPU;	//If this is changed into a non-pointer class, cannot use memset() in b3GpuNarrowPhase
+	b3OpenCLArray<int>* m_availableShapeIndicesGPU;
+	
+	//
+	b3AlignedObjectArray<int>* m_usedShapeIndicesCPU;
+	b3OpenCLArray<int>* m_usedShapeIndicesGPU;
+	
+	/**
+	b3AlignedObjectArray<b3ConvexUtility*>* m_convexData;
+
+	int m_numAcceleratedShapes;
+	b3OpenCLArray<b3SapAabb>* m_localShapeAABBGPU;
+	b3OpenCLArray<b3Collidable>* m_collidablesGPU;
+	
+	b3OpenCLArray<b3ConvexPolyhedronData>* m_convexPolyhedraGPU;
+	b3OpenCLArray<b3GpuFace>* m_convexFacesGPU;
+	b3OpenCLArray<b3Vector3>* m_uniqueEdgesGPU;
+	b3OpenCLArray<b3Vector3>* m_convexVerticesGPU;
+	b3OpenCLArray<int>* m_convexIndicesGPU;
+	
+	b3OpenCLArray<b3GpuChildShape>*	m_gpuChildShapes;
+	b3OpenCLArray<b3BvhInfo>* m_bvhInfoGPU;
+	b3OpenCLArray<b3QuantizedBvhNode>* m_treeNodesGPU;
+	b3OpenCLArray<b3BvhSubtreeInfo>* m_subTreesGPU;
+	**/
 };
 
 struct b3GpuNarrowPhaseInternalData

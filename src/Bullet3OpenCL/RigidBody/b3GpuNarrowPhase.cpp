@@ -129,6 +129,18 @@ m_queue(queue)
 		m_rigidBodyState->m_numLargeAabbs_temp->resize(1);
 		m_rigidBodyState->m_numSmallAabbs_temp->resize(1);
 	}
+	
+	//
+	{
+		m_rigidShapeState = new b3GpuRigidShapeState();
+		memset( m_rigidShapeState, 0, sizeof(b3GpuRigidShapeState) );
+		
+		m_rigidShapeState->m_availableShapeIndicesCPU = new b3AlignedObjectArray<int>();
+		m_rigidShapeState->m_availableShapeIndicesGPU = new b3OpenCLArray<int>(ctx, queue);
+		
+		m_rigidShapeState->m_usedShapeIndicesCPU = new b3AlignedObjectArray<int>();
+		m_rigidShapeState->m_usedShapeIndicesGPU = new b3OpenCLArray<int>(ctx, queue);
+	}
 }
 
 
@@ -194,6 +206,16 @@ b3GpuNarrowPhase::~b3GpuNarrowPhase()
 		
 		delete m_rigidBodyState;
 	}
+	
+	//
+	{
+		delete m_rigidShapeState->m_availableShapeIndicesCPU;
+		delete m_rigidShapeState->m_availableShapeIndicesGPU;
+		delete m_rigidShapeState->m_usedShapeIndicesCPU;
+		delete m_rigidShapeState->m_usedShapeIndicesGPU;
+		
+		delete m_rigidShapeState;
+	}
 }
 
 
@@ -202,6 +224,13 @@ int	b3GpuNarrowPhase::allocateCollidable()
 	int curSize = m_data->m_collidablesCPU.size();
 	if (curSize<m_data->m_config.m_maxConvexShapes)
 	{
+		//	should first check m_availableShapeIndicesCPU/GPU for an index first
+		//	for now, assume that collidables created by this function will not be removed
+		{
+			int newCollidableIndex = curSize;
+			m_rigidShapeState->m_usedShapeIndicesCPU->push_back(newCollidableIndex);
+		}
+	
 		m_data->m_collidablesCPU.expand();
 		return curSize;
 	}
@@ -1076,6 +1105,7 @@ void	b3GpuNarrowPhase::writeAllBodiesToGpu()
     if (m_data->m_collidablesCPU.size())
 	{
 		m_data->m_collidablesGPU->copyFromHost(m_data->m_collidablesCPU);
+		m_rigidShapeState->m_usedShapeIndicesGPU->copyFromHost(*m_rigidShapeState->m_usedShapeIndicesCPU);
 	}
 	
     

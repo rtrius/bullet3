@@ -11,7 +11,8 @@ class b3GpuNarrowPhase
 protected:
 
 	struct b3GpuNarrowPhaseInternalData*	m_data;
-	struct b3GpuRigidBodyState*	m_rigidBodyState;
+	struct b3GpuRigidBodyState* m_rigidBodyState;
+	struct b3GpuRigidShapeState* m_rigidShapeState;
 	int m_acceleratedCompanionShapeIndex;
 	int m_planeBodyIndex;
 	int	m_static0Index;
@@ -105,6 +106,9 @@ public:
 	
 	const b3GpuRigidBodyState* getRigidBodyState() const { return m_rigidBodyState; }
 	b3GpuRigidBodyState* getRigidBodyState() { return m_rigidBodyState; }
+	
+	const b3GpuRigidShapeState* getRigidShapeState() const { return m_rigidShapeState; }
+	b3GpuRigidShapeState* getRigidShapeState() { return m_rigidShapeState; }
 
 	const struct b3SapAabb& getLocalSpaceAabb(int collidableIndex) const;
 };
