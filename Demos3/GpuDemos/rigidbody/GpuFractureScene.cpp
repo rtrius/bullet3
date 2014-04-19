@@ -10,6 +10,7 @@
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhaseInternalData.h"
 
 #include "GpuRigidBodyDemoInternalData.h"
+#include "b3RigidShapeStateUpdater.h"
 #include "b3RigidBodyStateUpdater.h"
 
 void GpuFractureScene::setupScene(const ConstructionInfo& ci)
@@ -161,6 +162,7 @@ void GpuFractureScene::renderScene()
 	GpuBoxPlaneScene::renderScene();
 }
 
+b3RigidShapeStateUpdater shapeUpdater;
 b3RigidBodyStateUpdater rigidUpdater;
 	
 void GpuFractureScene::clientMoveAndDisplay()
