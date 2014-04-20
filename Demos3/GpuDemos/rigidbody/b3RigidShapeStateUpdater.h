@@ -27,21 +27,29 @@ public:
 	b3RigidShapeStateUpdater() {}
 	virtual ~b3RigidShapeStateUpdater() {}
 	
-	void addShape(const b3AlignedObjectArray<b3Vector3>& convexHullVertices)
+	///Returns a temporary index that is converted into a collidable index with applyUpdatesCpu() is called.
+	int addShape(const b3AlignedObjectArray<b3Vector3>& convexHullVertices)
 	{
 		b3Assert( convexHullVertices.size() );
 	
 		b3ConvexUtility* utilPtr = new b3ConvexUtility();
 		utilPtr->initializePolyhedralFeatures( &convexHullVertices[0], convexHullVertices.size() );
 
+		int tempShapeIndex = m_addedShapes.size();
 		m_addedShapes.push_back(utilPtr);	//delete in applyUpdatesCpu()
+		
+		return tempShapeIndex;
 	}
 	
 	///@param collidableIndex Must be an active shape index; the same index cannot be used twice.
 	void markShapeForRemoval(int collidableIndex) { m_removedCollidableIndices.push_back(collidableIndex); }
 	
+	///@param out_tempToCollidableIndexMap If pointer is nonzero, this array is loaded with the indices of created collidables.
+	///addShape() returns an index to this array; for instance, if addShape() returns 5 then 
+	///(*out_tempToCollidableIndexMap)[5] will contain the collidable index for that shape.
 	void applyUpdatesCpu(b3GpuRigidShapeState* shapeState,
-						b3GpuNarrowPhaseInternalData* narrowphaseInternalData)
+						b3GpuNarrowPhaseInternalData* narrowphaseInternalData,
+						b3AlignedObjectArray<int>* out_tempToCollidableIndexMap = 0)
 	{
 		b3AlignedObjectArray<int>* availableIndicesCpu = shapeState->m_availableShapeIndicesCPU;
 		b3AlignedObjectArray<int>* usedIndicesCpu = shapeState->m_usedShapeIndicesCPU;
@@ -183,8 +191,8 @@ public:
 			
 			//Append new shape data to contiguous arrays
 			{
-				m_tempNewLocalAabbs.resize(0);
-				m_tempNewCollidables.resize(0);
+				m_tempNewLocalAabbs.resize(numAddedShapes);
+				m_tempNewCollidables.resize(numAddedShapes);
 				
 				for(int i = 0; i < numAddedShapes; ++i)
 				{
@@ -297,6 +305,8 @@ public:
 				}
 			}
 			
+			if(out_tempToCollidableIndexMap) out_tempToCollidableIndexMap->resize(0);
+			
 			//Copy data to parallel arrays
 			for(int i = 0; i < numAddedShapes; ++i)
 			{
@@ -305,6 +315,7 @@ public:
 				collidablesCpu[newCollidableIndex] = m_tempNewCollidables[i];
 				
 				usedIndicesCpu->push_back(newCollidableIndex);
+				if(out_tempToCollidableIndexMap) out_tempToCollidableIndexMap->push_back(newCollidableIndex);
 			}
 			
 			narrowphaseInternalData->m_numAcceleratedShapes += numAddedShapes;

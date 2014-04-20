@@ -20,6 +20,8 @@ public:
 	}
 
 	virtual void setupScene(const ConstructionInfo& ci);
+	virtual void destroyScene();
+	virtual int createDynamicsObjects(const ConstructionInfo& ci);
 	
 	virtual void renderScene();
 	

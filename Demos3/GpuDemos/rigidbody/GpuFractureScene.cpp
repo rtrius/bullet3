@@ -2,13 +2,16 @@
 
 #include "OpenGLWindow/GLInstancingRenderer.h"
 
+#include "Bullet3Common/b3Random.h"
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3Collidable.h"
 #include "Bullet3Geometry/b3AabbUtil.h"
 
 #include "Bullet3OpenCL/RigidBody/b3GpuRigidBodyPipeline.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhaseInternalData.h"
+#include "Bullet3OpenCL/Raycast/b3GpuRaycast.h"
 
+#include "../GpuDemoInternalData.h"
 #include "GpuRigidBodyDemoInternalData.h"
 #include "b3RigidShapeStateUpdater.h"
 #include "b3RigidBodyStateUpdater.h"
@@ -19,9 +22,35 @@ void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 	ci2.arraySizeX = 10;
 	ci2.arraySizeY = 10;
 	ci2.arraySizeZ = 10;
+	
+	m_primRenderer = ci.m_primRenderer;
+	m_raycaster = new b3GpuRaycast(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
 
-	GpuBoxPlaneScene::setupScene(ci2);
+	GpuConvexScene::createStaticEnvironment(ci2);
+	createDynamicsObjects(ci2);
+
+	m_data->m_rigidBodyPipeline->writeAllInstancesToGpu();
+
+	float camPos[4]={0,0,0,0};
+	m_instancingRenderer->setCameraTargetPosition(camPos);
+	m_instancingRenderer->setCameraDistance(150);
+	m_instancingRenderer->setCameraYaw(30);
+	m_instancingRenderer->setCameraPitch(225);
+	
+	m_instancingRenderer->updateCamera();
 }
+int GpuFractureScene::createDynamicsObjects(const ConstructionInfo& ci)
+{
+	return GpuBoxPlaneScene::createDynamicsObjects(ci);
+}
+
+
+void GpuFractureScene::destroyScene()
+{
+	delete m_raycaster;
+	m_raycaster = 0;
+}
+
 
 void GpuFractureScene::renderScene()
 {
@@ -169,6 +198,7 @@ void GpuFractureScene::clientMoveAndDisplay()
 {
 	b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
 	b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+	b3GpuRigidShapeState* shapeState = m_data->m_np->getRigidShapeState();
 	
 	const bool TEST_RIGID_REMOVE = false;
 	if(TEST_RIGID_REMOVE)
@@ -195,7 +225,7 @@ void GpuFractureScene::clientMoveAndDisplay()
 		}
 	}
 	
-	const bool TEST_RIGID_ADD = true;
+	const bool TEST_RIGID_ADD = false;
 	if(TEST_RIGID_ADD)
 	{
 		static int counter = 0;
@@ -206,6 +236,42 @@ void GpuFractureScene::clientMoveAndDisplay()
 			const int COLLIDABLE_INDEX = 1;
 			const b3Scalar MASS(1.0);
 			rigidUpdater.addRigidBody(COLLIDABLE_INDEX, b3MakeVector3(5, 60, 5), b3Quaternion(0,0,0,1), MASS);
+		}
+	}
+	
+	const bool TEST_RIGID_ADD_AND_SHAPE_ADD = true;
+	if(TEST_RIGID_ADD_AND_SHAPE_ADD)
+	{
+		static int counter = 0;
+		counter++;
+		
+		if(0 < counter && counter < 2000 && counter % 2)
+		{
+			b3AlignedObjectArray<b3Vector3> vertices;
+			vertices.push_back( b3MakeVector3(1, 1, 1) );
+			vertices.push_back( b3MakeVector3(1, 1, -1) );
+			vertices.push_back( b3MakeVector3(1, -1, 1) );
+			vertices.push_back( b3MakeVector3(1, -1, -1) );
+			
+			vertices.push_back( b3MakeVector3(-1, 1, 1) );
+			vertices.push_back( b3MakeVector3(-1, 1, -1) );
+			vertices.push_back( b3MakeVector3(-1, -1, 1) );
+			vertices.push_back( b3MakeVector3(-1, -1, -1) );
+			
+			for(int i = 0; i < vertices.size(); ++i) 
+			{
+				const b3Scalar MIN(-0.5);
+				const b3Scalar MAX(0.5);
+				vertices[i] += b3MakeVector3( b3RandRange(MIN, MAX), b3RandRange(MIN, MAX), b3RandRange(MIN, MAX) );
+			}
+			
+			shapeUpdater.addShape(vertices);
+			
+			b3AlignedObjectArray<int> collidableIndices;
+			shapeUpdater.applyUpdatesCpu(shapeState, npInternalData, &collidableIndices);
+			
+			const b3Scalar MASS(1.0);
+			rigidUpdater.addRigidBody(collidableIndices[0], b3MakeVector3(5, 60, 5), b3Quaternion(0,0,0,1), MASS);
 		}
 	}
 	
