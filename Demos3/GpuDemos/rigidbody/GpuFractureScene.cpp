@@ -191,6 +191,262 @@ void GpuFractureScene::renderScene()
 	GpuBoxPlaneScene::renderScene();
 }
 
+/**
+//Voronoi fracture and shatter code and demo copyright (c) 2011 Alain Ducharme
+//  - Reset scene (press spacebar) to generate new random voronoi shattered cuboids
+//  - Check console for total time required to: compute and mesh all 3D shards, calculate volumes and centers of mass and create rigid bodies
+//  - Modify VORONOIPOINTS define below to change number of potential voronoi shards
+//  - Note that demo's visual cracks between voronoi shards are NOT present in the internally generated voronoi mesh!
+
+#define CONVEX_MARGIN 0.04
+
+static btVector3 curVoronoiPoint;
+
+struct VoronoiFracture
+{
+	static void getVerticesInsidePlanes(const btAlignedObjectArray<btVector3>& planes,
+										btAlignedObjectArray<btVector3>& verticesOut,
+										std::set<int>& planeIndicesOut)
+	{
+		// Based on btGeometryUtil.cpp (Gino van den Bergen / Erwin Coumans)
+		verticesOut.resize(0);
+		planeIndicesOut.clear();
+		const int numPlanes = planes.size();
+		int i, j, k, l;
+		for (i=0;i<numPlanes;i++)
+		{
+			const btVector3& N1 = planes[i];
+			for (j=i+1;j<numPlanes;j++)
+			{
+				const btVector3& N2 = planes[j];
+				btVector3 n1n2 = N1.cross(N2);
+				if (n1n2.length2() > btScalar(0.0001))
+				{
+					for (k=j+1;k<numPlanes;k++)
+					{
+						const btVector3& N3 = planes[k];
+						btVector3 n2n3 = N2.cross(N3);
+						btVector3 n3n1 = N3.cross(N1);
+						if ((n2n3.length2() > btScalar(0.0001)) && (n3n1.length2() > btScalar(0.0001) ))
+						{
+							btScalar quotient = (N1.dot(n2n3));
+							if (btFabs(quotient) > btScalar(0.0001))
+							{
+								btVector3 potentialVertex = (n2n3 * N1[3] + n3n1 * N2[3] + n1n2 * N3[3]) * (btScalar(-1.) / quotient);
+								for (l=0; l<numPlanes; l++)
+								{
+									const btVector3& NP = planes[l];
+									if (btScalar(NP.dot(potentialVertex))+btScalar(NP[3]) > btScalar(0.000001))
+										break;
+								}
+								if (l == numPlanes)
+								{
+									// vertex (three plane intersection) inside all planes
+									verticesOut.push_back(potentialVertex);
+									planeIndicesOut.insert(i);
+									planeIndicesOut.insert(j);
+									planeIndicesOut.insert(k);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	struct pointCmp
+	{
+		bool operator()(const btVector3& p1, const btVector3& p2) const
+		{
+			float v1 = (p1-curVoronoiPoint).length2();
+			float v2 = (p2-curVoronoiPoint).length2();
+			bool result0 = v1 < v2;
+			//bool result1 = ((btScalar)(p1-curVoronoiPoint).length2()) < ((btScalar)(p2-curVoronoiPoint).length2());
+			//apparently result0 is not always result1, because extended precision used in registered is different from precision when values are stored in memory
+			return result0;
+		}
+	};
+	
+	static void voronoiConvexHullShatter(const btAlignedObjectArray<btVector3>& points,
+										const btAlignedObjectArray<btVector3>& verts,
+										const btQuaternion& bbq, const btVector3& bbt, btScalar matDensity)
+	{
+		// points define voronoi cells in world space (avoid duplicates)
+		// verts = source (convex hull) mesh vertices in local space
+		// bbq & bbt = source (convex hull) mesh quaternion rotation and translation
+		// matDensity = Material density for voronoi shard mass calculation
+		btConvexHullComputer* convexHC = new btConvexHullComputer();
+		btAlignedObjectArray<btVector3> vertices, chverts;
+		btVector3 rbb, nrbb;
+		btScalar nlength, maxDistance, distance;
+		btAlignedObjectArray<btVector3> sortedVoronoiPoints;
+		sortedVoronoiPoints.copyFromArray(points);
+		btVector3 normal, plane;
+		btAlignedObjectArray<btVector3> planes, convexPlanes;
+		std::set<int> planeIndices;
+		std::set<int>::iterator planeIndicesIter;
+		int numplaneIndices;
+		int cellnum = 0;
+		int i, j, k;
+
+		// Convert verts to world space and get convexPlanes
+		int numverts = verts.size();
+		chverts.resize(verts.size());
+		for (i=0; i < numverts ;i++)
+		{
+			chverts[i] = quatRotate(bbq, verts[i]) + bbt;
+		}
+		//btGeometryUtil::getPlaneEquationsFromVertices(chverts, convexPlanes);
+		// Using convexHullComputer faster than getPlaneEquationsFromVertices for large meshes...
+		convexHC->compute(&chverts[0].getX(), sizeof(btVector3), numverts, 0.0, 0.0);
+		int numFaces = convexHC->faces.size();
+		int v0, v1, v2; // vertices
+		for (i=0; i < numFaces; i++)
+		{
+			const btConvexHullComputer::Edge* edge = &convexHC->edges[convexHC->faces[i]];
+			v0 = edge->getSourceVertex();
+			v1 = edge->getTargetVertex();
+			edge = edge->getNextEdgeOfFace();
+			v2 = edge->getTargetVertex();
+			plane = (convexHC->vertices[v1]-convexHC->vertices[v0]).cross(convexHC->vertices[v2]-convexHC->vertices[v0]).normalize();
+			plane[3] = -plane.dot(convexHC->vertices[v0]);
+			convexPlanes.push_back(plane);
+		}
+		const int numconvexPlanes = convexPlanes.size();
+
+		int numpoints = points.size();
+		
+		//	construct voronoi shards
+		for (i=0; i < numpoints ;i++)
+		{
+			curVoronoiPoint = points[i];
+			planes.copyFromArray(convexPlanes);
+			for (j=0; j < numconvexPlanes ;j++)
+			{
+				planes[j][3] += planes[j].dot(curVoronoiPoint);	//	point-plane distance
+			}
+			maxDistance = SIMD_INFINITY;
+			
+			//	sort points by distance (closest to farthest) to curVoronoiPoint(ascending sort)?
+			sortedVoronoiPoints.heapSort(pointCmp());
+			
+			//	generate a set of vertices for a voronoi region (alternatively, get the set of planes that compose a voronoi region)
+			for (j=1; j < numpoints; j++)
+			{
+				//	the algorithm can be thought of as clipping away volume(removing and adding planes and vertices)
+				//	from the original convex hull, each voronoi point generates a plane
+				normal = sortedVoronoiPoints[j] - curVoronoiPoint;
+				nlength = normal.length();
+				
+				//	since sortedVoronoiPoints is sorted by distance, first element out of range
+				//	means that all following are also out of range
+				if (nlength > maxDistance)
+					break;
+					
+				//	create plane(pointing outwards i.e. negative == penetrating), and calculate distance from curVoronoiPoint to point in plane
+				plane = normal.normalized();
+				plane[3] = -nlength / btScalar(2.);
+				planes.push_back(plane);
+				
+				//	(clip away volume not enclosed by all planes)
+				//	clear vertices/planeIndices
+				//	get all vertices resulting from all plane triplet intersections
+				//	of those vertices, keep only those enclosed by all planes
+				//	load planeIndices with indices of planes that contribute to the remaining vertices
+				getVerticesInsidePlanes(planes, vertices, planeIndices);
+				if (vertices.size() == 0) break;
+				
+				//	load planes with planes marked in planeIndices ( planeIndices.size() <= planes.size() always )
+				//	(remove planes that do not contribute to a vertex)
+				numplaneIndices = planeIndices.size();
+				if (numplaneIndices != planes.size())
+				{
+					planeIndicesIter = planeIndices.begin();
+					for (k=0; k < numplaneIndices; k++)
+					{
+						if (k != *planeIndicesIter)
+							planes[k] = planes[*planeIndicesIter];
+						planeIndicesIter++;
+					}
+					planes.resize(numplaneIndices);
+				}
+				
+				//	load maxdistance with largest distance vertex x2
+				//	(x2 distance since we do not test against the plane but the voronoi point)
+				maxDistance = vertices[0].length();
+				for (k=1; k < vertices.size(); k++)
+				{
+					distance = vertices[k].length();
+					if (maxDistance < distance) maxDistance = distance;
+				}
+				maxDistance *= btScalar(2.);
+			}
+			
+			if (vertices.size() == 0) continue;
+
+			// Clean-up voronoi convex shard vertices and generate edges & faces
+			convexHC->compute(&vertices[0].getX(), sizeof(btVector3), vertices.size(),0.0,0.0);
+
+			// At this point we have a complete 3D voronoi shard mesh contained in convexHC
+
+			// Calculate volume and center of mass (Stan Melax volume integration)
+			numFaces = convexHC->faces.size();
+			btScalar volume = btScalar(0.);
+			btVector3 com(0., 0., 0.);
+			for (j=0; j < numFaces; j++)
+			{
+				const btConvexHullComputer::Edge* edge = &convexHC->edges[convexHC->faces[j]];
+				v0 = edge->getSourceVertex();
+				v1 = edge->getTargetVertex();
+				edge = edge->getNextEdgeOfFace();
+				v2 = edge->getTargetVertex();
+				while (v2 != v0)
+				{
+					// Counter-clockwise triangulated voronoi shard mesh faces (v0-v1-v2) and edges here...
+					btScalar vol = convexHC->vertices[v0].triple(convexHC->vertices[v1], convexHC->vertices[v2]);
+					volume += vol;
+					com += vol * (convexHC->vertices[v0] + convexHC->vertices[v1] + convexHC->vertices[v2]);
+					edge = edge->getNextEdgeOfFace();
+					v1 = v2;
+					v2 = edge->getTargetVertex();
+				}
+			}
+			com /= volume * btScalar(4.);
+			volume /= btScalar(6.);
+
+			// Shift all vertices relative to center of mass
+			int numVerts = convexHC->vertices.size();
+			for (j=0; j < numVerts; j++) convexHC->vertices[j] -= com;
+
+			// Note:
+			// At this point convex hulls contained in convexHC should be accurate (line up flush with other pieces, no cracks),
+			// ...however Bullet Physics rigid bodies demo visualizations appear to produce some visible cracks.
+			// Use the mesh in convexHC for visual display or to perform boolean operations with.
+
+			// Create Bullet Physics rigid body shards
+			btCollisionShape* shardShape = new btConvexHullShape(&(convexHC->vertices[0].getX()), convexHC->vertices.size());
+			shardShape->setMargin(CONVEX_MARGIN); // for this demo; note convexHC has optional margin parameter for this
+			m_collisionShapes.push_back(shardShape);
+			btTransform shardTransform;
+			shardTransform.setIdentity();
+			shardTransform.setOrigin(curVoronoiPoint + com); // Shard's adjusted location
+			btDefaultMotionState* shardMotionState = new btDefaultMotionState(shardTransform);
+			btScalar shardMass(volume * matDensity);
+			btVector3 shardInertia(0.,0.,0.);
+			shardShape->calculateLocalInertia(shardMass, shardInertia);
+			btRigidBody::btRigidBodyConstructionInfo shardRBInfo(shardMass, shardMotionState, shardShape, shardInertia);
+			btRigidBody* shardBody = new btRigidBody(shardRBInfo);
+			m_dynamicsWorld->addRigidBody(shardBody);
+
+			cellnum ++;
+
+		}
+		printf("Generated %d voronoi btRigidBody shards\n", cellnum);
+	}
+};
+**/
+
 b3RigidShapeStateUpdater shapeUpdater;
 b3RigidBodyStateUpdater rigidUpdater;
 	
