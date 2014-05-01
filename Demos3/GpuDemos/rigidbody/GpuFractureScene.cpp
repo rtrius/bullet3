@@ -5,6 +5,7 @@
 #include "Bullet3Common/b3Random.h"
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3Collidable.h"
 #include "Bullet3Geometry/b3AabbUtil.h"
+#include "Bullet3Geometry/b3ConvexHullComputer.h"
 
 #include "Bullet3OpenCL/RigidBody/b3GpuRigidBodyPipeline.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
@@ -15,6 +16,11 @@
 #include "GpuRigidBodyDemoInternalData.h"
 #include "b3RigidShapeStateUpdater.h"
 #include "b3RigidBodyStateUpdater.h"
+
+const bool UNIQUE_SHAPE_FOR_EACH_DYNAMIC_RIGID = true;
+
+b3RigidShapeStateUpdater shapeUpdater;
+b3RigidBodyStateUpdater rigidUpdater;
 
 void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 {
@@ -27,9 +33,11 @@ void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 	m_raycaster = new b3GpuRaycast(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
 
 	GpuConvexScene::createStaticEnvironment(ci2);
+	m_data->m_rigidBodyPipeline->writeAllInstancesToGpu();
+	m_data->m_np->writeAllBodiesToGpu();
+	
 	createDynamicsObjects(ci2);
 
-	m_data->m_rigidBodyPipeline->writeAllInstancesToGpu();
 
 	float camPos[4]={0,0,0,0};
 	m_instancingRenderer->setCameraTargetPosition(camPos);
@@ -41,7 +49,38 @@ void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 }
 int GpuFractureScene::createDynamicsObjects(const ConstructionInfo& ci)
 {
-	return GpuBoxPlaneScene::createDynamicsObjects(ci);
+	if(UNIQUE_SHAPE_FOR_EACH_DYNAMIC_RIGID)
+	{
+		b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
+		b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+		b3GpuRigidShapeState* shapeState = m_data->m_np->getRigidShapeState();
+	
+		b3AlignedObjectArray<b3Vector3> vertices;
+		vertices.push_back( b3MakeVector3(1, 1, 1) );
+		vertices.push_back( b3MakeVector3(1, 1, -1) );
+		vertices.push_back( b3MakeVector3(1, -1, 1) );
+		vertices.push_back( b3MakeVector3(1, -1, -1) );
+		
+		vertices.push_back( b3MakeVector3(-1, 1, 1) );
+		vertices.push_back( b3MakeVector3(-1, 1, -1) );
+		vertices.push_back( b3MakeVector3(-1, -1, 1) );
+		vertices.push_back( b3MakeVector3(-1, -1, -1) );
+		
+		const b3Scalar SCALE(50.0);
+		for(int i = 0; i < vertices.size(); ++i) vertices[i] *= SCALE;
+		
+		shapeUpdater.addShape(vertices);
+		
+		b3AlignedObjectArray<int> collidableIndices;
+		shapeUpdater.applyUpdatesCpu(shapeState, npInternalData, &collidableIndices);
+	
+		const b3Scalar MASS(10.0);
+		rigidUpdater.addRigidBody(collidableIndices[0], b3MakeVector3(0, SCALE, 0), b3Quaternion(0,0,0,1), MASS);
+		rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
+		
+		return 1;
+	}
+	else return GpuBoxPlaneScene::createDynamicsObjects(ci);
 }
 
 
@@ -191,52 +230,53 @@ void GpuFractureScene::renderScene()
 	GpuBoxPlaneScene::renderScene();
 }
 
-/**
-//Voronoi fracture and shatter code and demo copyright (c) 2011 Alain Ducharme
-//  - Reset scene (press spacebar) to generate new random voronoi shattered cuboids
-//  - Check console for total time required to: compute and mesh all 3D shards, calculate volumes and centers of mass and create rigid bodies
-//  - Modify VORONOIPOINTS define below to change number of potential voronoi shards
+
+#include <set>
+
+//Voronoi fracture and shatter code copyright (c) 2011 Alain Ducharme
 //  - Note that demo's visual cracks between voronoi shards are NOT present in the internally generated voronoi mesh!
-
-#define CONVEX_MARGIN 0.04
-
-static btVector3 curVoronoiPoint;
-
 struct VoronoiFracture
 {
-	static void getVerticesInsidePlanes(const btAlignedObjectArray<btVector3>& planes,
-										btAlignedObjectArray<btVector3>& verticesOut,
+	b3AlignedObjectArray<int> m_convexHullVerticesOffset;
+	b3AlignedObjectArray<int> m_convexHullVerticesCount;
+	b3AlignedObjectArray<b3Vector3> m_convexHullVertices;
+	
+	b3AlignedObjectArray<b3Vector3> m_rigidPosition;
+	b3AlignedObjectArray<b3Scalar> m_rigidMass;
+
+	static void getVerticesInsidePlanes(const b3AlignedObjectArray<b3Vector3>& planes,
+										b3AlignedObjectArray<b3Vector3>& verticesOut,
 										std::set<int>& planeIndicesOut)
 	{
-		// Based on btGeometryUtil.cpp (Gino van den Bergen / Erwin Coumans)
+		// Based on b3GeometryUtil.cpp (Gino van den Bergen / Erwin Coumans)
 		verticesOut.resize(0);
 		planeIndicesOut.clear();
 		const int numPlanes = planes.size();
 		int i, j, k, l;
 		for (i=0;i<numPlanes;i++)
 		{
-			const btVector3& N1 = planes[i];
+			const b3Vector3& N1 = planes[i];
 			for (j=i+1;j<numPlanes;j++)
 			{
-				const btVector3& N2 = planes[j];
-				btVector3 n1n2 = N1.cross(N2);
-				if (n1n2.length2() > btScalar(0.0001))
+				const b3Vector3& N2 = planes[j];
+				b3Vector3 n1n2 = N1.cross(N2);
+				if (n1n2.length2() > b3Scalar(0.0001))
 				{
 					for (k=j+1;k<numPlanes;k++)
 					{
-						const btVector3& N3 = planes[k];
-						btVector3 n2n3 = N2.cross(N3);
-						btVector3 n3n1 = N3.cross(N1);
-						if ((n2n3.length2() > btScalar(0.0001)) && (n3n1.length2() > btScalar(0.0001) ))
+						const b3Vector3& N3 = planes[k];
+						b3Vector3 n2n3 = N2.cross(N3);
+						b3Vector3 n3n1 = N3.cross(N1);
+						if ((n2n3.length2() > b3Scalar(0.0001)) && (n3n1.length2() > b3Scalar(0.0001) ))
 						{
-							btScalar quotient = (N1.dot(n2n3));
-							if (btFabs(quotient) > btScalar(0.0001))
+							b3Scalar quotient = (N1.dot(n2n3));
+							if (b3Fabs(quotient) > b3Scalar(0.0001))
 							{
-								btVector3 potentialVertex = (n2n3 * N1[3] + n3n1 * N2[3] + n1n2 * N3[3]) * (btScalar(-1.) / quotient);
+								b3Vector3 potentialVertex = (n2n3 * N1[3] + n3n1 * N2[3] + n1n2 * N3[3]) * (b3Scalar(-1.) / quotient);
 								for (l=0; l<numPlanes; l++)
 								{
-									const btVector3& NP = planes[l];
-									if (btScalar(NP.dot(potentialVertex))+btScalar(NP[3]) > btScalar(0.000001))
+									const b3Vector3& NP = planes[l];
+									if (b3Scalar(NP.dot(potentialVertex))+b3Scalar(NP[3]) > b3Scalar(0.000001))
 										break;
 								}
 								if (l == numPlanes)
@@ -257,96 +297,100 @@ struct VoronoiFracture
 	
 	struct pointCmp
 	{
-		bool operator()(const btVector3& p1, const btVector3& p2) const
+		b3Vector3 curVoronoiPoint;
+	
+		pointCmp(const b3Vector3& voronoiPoint) : curVoronoiPoint(voronoiPoint) {}
+	
+		bool operator()(const b3Vector3& p1, const b3Vector3& p2) const
 		{
 			float v1 = (p1-curVoronoiPoint).length2();
 			float v2 = (p2-curVoronoiPoint).length2();
 			bool result0 = v1 < v2;
-			//bool result1 = ((btScalar)(p1-curVoronoiPoint).length2()) < ((btScalar)(p2-curVoronoiPoint).length2());
+			//bool result1 = ((b3Scalar)(p1-curVoronoiPoint).length2()) < ((b3Scalar)(p2-curVoronoiPoint).length2());
 			//apparently result0 is not always result1, because extended precision used in registered is different from precision when values are stored in memory
 			return result0;
 		}
 	};
 	
-	static void voronoiConvexHullShatter(const btAlignedObjectArray<btVector3>& points,
-										const btAlignedObjectArray<btVector3>& verts,
-										const btQuaternion& bbq, const btVector3& bbt, btScalar matDensity)
+	// points define voronoi cells in world space (avoid duplicates)
+	// verts = source (convex hull) mesh vertices in local space
+	// bbq & bbt = source (convex hull) mesh quaternion rotation and translation
+	// matDensity = Material density for voronoi shard mass calculation
+	void voronoiConvexHullShatter(const b3AlignedObjectArray<b3Vector3>& points,
+									const b3AlignedObjectArray<b3Vector3>& verts,
+									const b3Quaternion& bbq, const b3Vector3& bbt, b3Scalar matDensity)
 	{
-		// points define voronoi cells in world space (avoid duplicates)
-		// verts = source (convex hull) mesh vertices in local space
-		// bbq & bbt = source (convex hull) mesh quaternion rotation and translation
-		// matDensity = Material density for voronoi shard mass calculation
-		btConvexHullComputer* convexHC = new btConvexHullComputer();
-		btAlignedObjectArray<btVector3> vertices, chverts;
-		btVector3 rbb, nrbb;
-		btScalar nlength, maxDistance, distance;
-		btAlignedObjectArray<btVector3> sortedVoronoiPoints;
-		sortedVoronoiPoints.copyFromArray(points);
-		btVector3 normal, plane;
-		btAlignedObjectArray<btVector3> planes, convexPlanes;
+		m_convexHullVerticesOffset.resize(0);
+		m_convexHullVerticesCount.resize(0);
+		m_convexHullVertices.resize(0);
+		m_rigidPosition.resize(0);
+		m_rigidMass.resize(0);
+	
+		b3ConvexHullComputer convexHC;
+		b3AlignedObjectArray<b3Vector3> vertices, chverts;
+		b3AlignedObjectArray<b3Vector3> sortedVoronoiPoints;
+		b3AlignedObjectArray<b3Vector3> planes, convexPlanes;
 		std::set<int> planeIndices;
-		std::set<int>::iterator planeIndicesIter;
-		int numplaneIndices;
-		int cellnum = 0;
-		int i, j, k;
-
+		
+		sortedVoronoiPoints.copyFromArray(points);
+		
 		// Convert verts to world space and get convexPlanes
 		int numverts = verts.size();
 		chverts.resize(verts.size());
-		for (i=0; i < numverts ;i++)
-		{
-			chverts[i] = quatRotate(bbq, verts[i]) + bbt;
-		}
-		//btGeometryUtil::getPlaneEquationsFromVertices(chverts, convexPlanes);
+		for (int i=0; i < numverts; i++) chverts[i] = b3QuatRotate(bbq, verts[i]) + bbt;
+		
+		//b3GeometryUtil::getPlaneEquationsFromVertices(chverts, convexPlanes);
 		// Using convexHullComputer faster than getPlaneEquationsFromVertices for large meshes...
-		convexHC->compute(&chverts[0].getX(), sizeof(btVector3), numverts, 0.0, 0.0);
-		int numFaces = convexHC->faces.size();
-		int v0, v1, v2; // vertices
-		for (i=0; i < numFaces; i++)
+		convexHC.compute(&chverts[0].getX(), sizeof(b3Vector3), numverts, 0.0, 0.0);
+		int numFaces = convexHC.faces.size();
+		
+		for (int i=0; i < numFaces; i++)
 		{
-			const btConvexHullComputer::Edge* edge = &convexHC->edges[convexHC->faces[i]];
-			v0 = edge->getSourceVertex();
-			v1 = edge->getTargetVertex();
+			const b3ConvexHullComputer::Edge* edge = &convexHC.edges[convexHC.faces[i]];
+			int v0 = edge->getSourceVertex();
+			int v1 = edge->getTargetVertex();
 			edge = edge->getNextEdgeOfFace();
-			v2 = edge->getTargetVertex();
-			plane = (convexHC->vertices[v1]-convexHC->vertices[v0]).cross(convexHC->vertices[v2]-convexHC->vertices[v0]).normalize();
-			plane[3] = -plane.dot(convexHC->vertices[v0]);
+			int v2 = edge->getTargetVertex();
+			b3Vector3 plane = (convexHC.vertices[v1]-convexHC.vertices[v0]).cross(convexHC.vertices[v2]-convexHC.vertices[v0]).normalize();
+			plane[3] = -plane.dot(convexHC.vertices[v0]);
 			convexPlanes.push_back(plane);
 		}
-		const int numconvexPlanes = convexPlanes.size();
+		
 
 		int numpoints = points.size();
 		
 		//	construct voronoi shards
-		for (i=0; i < numpoints ;i++)
+		int cellnum = 0;
+		for (int i=0; i < numpoints ;i++)
 		{
-			curVoronoiPoint = points[i];
+			b3Vector3 curVoronoiPoint = points[i];
 			planes.copyFromArray(convexPlanes);
-			for (j=0; j < numconvexPlanes ;j++)
+			
+			int numconvexPlanes = convexPlanes.size();
+			for (int j=0; j < numconvexPlanes ;j++)
 			{
 				planes[j][3] += planes[j].dot(curVoronoiPoint);	//	point-plane distance
 			}
-			maxDistance = SIMD_INFINITY;
+			b3Scalar maxDistance = B3_INFINITY;
 			
 			//	sort points by distance (closest to farthest) to curVoronoiPoint(ascending sort)?
-			sortedVoronoiPoints.heapSort(pointCmp());
+			sortedVoronoiPoints.heapSort(pointCmp(curVoronoiPoint));
 			
 			//	generate a set of vertices for a voronoi region (alternatively, get the set of planes that compose a voronoi region)
-			for (j=1; j < numpoints; j++)
+			for (int j=1; j < numpoints; j++)
 			{
 				//	the algorithm can be thought of as clipping away volume(removing and adding planes and vertices)
 				//	from the original convex hull, each voronoi point generates a plane
-				normal = sortedVoronoiPoints[j] - curVoronoiPoint;
-				nlength = normal.length();
+				b3Vector3 normal = sortedVoronoiPoints[j] - curVoronoiPoint;
+				b3Scalar nlength = normal.length();
 				
 				//	since sortedVoronoiPoints is sorted by distance, first element out of range
 				//	means that all following are also out of range
-				if (nlength > maxDistance)
-					break;
-					
+				if (nlength > maxDistance) break;
+				
 				//	create plane(pointing outwards i.e. negative == penetrating), and calculate distance from curVoronoiPoint to point in plane
-				plane = normal.normalized();
-				plane[3] = -nlength / btScalar(2.);
+				b3Vector3 plane = normal.normalized();
+				plane[3] = -nlength / b3Scalar(2.);
 				planes.push_back(plane);
 				
 				//	(clip away volume not enclosed by all planes)
@@ -359,11 +403,11 @@ struct VoronoiFracture
 				
 				//	load planes with planes marked in planeIndices ( planeIndices.size() <= planes.size() always )
 				//	(remove planes that do not contribute to a vertex)
-				numplaneIndices = planeIndices.size();
+				int numplaneIndices = planeIndices.size();
 				if (numplaneIndices != planes.size())
 				{
-					planeIndicesIter = planeIndices.begin();
-					for (k=0; k < numplaneIndices; k++)
+					std::set<int>::iterator planeIndicesIter = planeIndices.begin();
+					for (int k=0; k < numplaneIndices; k++)
 					{
 						if (k != *planeIndicesIter)
 							planes[k] = planes[*planeIndicesIter];
@@ -375,80 +419,71 @@ struct VoronoiFracture
 				//	load maxdistance with largest distance vertex x2
 				//	(x2 distance since we do not test against the plane but the voronoi point)
 				maxDistance = vertices[0].length();
-				for (k=1; k < vertices.size(); k++)
+				for (int k=1; k < vertices.size(); k++)
 				{
-					distance = vertices[k].length();
+					b3Scalar distance = vertices[k].length();
 					if (maxDistance < distance) maxDistance = distance;
 				}
-				maxDistance *= btScalar(2.);
+				maxDistance *= b3Scalar(2.);
 			}
 			
 			if (vertices.size() == 0) continue;
 
 			// Clean-up voronoi convex shard vertices and generate edges & faces
-			convexHC->compute(&vertices[0].getX(), sizeof(btVector3), vertices.size(),0.0,0.0);
+			convexHC.compute(&vertices[0].getX(), sizeof(b3Vector3), vertices.size(),0.0,0.0);
 
 			// At this point we have a complete 3D voronoi shard mesh contained in convexHC
 
 			// Calculate volume and center of mass (Stan Melax volume integration)
-			numFaces = convexHC->faces.size();
-			btScalar volume = btScalar(0.);
-			btVector3 com(0., 0., 0.);
-			for (j=0; j < numFaces; j++)
+			numFaces = convexHC.faces.size();
+			b3Scalar volume = b3Scalar(0.);
+			b3Vector3 com = b3MakeVector3(0, 0, 0);
+			for (int j=0; j < numFaces; j++)
 			{
-				const btConvexHullComputer::Edge* edge = &convexHC->edges[convexHC->faces[j]];
-				v0 = edge->getSourceVertex();
-				v1 = edge->getTargetVertex();
+				const b3ConvexHullComputer::Edge* edge = &convexHC.edges[convexHC.faces[j]];
+				int v0 = edge->getSourceVertex();
+				int v1 = edge->getTargetVertex();
 				edge = edge->getNextEdgeOfFace();
-				v2 = edge->getTargetVertex();
+				int v2 = edge->getTargetVertex();
 				while (v2 != v0)
 				{
 					// Counter-clockwise triangulated voronoi shard mesh faces (v0-v1-v2) and edges here...
-					btScalar vol = convexHC->vertices[v0].triple(convexHC->vertices[v1], convexHC->vertices[v2]);
+					b3Scalar vol = convexHC.vertices[v0].triple(convexHC.vertices[v1], convexHC.vertices[v2]);
 					volume += vol;
-					com += vol * (convexHC->vertices[v0] + convexHC->vertices[v1] + convexHC->vertices[v2]);
+					com += vol * (convexHC.vertices[v0] + convexHC.vertices[v1] + convexHC.vertices[v2]);
 					edge = edge->getNextEdgeOfFace();
 					v1 = v2;
 					v2 = edge->getTargetVertex();
 				}
 			}
-			com /= volume * btScalar(4.);
-			volume /= btScalar(6.);
+			com /= volume * b3Scalar(4.);
+			volume /= b3Scalar(6.);
 
 			// Shift all vertices relative to center of mass
-			int numVerts = convexHC->vertices.size();
-			for (j=0; j < numVerts; j++) convexHC->vertices[j] -= com;
+			int numVerts = convexHC.vertices.size();
+			for (int j=0; j < numVerts; j++) convexHC.vertices[j] -= com;
 
 			// Note:
 			// At this point convex hulls contained in convexHC should be accurate (line up flush with other pieces, no cracks),
 			// ...however Bullet Physics rigid bodies demo visualizations appear to produce some visible cracks.
 			// Use the mesh in convexHC for visual display or to perform boolean operations with.
-
+		
 			// Create Bullet Physics rigid body shards
-			btCollisionShape* shardShape = new btConvexHullShape(&(convexHC->vertices[0].getX()), convexHC->vertices.size());
-			shardShape->setMargin(CONVEX_MARGIN); // for this demo; note convexHC has optional margin parameter for this
-			m_collisionShapes.push_back(shardShape);
-			btTransform shardTransform;
-			shardTransform.setIdentity();
-			shardTransform.setOrigin(curVoronoiPoint + com); // Shard's adjusted location
-			btDefaultMotionState* shardMotionState = new btDefaultMotionState(shardTransform);
-			btScalar shardMass(volume * matDensity);
-			btVector3 shardInertia(0.,0.,0.);
-			shardShape->calculateLocalInertia(shardMass, shardInertia);
-			btRigidBody::btRigidBodyConstructionInfo shardRBInfo(shardMass, shardMotionState, shardShape, shardInertia);
-			btRigidBody* shardBody = new btRigidBody(shardRBInfo);
-			m_dynamicsWorld->addRigidBody(shardBody);
-
+			b3Vector3 shardPosition = curVoronoiPoint + com; // Shard's adjusted location
+			b3Scalar shardMass(volume * matDensity);
+			
+			m_convexHullVerticesOffset.push_back( m_convexHullVertices.size() );
+			m_convexHullVerticesCount.push_back(numVerts);
+			for (int j = 0; j < numVerts; ++j) m_convexHullVertices.push_back(convexHC.vertices[j]);
+			m_rigidPosition.push_back(shardPosition);
+			m_rigidMass.push_back(shardMass);	
+			
+			//	this is not necessarily the number of voronoi shards for convex hull since a voronoi region can be outside of the hull
 			cellnum ++;
-
 		}
-		printf("Generated %d voronoi btRigidBody shards\n", cellnum);
+		printf("Generated %d voronoi b3RigidBody shards\n", cellnum);
 	}
 };
-**/
-
-b3RigidShapeStateUpdater shapeUpdater;
-b3RigidBodyStateUpdater rigidUpdater;
 	
 void GpuFractureScene::clientMoveAndDisplay()
 {
@@ -495,7 +530,7 @@ void GpuFractureScene::clientMoveAndDisplay()
 		}
 	}
 	
-	const bool TEST_RIGID_ADD_AND_SHAPE_ADD = true;
+	const bool TEST_RIGID_ADD_AND_SHAPE_ADD = false;
 	if(TEST_RIGID_ADD_AND_SHAPE_ADD)
 	{
 		static int counter = 0;
@@ -574,6 +609,75 @@ bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float
 			if ( rigidBody.m_invMass != b3Scalar(0.0) )
 			{
 				rigidUpdater.markRigidBodyForRemoval(rigidBodyIndex);
+			
+				if(UNIQUE_SHAPE_FOR_EACH_DYNAMIC_RIGID)
+				{
+					b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
+					b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+					b3GpuRigidShapeState* shapeState = m_data->m_np->getRigidShapeState();
+					
+					static b3AlignedObjectArray<b3Vector3> convexHullVertices;
+					static b3AlignedObjectArray<b3Vector3> voronoiPoints;
+					static b3AlignedObjectArray<b3Vector3> tempVertices;
+					convexHullVertices.resize(0);
+					voronoiPoints.resize(0);
+					tempVertices.resize(0);
+					
+					b3Collidable collidable = npInternalData->m_collidablesGPU->at(rigidBody.m_collidableIdx);
+					b3Assert(collidable.m_shapeType == SHAPE_CONVEX_HULL);
+					
+					b3ConvexPolyhedronData convexData = npInternalData->m_convexPolyhedraGPU->at(collidable.m_shapeIndex);
+					
+					//Assuming that vertex data on CPU and GPU is the same(syncronized)
+					for(int i = 0; i < convexData.m_numVertices; ++i) 
+						convexHullVertices.push_back( npInternalData->m_convexVertices[convexData.m_vertexOffset + i] );
+						
+					shapeUpdater.markShapeForRemoval(rigidBody.m_collidableIdx);
+					
+					//Generate voronoi points in world space
+					const int NUM_VORONOI_POINTS = 32;
+					for(int i = 0; i < NUM_VORONOI_POINTS; ++i) 
+					{
+						const b3Scalar SCALE(10.0);
+						b3Vector3 offset = b3MakeVector3( b3RandRange(-SCALE, SCALE), b3RandRange(-SCALE, SCALE), b3RandRange(-SCALE, SCALE) );
+						
+						//voronoiPoints.push_back(hit.m_hitPoint + offset);
+						voronoiPoints.push_back(rigidBody.m_pos + offset);
+					}
+					
+					//Compute voronoi fracture; use voronoi points to generate convex hulls
+					static VoronoiFracture fracturer;
+					
+					const b3Scalar DENSITY(1.0);
+					fracturer.voronoiConvexHullShatter(voronoiPoints, convexHullVertices, rigidBody.m_quat, rigidBody.m_pos, DENSITY);
+					
+					//Create shapes
+					int numCreatedShapes = fracturer.m_convexHullVerticesCount.size();
+					for(int i = 0; i < numCreatedShapes; ++i)
+					{
+						tempVertices.resize(0);
+					
+						int offset = fracturer.m_convexHullVerticesOffset[i];
+						int numVertices = fracturer.m_convexHullVerticesCount[i];
+						for(int n = 0; n < numVertices; ++n) tempVertices.push_back( fracturer.m_convexHullVertices[offset + n] );
+						shapeUpdater.addShape(tempVertices);
+					}
+					
+					//Apply shape updates
+					b3AlignedObjectArray<int> collidableIndices;
+					shapeUpdater.applyUpdatesCpu(shapeState, npInternalData, &collidableIndices);
+					
+					//Create rigid bodies
+					int numCreatedRigids = fracturer.m_rigidPosition.size();
+					for(int i = 0; i < numCreatedRigids; ++i)
+					{
+						//	should also add angular contribution into linVel
+						rigidUpdater.addRigidBody(collidableIndices[i], fracturer.m_rigidPosition[i],
+													b3Quaternion(0,0,0,1), /*fracturer.m_rigidMass[i]*/1.0, rigidBody.m_linVel, rigidBody.m_angVel);
+					}
+					
+					rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
+				}
 			
 				return true;
 			}

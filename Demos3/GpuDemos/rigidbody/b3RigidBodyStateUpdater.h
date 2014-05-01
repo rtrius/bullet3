@@ -15,14 +15,15 @@ public:
 	b3RigidBodyStateUpdater() {}
 	virtual ~b3RigidBodyStateUpdater() {}
 	
-	void addRigidBody(int collidableIndex, const b3Vector3& position, const b3Quaternion& orientation, b3Scalar mass)
+	void addRigidBody(int collidableIndex, const b3Vector3& position, const b3Quaternion& orientation, b3Scalar mass,
+						const b3Vector3& linearVelocity = b3MakeVector3(0,0,0), const b3Vector3& angularVelocity = b3MakeVector3(0,0,0) )
 	{
 		b3RigidBodyData rigid;
 		
 		rigid.m_pos = position;
 		rigid.m_quat = orientation;
-		rigid.m_angVel = b3MakeVector3(0, 0, 0);
-		rigid.m_linVel = b3MakeVector3(0, 0, 0);
+		rigid.m_angVel = linearVelocity;
+		rigid.m_linVel = angularVelocity;
 		
 		rigid.m_collidableIdx = collidableIndex;
 		rigid.m_invMass = (mass) ? b3Scalar(1.0) / mass : b3Scalar(0.0);
