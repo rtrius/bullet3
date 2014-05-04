@@ -205,7 +205,14 @@ void GpuFractureScene::renderScene()
 			//Current renderer implementation requires that 
 			//all instances of a shape are added right after registerShape()
 			{
-				const float COLOR[4] = { 0.0f, 0.7f, 1.0f, 1.0f };
+				b3Vector4 COLORS[4] =
+				{
+					b3MakeVector4(0,1,1,1),
+					b3MakeVector4(1,0,0,1),
+					b3MakeVector4(0,1,0,1),
+					b3MakeVector4(1,1,0,1),
+				};
+				
 				const float SCALING[3] = { 1.0f, 1.0f, 1.0f };
 				
 				int numRigidBodies = m_usedRigidIndicesCpu.size();
@@ -219,7 +226,7 @@ void GpuFractureScene::renderScene()
 					int renderShapeIndex = collidableToRenderShapeMapping[rigid.m_collidableIdx];
 					if(renderShapeIndex != INVALID_RENDER_SHAPE && renderShapeIndex == collidableIndex)
 						m_instancingRenderer->registerGraphicsInstance(renderShapeIndex, reinterpret_cast<const float*>(&rigid.m_pos), 
-																	reinterpret_cast<const float*>(&rigid.m_quat), COLOR, SCALING);
+																	reinterpret_cast<const float*>(&rigid.m_quat), COLORS[n % 4], SCALING);
 				}
 			}
 		}
@@ -248,6 +255,9 @@ struct VoronoiFracture
 										b3AlignedObjectArray<b3Vector3>& verticesOut,
 										std::set<int>& planeIndicesOut)
 	{
+		//const b3Scalar TOLERANCE(0.000001);
+		const b3Scalar TOLERANCE(0.0001);	//Distance at which a point and halfspace(plane) are considered to be not intersecting
+	
 		// Based on b3GeometryUtil.cpp (Gino van den Bergen / Erwin Coumans)
 		verticesOut.resize(0);
 		planeIndicesOut.clear();
@@ -276,7 +286,7 @@ struct VoronoiFracture
 								for (l=0; l<numPlanes; l++)
 								{
 									const b3Vector3& NP = planes[l];
-									if (b3Scalar(NP.dot(potentialVertex))+b3Scalar(NP[3]) > b3Scalar(0.000001))
+									if (b3Scalar(NP.dot(potentialVertex))+b3Scalar(NP[3]) > TOLERANCE)
 										break;
 								}
 								if (l == numPlanes)
@@ -295,18 +305,18 @@ struct VoronoiFracture
 		}
 	}
 	
-	struct pointCmp
+	struct DistanceSortPredicate
 	{
-		b3Vector3 curVoronoiPoint;
+		b3Vector3 m_point;
 	
-		pointCmp(const b3Vector3& voronoiPoint) : curVoronoiPoint(voronoiPoint) {}
+		DistanceSortPredicate(const b3Vector3& point) : m_point(point) {}
 	
 		bool operator()(const b3Vector3& p1, const b3Vector3& p2) const
 		{
-			float v1 = (p1-curVoronoiPoint).length2();
-			float v2 = (p2-curVoronoiPoint).length2();
+			float v1 = (p1-m_point).length2();
+			float v2 = (p2-m_point).length2();
 			bool result0 = v1 < v2;
-			//bool result1 = ((b3Scalar)(p1-curVoronoiPoint).length2()) < ((b3Scalar)(p2-curVoronoiPoint).length2());
+			//bool result1 = ((b3Scalar)(p1-m_point).length2()) < ((b3Scalar)(p2-m_point).length2());
 			//apparently result0 is not always result1, because extended precision used in registered is different from precision when values are stored in memory
 			return result0;
 		}
@@ -367,14 +377,12 @@ struct VoronoiFracture
 			planes.copyFromArray(convexPlanes);
 			
 			int numconvexPlanes = convexPlanes.size();
-			for (int j=0; j < numconvexPlanes ;j++)
-			{
-				planes[j][3] += planes[j].dot(curVoronoiPoint);	//	point-plane distance
-			}
+			for (int j=0; j < numconvexPlanes ;j++) planes[j][3] += planes[j].dot(curVoronoiPoint);	//	point-plane distance
+			
 			b3Scalar maxDistance = B3_INFINITY;
 			
-			//	sort points by distance (closest to farthest) to curVoronoiPoint(ascending sort)?
-			sortedVoronoiPoints.heapSort(pointCmp(curVoronoiPoint));
+			//Sort points by distance to curVoronoiPoint(closest to farthest) 
+			sortedVoronoiPoints.heapSort( DistanceSortPredicate(curVoronoiPoint) );
 			
 			//	generate a set of vertices for a voronoi region (alternatively, get the set of planes that compose a voronoi region)
 			for (int j=1; j < numpoints; j++)
@@ -428,7 +436,7 @@ struct VoronoiFracture
 			}
 			
 			if (vertices.size() == 0) continue;
-
+			
 			// Clean-up voronoi convex shard vertices and generate edges & faces
 			convexHC.compute(&vertices[0].getX(), sizeof(b3Vector3), vertices.size(),0.0,0.0);
 
@@ -478,7 +486,6 @@ struct VoronoiFracture
 			m_rigidPosition.push_back(shardPosition);
 			m_rigidMass.push_back(shardMass);	
 			
-			//	this is not necessarily the number of voronoi shards for convex hull since a voronoi region can be outside of the hull
 			cellnum ++;
 		}
 		printf("Generated %d voronoi b3RigidBody shards\n", cellnum);
@@ -671,9 +678,11 @@ bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float
 					int numCreatedRigids = fracturer.m_rigidPosition.size();
 					for(int i = 0; i < numCreatedRigids; ++i)
 					{
-						//	should also add angular contribution into linVel
+						//	should also include angular contribution in linear velocity
+						b3Scalar mass = 1.0; //fracturer.m_rigidMass[i];
 						rigidUpdater.addRigidBody(collidableIndices[i], fracturer.m_rigidPosition[i],
-													b3Quaternion(0,0,0,1), /*fracturer.m_rigidMass[i]*/1.0, rigidBody.m_linVel, rigidBody.m_angVel);
+													b3Quaternion(0,0,0,1), mass, rigidBody.m_linVel, rigidBody.m_angVel);
+													//b3Quaternion(0,0,0,1), 1.0);
 					}
 					
 					rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);

@@ -278,7 +278,7 @@ public:
 			{
 				m_tempNewCollidableIndices.resize(0);
 				
-				if( availableIndicesCpu->size() >= numAddedShapes )
+				if( availableIndicesCpu->size() > numAddedShapes )
 				{
 					for(int i = 0; i < numAddedShapes; ++i)
 					{
@@ -291,17 +291,17 @@ public:
 					m_tempNewCollidableIndices = (*availableIndicesCpu);
 					availableIndicesCpu->resize(0);
 					
-					int numNewIndices = numAddedShapes - availableIndicesCpu->size();
-					
-					int newArraySize = narrowphaseInternalData->m_numAcceleratedShapes + numNewIndices;
-					if( newArraySize > collidablesCpu.size() )
+					int numNewIndices = numAddedShapes - m_tempNewCollidableIndices.size();
+					if(numNewIndices)
 					{
+						int newArraySize = collidablesCpu.size() + numNewIndices;
+						int firstNewIndex = collidablesCpu.size();
+					
 						localShapeAABBCpu->resize(newArraySize);
 						collidablesCpu.resize(newArraySize);
+						
+						for(int i = 0; i < numNewIndices; ++i) m_tempNewCollidableIndices.push_back(firstNewIndex + i);
 					}
-					
-					int firstNewIndex = narrowphaseInternalData->m_numAcceleratedShapes;
-					for(int i = 0; i < numNewIndices; ++i) m_tempNewCollidableIndices.push_back(firstNewIndex + i);
 				}
 			}
 			

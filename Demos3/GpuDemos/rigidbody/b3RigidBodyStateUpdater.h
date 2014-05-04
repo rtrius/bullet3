@@ -159,7 +159,7 @@ public:
 			{
 				m_tempNewRigidIndices.resize(0);
 				
-				if( availableIndicesCpu->size() >= numAddedRigids )
+				if( availableIndicesCpu->size() > numAddedRigids )
 				{
 					//There are enough gaps in narrowphaseInternalData->m_bodyBufferCPU/GPU
 					for(int i = 0; i < numAddedRigids; ++i)
@@ -170,21 +170,21 @@ public:
 				}
 				else
 				{
-					//Not enough empty rigids, need to resize the arrays(allocate completely new indices)
 					m_tempNewRigidIndices = (*availableIndicesCpu);
 					availableIndicesCpu->resize(0);
 					
-					int numNewRigidsInNewArraySlots = numAddedRigids - availableIndicesCpu->size();
-					
-					int newArraySize = narrowphaseInternalData->m_numAcceleratedRigidBodies + numNewRigidsInNewArraySlots;
-					if( newArraySize > rigidBodiesCpu->size() )
+					int numNewRigidsInNewArraySlots = numAddedRigids - m_tempNewRigidIndices.size();
+					if(numNewRigidsInNewArraySlots)
 					{
+						//Not enough empty rigid slots, need to resize the arrays(allocate completely new indices)
+						int newArraySize = rigidBodiesCpu->size() + numNewRigidsInNewArraySlots;
+						int firstNewIndex = rigidBodiesCpu->size();
+						
 						rigidBodiesCpu->resize(newArraySize);
 						inertiaCpu->resize(newArraySize);
+						
+						for(int i = 0; i < numNewRigidsInNewArraySlots; ++i) m_tempNewRigidIndices.push_back(firstNewIndex + i);
 					}
-					
-					int firstNewIndex = narrowphaseInternalData->m_numAcceleratedRigidBodies;
-					for(int i = 0; i < numNewRigidsInNewArraySlots; ++i) m_tempNewRigidIndices.push_back(firstNewIndex + i);
 				}
 			}
 			
