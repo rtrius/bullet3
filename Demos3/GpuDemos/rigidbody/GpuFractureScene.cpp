@@ -17,13 +17,15 @@
 #include "b3RigidShapeStateUpdater.h"
 #include "b3RigidBodyStateUpdater.h"
 
-const bool UNIQUE_SHAPE_FOR_EACH_DYNAMIC_RIGID = true;
-
 b3RigidShapeStateUpdater shapeUpdater;
 b3RigidBodyStateUpdater rigidUpdater;
 
+bool needsResetRenderState = true;		//Set true whenever a rigid body or shape is added/removed
+
 void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 {
+	needsResetRenderState = true;
+
 	ConstructionInfo ci2 = ci;
 	ci2.arraySizeX = 10;
 	ci2.arraySizeY = 10;
@@ -49,7 +51,7 @@ void GpuFractureScene::setupScene(const ConstructionInfo& ci)
 }
 int GpuFractureScene::createDynamicsObjects(const ConstructionInfo& ci)
 {
-	if(UNIQUE_SHAPE_FOR_EACH_DYNAMIC_RIGID)
+	//Create a single dynamic rigid body box; each dynamic rigid body must have a unique shape for this demo
 	{
 		b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
 		b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
@@ -80,7 +82,6 @@ int GpuFractureScene::createDynamicsObjects(const ConstructionInfo& ci)
 		
 		return 1;
 	}
-	else return GpuBoxPlaneScene::createDynamicsObjects(ci);
 }
 
 
@@ -90,14 +91,22 @@ void GpuFractureScene::destroyScene()
 	m_raycaster = 0;
 }
 
-
 void GpuFractureScene::renderScene()
 {
-	//	need to add compound/non-convex/sphere/plane support
-	const bool RESET_RENDER_STATE_EVERY_FRAME = 1;
-	if(RESET_RENDER_STATE_EVERY_FRAME)
+	const int INVALID_RENDER_SHAPE = -1;
+	const int INVALID_RENDERER_INSTANCE = -1;
+
+	const b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+	const b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
+	
+	static b3AlignedObjectArray<int> m_rigidIndexToRenderInstanceIndexMap;
+
+	//	compound/non-convex(trimesh)/sphere/plane support not implemented
+	if(needsResetRenderState)
 	{
 		B3_PROFILE("Reset rendersystem state");
+		
+		needsResetRenderState = false;
 		
 		static b3AlignedObjectArray<int> m_usedRigidIndicesCpu;
 		
@@ -113,10 +122,8 @@ void GpuFractureScene::renderScene()
 		{
 			B3_PROFILE("Transfer rigid bodies/shapes to CPU");
 			
-			const b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
 			rigidState->m_usedRigidIndicesGPU->copyToHost(m_usedRigidIndicesCpu);
 			
-			const b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
 			npInternalData->m_bodyBufferGPU->copyToHost(m_rigidBodiesCpu);
 			
 			npInternalData->m_collidablesGPU->copyToHost(m_collidableCpu);
@@ -128,11 +135,16 @@ void GpuFractureScene::renderScene()
 		}
 		
 		//
-		m_instancingRenderer->removeAllInstances();
+		int numRigidBodies = m_usedRigidIndicesCpu.size();
+		{
+			B3_PROFILE("remove all render instances");
+			m_instancingRenderer->removeAllInstances();
+			
+			m_rigidIndexToRenderInstanceIndexMap.resize(numRigidBodies);
+			for(int i = 0; i < numRigidBodies; ++i) m_rigidIndexToRenderInstanceIndexMap[i] = INVALID_RENDERER_INSTANCE;
+		}
 		
 		//Re-add convex shapes
-		const int INVALID_RENDER_SHAPE = -1;
-		
 		int numCollidables = m_collidableCpu.size();
 		static b3AlignedObjectArray<int> collidableToRenderShapeMapping;
 		collidableToRenderShapeMapping.resize(numCollidables);
@@ -205,6 +217,8 @@ void GpuFractureScene::renderScene()
 			//Current renderer implementation requires that 
 			//all instances of a shape are added right after registerShape()
 			{
+				B3_PROFILE("Create rigid body instances");
+			
 				b3Vector4 COLORS[4] =
 				{
 					b3MakeVector4(0,1,1,1),
@@ -215,8 +229,6 @@ void GpuFractureScene::renderScene()
 				
 				const float SCALING[3] = { 1.0f, 1.0f, 1.0f };
 				
-				int numRigidBodies = m_usedRigidIndicesCpu.size();
-				
 				int collidableIndex = i;
 				for(int n = 0; n < numRigidBodies; ++n) 
 				{
@@ -225,12 +237,34 @@ void GpuFractureScene::renderScene()
 					//Render instances must be added in order, from lowest shape index to highest
 					int renderShapeIndex = collidableToRenderShapeMapping[rigid.m_collidableIdx];
 					if(renderShapeIndex != INVALID_RENDER_SHAPE && renderShapeIndex == collidableIndex)
-						m_instancingRenderer->registerGraphicsInstance(renderShapeIndex, reinterpret_cast<const float*>(&rigid.m_pos), 
+					{
+						int renderInstanceIndex = m_instancingRenderer->registerGraphicsInstance(renderShapeIndex, reinterpret_cast<const float*>(&rigid.m_pos), 
 																	reinterpret_cast<const float*>(&rigid.m_quat), COLORS[n % 4], SCALING);
+						m_rigidIndexToRenderInstanceIndexMap[ m_usedRigidIndicesCpu[n] ] = renderInstanceIndex;
+					}
 				}
 			}
 		}
 		
+	}
+	else
+	{
+		static b3AlignedObjectArray<b3RigidBodyData> rigidBodies;
+		npInternalData->m_bodyBufferGPU->copyToHost(rigidBodies);
+		
+		int numRigidBodies = rigidState->m_usedRigidIndicesCPU->size();
+		for(int i = 0; i < numRigidBodies; ++i)
+		{
+			int renderInstanceIndex = m_rigidIndexToRenderInstanceIndexMap[i];
+			if(renderInstanceIndex != INVALID_RENDERER_INSTANCE)
+			{
+				m_instancingRenderer->writeSingleInstanceTransformToCPU(&rigidBodies[i].m_pos.x, &rigidBodies[i].m_quat.x, renderInstanceIndex);
+			}
+		}
+	}
+	
+	{
+		B3_PROFILE("write transforms renderer");
 		m_instancingRenderer->writeTransforms();
 	}
 	
@@ -255,7 +289,6 @@ struct VoronoiFracture
 										b3AlignedObjectArray<b3Vector3>& verticesOut,
 										std::set<int>& planeIndicesOut)
 	{
-		//const b3Scalar TOLERANCE(0.000001);
 		const b3Scalar TOLERANCE(0.0001);	//Distance at which a point and halfspace(plane) are considered to be not intersecting
 	
 		// Based on b3GeometryUtil.cpp (Gino van den Bergen / Erwin Coumans)
@@ -470,13 +503,8 @@ struct VoronoiFracture
 			// Shift all vertices relative to center of mass
 			int numVerts = convexHC.vertices.size();
 			for (int j=0; j < numVerts; j++) convexHC.vertices[j] -= com;
-
-			// Note:
-			// At this point convex hulls contained in convexHC should be accurate (line up flush with other pieces, no cracks),
-			// ...however Bullet Physics rigid bodies demo visualizations appear to produce some visible cracks.
-			// Use the mesh in convexHC for visual display or to perform boolean operations with.
-		
-			// Create Bullet Physics rigid body shards
+			
+			// Create rigid body shards
 			b3Vector3 shardPosition = curVoronoiPoint + com; // Shard's adjusted location
 			b3Scalar shardMass(volume * matDensity);
 			
@@ -494,87 +522,6 @@ struct VoronoiFracture
 	
 void GpuFractureScene::clientMoveAndDisplay()
 {
-	b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
-	b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
-	b3GpuRigidShapeState* shapeState = m_data->m_np->getRigidShapeState();
-	
-	const bool TEST_RIGID_REMOVE = false;
-	if(TEST_RIGID_REMOVE)
-	{
-		static b3AlignedObjectArray<b3RigidBodyData> m_rigidBodiesCpu;
-		static b3AlignedObjectArray<int> m_usedRigidIndices;
-		
-		{
-			B3_PROFILE("Transfer rigid data to CPU");
-			npInternalData->m_bodyBufferGPU->copyToHost(m_rigidBodiesCpu);
-			rigidState->m_usedRigidIndicesGPU->copyToHost(m_usedRigidIndices);
-		}
-		
-		b3SapAabb removeAabb;
-		removeAabb.m_minVec = b3MakeVector3(-10.f, 0.f, -10.f);
-		removeAabb.m_maxVec = b3MakeVector3(10.f, 2.f, 10.f);
-		
-		for(int i = 0; i < m_usedRigidIndices.size(); ++i)
-		{
-			int activeIndex = m_usedRigidIndices[i];
-		
-			if( b3TestPointAgainstAabb2(removeAabb.m_minVec, removeAabb.m_maxVec, m_rigidBodiesCpu[activeIndex].m_pos) ) 
-				rigidUpdater.markRigidBodyForRemoval(activeIndex);
-		}
-	}
-	
-	const bool TEST_RIGID_ADD = false;
-	if(TEST_RIGID_ADD)
-	{
-		static int counter = 0;
-		counter++;
-		
-		if(0 < counter && counter < 2000 && counter % 2)
-		{
-			const int COLLIDABLE_INDEX = 1;
-			const b3Scalar MASS(1.0);
-			rigidUpdater.addRigidBody(COLLIDABLE_INDEX, b3MakeVector3(5, 60, 5), b3Quaternion(0,0,0,1), MASS);
-		}
-	}
-	
-	const bool TEST_RIGID_ADD_AND_SHAPE_ADD = false;
-	if(TEST_RIGID_ADD_AND_SHAPE_ADD)
-	{
-		static int counter = 0;
-		counter++;
-		
-		if(0 < counter && counter < 2000 && counter % 2)
-		{
-			b3AlignedObjectArray<b3Vector3> vertices;
-			vertices.push_back( b3MakeVector3(1, 1, 1) );
-			vertices.push_back( b3MakeVector3(1, 1, -1) );
-			vertices.push_back( b3MakeVector3(1, -1, 1) );
-			vertices.push_back( b3MakeVector3(1, -1, -1) );
-			
-			vertices.push_back( b3MakeVector3(-1, 1, 1) );
-			vertices.push_back( b3MakeVector3(-1, 1, -1) );
-			vertices.push_back( b3MakeVector3(-1, -1, 1) );
-			vertices.push_back( b3MakeVector3(-1, -1, -1) );
-			
-			for(int i = 0; i < vertices.size(); ++i) 
-			{
-				const b3Scalar MIN(-0.5);
-				const b3Scalar MAX(0.5);
-				vertices[i] += b3MakeVector3( b3RandRange(MIN, MAX), b3RandRange(MIN, MAX), b3RandRange(MIN, MAX) );
-			}
-			
-			shapeUpdater.addShape(vertices);
-			
-			b3AlignedObjectArray<int> collidableIndices;
-			shapeUpdater.applyUpdatesCpu(shapeState, npInternalData, &collidableIndices);
-			
-			const b3Scalar MASS(1.0);
-			rigidUpdater.addRigidBody(collidableIndices[0], b3MakeVector3(5, 60, 5), b3Quaternion(0,0,0,1), MASS);
-		}
-	}
-	
-	rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
-	
 	{
 		B3_PROFILE("stepSimulation");
 		m_data->m_rigidBodyPipeline->stepSimulation(1./60.f);
@@ -615,14 +562,14 @@ bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float
 			
 			if ( rigidBody.m_invMass != b3Scalar(0.0) )
 			{
-				rigidUpdater.markRigidBodyForRemoval(rigidBodyIndex);
-			
-				if(UNIQUE_SHAPE_FOR_EACH_DYNAMIC_RIGID)
-				{
-					b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
-					b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
-					b3GpuRigidShapeState* shapeState = m_data->m_np->getRigidShapeState();
+				b3GpuNarrowPhaseInternalData* npInternalData = m_data->m_np->getInternalData();
+				b3GpuRigidBodyState* rigidState = m_data->m_np->getRigidBodyState();
+				b3GpuRigidShapeState* shapeState = m_data->m_np->getRigidShapeState();
 					
+				rigidUpdater.markRigidBodyForRemoval(rigidBodyIndex);
+				
+				//Create multiple new rigids using voronoi fracture
+				{
 					static b3AlignedObjectArray<b3Vector3> convexHullVertices;
 					static b3AlignedObjectArray<b3Vector3> voronoiPoints;
 					static b3AlignedObjectArray<b3Vector3> tempVertices;
@@ -682,12 +629,13 @@ bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float
 						b3Scalar mass = 1.0; //fracturer.m_rigidMass[i];
 						rigidUpdater.addRigidBody(collidableIndices[i], fracturer.m_rigidPosition[i],
 													b3Quaternion(0,0,0,1), mass, rigidBody.m_linVel, rigidBody.m_angVel);
-													//b3Quaternion(0,0,0,1), 1.0);
 					}
-					
-					rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
 				}
 			
+				rigidUpdater.applyUpdatesCpu(rigidState, npInternalData);
+				printf("m_numAcceleratedRigidBodies: %d\n", npInternalData->m_numAcceleratedRigidBodies);
+				
+				needsResetRenderState = true;
 				return true;
 			}
 		}
