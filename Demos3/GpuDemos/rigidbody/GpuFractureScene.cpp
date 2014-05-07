@@ -592,11 +592,15 @@ bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float
 					const int NUM_VORONOI_POINTS = 32;
 					for(int i = 0; i < NUM_VORONOI_POINTS; ++i) 
 					{
-						const b3Scalar SCALE(10.0);
-						b3Vector3 offset = b3MakeVector3( b3RandRange(-SCALE, SCALE), b3RandRange(-SCALE, SCALE), b3RandRange(-SCALE, SCALE) );
+						//Assuming that the local AABB on CPU and GPU is the same(syncronized)
+						const b3SapAabb& localAabb = npInternalData->m_localShapeAABBCPU->at(rigidBody.m_collidableIdx);
+						const b3Vector3& min = localAabb.m_minVec;
+						const b3Vector3& max = localAabb.m_maxVec;
 						
-						//voronoiPoints.push_back(hit.m_hitPoint + offset);
-						voronoiPoints.push_back(rigidBody.m_pos + offset);
+						b3Vector3 randomInRigidSpace = b3MakeVector3( b3RandRange(min.x, max.x), b3RandRange(min.y, max.y), b3RandRange(min.z, max.z) );
+						b3Vector3 randomInWorldSpace = b3QuatRotate(rigidBody.m_quat, randomInRigidSpace) + rigidBody.m_pos;
+						
+						voronoiPoints.push_back(randomInWorldSpace);
 					}
 					
 					//Compute voronoi fracture; use voronoi points to generate convex hulls
@@ -625,10 +629,12 @@ bool GpuFractureScene::mouseButtonCallback(int button, int state, float x, float
 					int numCreatedRigids = fracturer.m_rigidPosition.size();
 					for(int i = 0; i < numCreatedRigids; ++i)
 					{
-						//	should also include angular contribution in linear velocity
+						b3Vector3 relativePosition = fracturer.m_rigidPosition[i] - rigidBody.m_pos;
+						b3Vector3 linearVelocity = rigidBody.m_linVel + rigidBody.m_angVel.cross(relativePosition);
+						
 						b3Scalar mass = 1.0; //fracturer.m_rigidMass[i];
 						rigidUpdater.addRigidBody(collidableIndices[i], fracturer.m_rigidPosition[i],
-													b3Quaternion(0,0,0,1), mass, rigidBody.m_linVel, rigidBody.m_angVel);
+													b3Quaternion(0,0,0,1), mass, linearVelocity, rigidBody.m_angVel);
 					}
 				}
 			
