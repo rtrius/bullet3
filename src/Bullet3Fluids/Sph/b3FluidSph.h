@@ -25,10 +25,10 @@ subject to the following restrictions:
 #include "b3FluidSortingGrid.h"
 #include "b3FluidSphUpdatePacket.h"
 
-///@brief Specifies the data copied between the CPU and GPU every frame.
+///@brief Specifies b3FluidSph data copied between the CPU and GPU every frame.
 ///@remarks
-/// - Members beginning with m_sync* determine a copy from GPU to CPU
-/// - Members beginning with m_write* determine a copy from CPU to GPU
+/// - Members beginning with m_sync* determine a copy from GPU to CPU at the end of a frame
+/// - Members beginning with m_write* determine a copy from CPU to GPU at the beginning of a frame
 ///@par
 ///The transfer of particle data from CPU to GPU and back is a fairly expensive operation,
 ///so as many flags as possible should be set to false.

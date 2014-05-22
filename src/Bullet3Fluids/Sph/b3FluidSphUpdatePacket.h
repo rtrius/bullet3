@@ -123,7 +123,7 @@ struct b3FluidSphUpdatePacket
 		//makeUniqueInt() assumes that the array is sorted
 		m_removedParticleIndices.quickSort( b3FluidSphUpdatePacket::AscendingSortPredicate() );
 	
-		//Remove duplicate indicies
+		//Remove duplicate indicies, and shrink the size of the array if necessary
 		b3FluidSphUpdatePacket::makeUniqueInt(m_removedParticleIndices);
 		
 		//Find indices to the right of the split that are marked N(that is, not marked for remove) and use them as the swap source.

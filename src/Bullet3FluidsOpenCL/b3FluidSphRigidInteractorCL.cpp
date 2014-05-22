@@ -248,7 +248,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 		//Quantize the rigid AABB into fluid grid coordinates,
 		//then test each particle in each intersecting grid cell;
 		//if the rigid AABB intersects with the particle AABB, add it
-		//to a per-particle array of broadphase pairs.
+		//to a global array of broadphase pairs.
 		
 		b3BufferInfoCL bufferInfo[] = 
 		{
@@ -328,6 +328,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 	}
 	
 	//Midphase - for triangle mesh and compound shapes
+	//Convert each entry in m_midphasePairs to one or more entries in m_pairs
 	{
 		B3_PROFILE("m_fluidRigidMidphaseKernel");
 		
