@@ -125,7 +125,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 				b3BufferInfoCL( m_tempInts.getBufferCL() )
 			};
 	
-			b3LauncherCL launcher(commandQueue, m_markUniquesKernel);
+			b3LauncherCL launcher(commandQueue, m_markUniquesKernel, "m_markUniquesKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
@@ -163,7 +163,7 @@ void b3FluidSortingGridOpenCLProgram_GenerateUniques::generateUniques(cl_command
 				b3BufferInfoCL( out_iterators.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(commandQueue, m_storeUniquesAndIndexRangesKernel);
+			b3LauncherCL launcher(commandQueue, m_storeUniquesAndIndexRangesKernel, "m_storeUniquesAndIndexRangesKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
@@ -344,7 +344,7 @@ void b3FluidSortingGridOpenCLProgram::generateValueIndexPairs(cl_command_queue c
 		b3BufferInfoCL( m_valueIndexPairs.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsKernel);
+	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsKernel, "m_generateValueIndexPairsKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);
@@ -360,7 +360,7 @@ void b3FluidSortingGridOpenCLProgram::rearrangeParticleArrays(cl_command_queue c
 		b3BufferInfoCL( m_tempBufferCL.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, m_rearrangeParticleArraysKernel);
+	b3LauncherCL launcher(commandQueue, m_rearrangeParticleArraysKernel, "m_rearrangeParticleArraysKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	
@@ -377,7 +377,7 @@ void b3FluidSortingGridOpenCLProgram::generateUniques_serial(cl_command_queue co
 		b3BufferInfoCL( gridData->m_numActiveCells.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, m_generateUniquesKernel);
+	b3LauncherCL launcher(commandQueue, m_generateUniquesKernel, "m_generateUniquesKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	

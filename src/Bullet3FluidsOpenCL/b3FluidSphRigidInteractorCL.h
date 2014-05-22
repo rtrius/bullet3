@@ -63,7 +63,9 @@ struct RigidBodyGpuData
 	{
 		m_numRigidBodies = narrowPhase->getNumBodiesGpu();
 		m_numRigidBodyInertias = narrowPhase->getNumBodyInertiasGpu();
-		m_numWorldSpaceAabbs = broadphase->getNumAabbWS();
+
+		//	fix
+		//m_numWorldSpaceAabbs = broadphase->getNumAabbWS();
 		m_rigidBodies = narrowPhase->getBodiesGpu();
 		m_rigidBodyInertias = narrowPhase->getBodyInertiasGpu();
 		m_worldSpaceAabbs = broadphase->getAabbBufferWS();		//if useDbvt == true in b3GpuRigidBodyPipeline.cpp this is incorrect

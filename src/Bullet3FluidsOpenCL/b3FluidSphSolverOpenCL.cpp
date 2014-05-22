@@ -218,7 +218,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel);		//After applying force, also sets accumulated force to 0
+			b3LauncherCL launcher(m_commandQueue, m_applyForcesKernel, "m_applyForcesKernel");		//After applying force, also sets accumulated force to 0
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
@@ -234,15 +234,16 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_collideAabbImpulseKernel);
+			b3LauncherCL launcher(m_commandQueue, m_collideAabbImpulseKernel, "m_collideAabbImpulseKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
 			launcher.launch1D(numFluidParticles);
 		}
 		
-		if(!USE_HASH_GRID) m_fluidRigidInteractor.interact(fluidDataCL, gridDataCL, 0, rbData);
-		else m_fluidRigidInteractor.interact(fluidDataCL, 0, hashGridDataCL, rbData);
+		//	fix
+		//if(!USE_HASH_GRID) m_fluidRigidInteractor.interact(fluidDataCL, gridDataCL, 0, rbData);
+		//else m_fluidRigidInteractor.interact(fluidDataCL, 0, hashGridDataCL, rbData);
 		
 		{
 			b3BufferInfoCL bufferInfo[] = 
@@ -253,7 +254,7 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel);
+			b3LauncherCL launcher(m_commandQueue, m_integratePositionKernel, "m_integratePositionKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidParticles);
 			
@@ -298,7 +299,7 @@ void b3FluidSphSolverOpenCL::findNeighborCells(int numActiveGridCells, int numFl
 			b3BufferInfoCL( gridData->m_foundCells.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_findNeighborCellsPerCellKernel);
+		b3LauncherCL launcher(m_commandQueue, m_findNeighborCellsPerCellKernel, "m_findNeighborCellsPerCellKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		
 		launcher.launch1D(numActiveGridCells);
@@ -314,7 +315,7 @@ void b3FluidSphSolverOpenCL::findNeighborCells(int numActiveGridCells, int numFl
 			b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_findGridCellIndexPerParticleKernel);
+		b3LauncherCL launcher(m_commandQueue, m_findGridCellIndexPerParticleKernel, "m_findGridCellIndexPerParticleKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		
 		launcher.launch1D(numActiveGridCells);
@@ -335,7 +336,7 @@ void b3FluidSphSolverOpenCL::sphComputePressure(int numFluidParticles, b3FluidSo
 		b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureKernel);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureKernel, "m_sphComputePressureKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	
@@ -357,7 +358,7 @@ void b3FluidSphSolverOpenCL::sphComputeForce(int numFluidParticles, b3FluidSorti
 		b3BufferInfoCL( fluidData->m_cellIndex.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceKernel);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceKernel, "m_sphComputeForceKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	
@@ -378,7 +379,7 @@ void b3FluidSphSolverOpenCL::sphComputePressureModulo(int numFluidParticles, b3F
 		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureModuloKernel);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputePressureModuloKernel, "m_sphComputePressureModuloKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);
@@ -400,7 +401,7 @@ void b3FluidSphSolverOpenCL::sphComputeForceModulo(int numFluidParticles, b3Flui
 		b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceModuloKernel);
+	b3LauncherCL launcher(m_commandQueue, m_sphComputeForceModuloKernel, "m_sphComputeForceModuloKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);

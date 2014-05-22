@@ -125,7 +125,7 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 			b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(commandQueue, m_resetGridCellsModuloKernel);
+		b3LauncherCL launcher(commandQueue, m_resetGridCellsModuloKernel, "m_resetGridCellsModuloKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(B3_FLUID_HASH_GRID_NUM_CELLS);
 		
@@ -141,7 +141,7 @@ void b3FluidHashGridOpenCLProgram::insertParticlesIntoGrid(cl_context context, c
 			b3BufferInfoCL( gridData->m_cellContents.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(commandQueue, m_detectIndexRangesModuloKernel);
+		b3LauncherCL launcher(commandQueue, m_detectIndexRangesModuloKernel, "m_detectIndexRangesModuloKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(gridCellSize);
 		launcher.setConst(numFluidParticles);
@@ -160,7 +160,7 @@ void b3FluidHashGridOpenCLProgram::generateValueIndexPairsModulo(cl_command_queu
 		b3BufferInfoCL( m_valueIndexPairs.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsModuloKernel);
+	b3LauncherCL launcher(commandQueue, m_generateValueIndexPairsModuloKernel, "m_generateValueIndexPairsModuloKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(cellSize);
 	launcher.setConst(numFluidParticles);
@@ -176,7 +176,7 @@ void b3FluidHashGridOpenCLProgram::rearrangeParticleArrays(cl_command_queue comm
 		b3BufferInfoCL( m_tempBufferCL.getBufferCL() )
 	};
 	
-	b3LauncherCL launcher(commandQueue, m_rearrangeParticleArraysKernel);
+	b3LauncherCL launcher(commandQueue, m_rearrangeParticleArraysKernel, "m_rearrangeParticleArraysKernel");
 	launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 	launcher.setConst(numFluidParticles);
 	

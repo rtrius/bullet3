@@ -98,7 +98,7 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 			b3BufferInfoCL( fluidDataCL->m_position.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_applyParticleUpdatesKernel);
+		b3LauncherCL launcher(m_commandQueue, m_applyParticleUpdatesKernel, "m_applyParticleUpdatesKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(numPositionUpdates);
 		
@@ -117,7 +117,7 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 				b3BufferInfoCL( fluidDataCL->m_velocity.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_applyParticleUpdatesKernel);
+			b3LauncherCL launcher(m_commandQueue, m_applyParticleUpdatesKernel, "m_applyParticleUpdatesKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numVelocityUpdates);
 			
@@ -132,7 +132,7 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 				b3BufferInfoCL( fluidDataCL->m_velocityEval.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_applyParticleUpdatesKernel);
+			b3LauncherCL launcher(m_commandQueue, m_applyParticleUpdatesKernel, "m_applyParticleUpdatesKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numVelocityUpdates);
 			
@@ -175,7 +175,7 @@ void b3FluidSphParticleUpdaterCL::createParticlesApplyUpdatesAndRemoveParticles(
 				b3BufferInfoCL( fluidDataCL->m_accumulatedForce.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_swapRemovedParticlesKernel);
+			b3LauncherCL launcher(m_commandQueue, m_swapRemovedParticlesKernel, "m_swapRemovedParticlesKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numSwappedParticles);
 			

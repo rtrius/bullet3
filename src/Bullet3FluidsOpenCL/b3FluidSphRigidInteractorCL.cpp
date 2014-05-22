@@ -178,7 +178,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 				b3BufferInfoCL( m_largeAabbRigidIndicies.getBufferCL() ),
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_detectLargeAabbRigidsKernel);
+			b3LauncherCL launcher(m_commandQueue, m_detectLargeAabbRigidsKernel, "m_detectLargeAabbRigidsKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(MAX_LARGE_AABB_RIGIDS);
 			launcher.setConst(numRigidBodies);
@@ -217,7 +217,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 				b3BufferInfoCL( m_midphasePairs.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_fluidLargeRigidBroadphaseKernel);
+			b3LauncherCL launcher(m_commandQueue, m_fluidLargeRigidBroadphaseKernel, "m_fluidLargeRigidBroadphaseKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(MAX_LARGE_AABB_RIGIDS);
 			launcher.setConst(MAX_FLUID_RIGID_PAIRS);
@@ -268,7 +268,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 			b3BufferInfoCL( m_midphasePairs.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseKernel);
+		b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseKernel, "m_fluidSmallRigidBroadphaseKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(MAX_FLUID_RIGID_PAIRS);
 		launcher.setConst(MAX_MIDPHASE_PAIRS);
@@ -313,7 +313,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 			b3BufferInfoCL( m_midphasePairs.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseModuloKernel);
+		b3LauncherCL launcher(m_commandQueue, m_fluidSmallRigidBroadphaseModuloKernel, "m_fluidSmallRigidBroadphaseModuloKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(MAX_FLUID_RIGID_PAIRS);
 		launcher.setConst(MAX_MIDPHASE_PAIRS);
@@ -354,7 +354,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 			b3BufferInfoCL( m_pairs.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_fluidRigidMidphaseKernel);
+		b3LauncherCL launcher(m_commandQueue, m_fluidRigidMidphaseKernel, "m_fluidRigidMidphaseKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(MAX_FLUID_RIGID_PAIRS);
 		launcher.setConst(numMidphasePairs);
@@ -404,7 +404,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 			b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_fluidRigidNarrowphaseKernel);
+		b3LauncherCL launcher(m_commandQueue, m_fluidRigidNarrowphaseKernel, "m_fluidRigidNarrowphaseKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(numFluidRigidPairs);
 		
@@ -439,7 +439,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 				b3BufferInfoCL( m_sortByFluidIndexData.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_loadSortDataKernel);
+			b3LauncherCL launcher(m_commandQueue, m_loadSortDataKernel, "m_loadSortDataKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidRigidPairs);
 			
@@ -480,7 +480,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 				b3BufferInfoCL( m_fluidRigidContacts.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_rearrangePairsAndContactsKernel);
+			b3LauncherCL launcher(m_commandQueue, m_rearrangePairsAndContactsKernel, "m_rearrangePairsAndContactsKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidRigidPairs);
 			
@@ -514,7 +514,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 				b3BufferInfoCL( m_numContactsPerParticle.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_findPerParticleContactRangeKernel);
+			b3LauncherCL launcher(m_commandQueue, m_findPerParticleContactRangeKernel, "m_findPerParticleContactRangeKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numFluidRigidPairs);
 			
@@ -542,7 +542,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 			b3BufferInfoCL( fluidData->m_velocity.getBufferCL() )
 		};
 		
-		b3LauncherCL launcher(m_commandQueue, m_resolveFluidRigidCollisionsKernel);
+		b3LauncherCL launcher(m_commandQueue, m_resolveFluidRigidCollisionsKernel, "m_resolveFluidRigidCollisionsKernel");
 		launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 		launcher.setConst(numFluidParticles);
 		
@@ -589,7 +589,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 					b3BufferInfoCL( m_fluidToRigidMap.getBufferCL() )
 				};
 				
-				b3LauncherCL launcher(m_commandQueue, m_mapFluidToRigidContactsKernel);
+				b3LauncherCL launcher(m_commandQueue, m_mapFluidToRigidContactsKernel, "m_mapFluidToRigidContactsKernel");
 				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 				launcher.setConst(numFluidRigidPairs);
 				
@@ -613,7 +613,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 					b3BufferInfoCL( m_numContactsPerRigid.getBufferCL() )
 				};
 				
-				b3LauncherCL launcher(m_commandQueue, m_findPerRigidContactRangeKernel);
+				b3LauncherCL launcher(m_commandQueue, m_findPerRigidContactRangeKernel, "m_findPerRigidContactRangeKernel");
 				launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 				launcher.setConst(numFluidRigidPairs);
 				
@@ -642,7 +642,7 @@ void b3FluidSphRigidInteractorCL::interact(b3FluidSphOpenCL* fluidData,  b3Fluid
 				b3BufferInfoCL( m_fluidVelocities.getBufferCL() )
 			};
 			
-			b3LauncherCL launcher(m_commandQueue, m_resolveRigidFluidCollisionsKernel);
+			b3LauncherCL launcher(m_commandQueue, m_resolveRigidFluidCollisionsKernel, "m_resolveRigidFluidCollisionsKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
 			launcher.setConst(numRigidBodies);
 			
