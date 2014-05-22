@@ -13,7 +13,6 @@
 	
 		"..",
 		".",
-		"../../src"
 	}
 
 	initOpenGL()
@@ -37,11 +36,6 @@
 		"../OpenGLTrueTypeFont/fontstash.h",
 		"../OpenGLTrueTypeFont/opengl_fontstashcallbacks.cpp",
  		"../OpenGLTrueTypeFont/opengl_fontstashcallbacks.h",
-		"../../src/Bullet3Geometry/b3ConvexHullComputer.cpp",
-		"../../src/Bullet3Geometry/b3ConvexHullComputer.h",
-		"../../src/Bullet3Common/b3Logging.h",
-		"../../src/Bullet3Common/b3Logging.cpp",
-		"../../src/Bullet3Common/b3AlignedAllocator.cpp",
 		"../../btgui/Timing/b3Clock.cpp",
 		"../../btgui/Timing/b3Clock.h",
 		"**.cpp",
@@ -61,6 +55,7 @@
 		"../OpenGLWindow/X11OpenGLWindow.h",
 		"../OpenGLWindow/X11OpenGLWindow.cpp"
 		}
+		links{"pthread"}
 	end
 	if os.is("MacOSX") then
 		links{"Cocoa.framework"}

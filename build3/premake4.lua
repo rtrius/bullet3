@@ -1,24 +1,26 @@
 
-  solution "0MySolution"
+  solution "0_Bullet3Solution"
 
 	-- Multithreaded compiling
 	if _ACTION == "vs2010" or _ACTION=="vs2008" then
 		buildoptions { "/MP"  }
-	end 
-	
+	end
+
 	act = ""
-    
+
     if _ACTION then
         act = _ACTION
     end
 
 
-	newoption 
+	newoption
 	{
-    		trigger     = "ios",
-    		description = "Enable iOS target (requires xcode4)"
-  	}
-	
+		trigger = "midi",
+		description = "Use Midi controller to control parameters"
+	}
+
+--	_OPTIONS["midi"] = "1";
+
 	newoption
 	{
 		trigger = "bullet2gpu",
@@ -30,14 +32,20 @@
 		trigger = "enet",
 		description = "Enable enet NAT punchthrough test"
 	}
-  
+
+	newoption
+	{
+		trigger = "gtest",
+		description = "Enable unit tests using gtest"
+	}
+
 	configurations {"Release", "Debug"}
 	configuration "Release"
 		flags { "Optimize", "EnableSSE2","StaticRuntime", "NoMinimalRebuild", "FloatFast"}
 	configuration "Debug"
 		defines {"_DEBUG=1"}
 		flags { "Symbols", "StaticRuntime" , "NoMinimalRebuild", "NoEditAndContinue" ,"FloatFast"}
-		
+
 	if os.is("Linux") then
 		if os.is64bit() then
 			platforms {"x64"}
@@ -50,7 +58,7 @@
 
 	configuration {"x32"}
 		targetsuffix ("_" .. act)
-	configuration "x64"		
+	configuration "x64"
 		targetsuffix ("_" .. act .. "_64" )
 	configuration {"x64", "debug"}
 		targetsuffix ("_" .. act .. "_x64_debug")
@@ -58,71 +66,80 @@
 		targetsuffix ("_" .. act .. "_x64_release" )
 	configuration {"x32", "debug"}
 		targetsuffix ("_" .. act .. "_debug" )
-	
+
 	configuration{}
 
 	postfix=""
 
 	if _ACTION == "xcode4" then
-		if _OPTIONS["ios"] then
-      			postfix = "ios";
-      			xcodebuildsettings
-      			{
-              		'CODE_SIGN_IDENTITY = "iPhone Developer"',
-              		"SDKROOT = iphoneos",
-              		'ARCHS = "armv7"',
-              		'TARGETED_DEVICE_FAMILY = "1,2"',
-              		'VALID_ARCHS = "armv7"',
-      			}      
-      		else
-      			xcodebuildsettings
-      			{
-              		'ARCHS = "$(ARCHS_STANDARD_32_BIT) $(ARCHS_STANDARD_64_BIT)"',
-              		'VALID_ARCHS = "x86_64 i386"',
-      			}
-    		end
+			xcodebuildsettings
+			{
+        		'ARCHS = "$(ARCHS_STANDARD_32_BIT) $(ARCHS_STANDARD_64_BIT)"',
+        		'VALID_ARCHS = "x86_64 i386"',
+			}
 	end
 
-	
+
 	flags { "NoRTTI", "NoExceptions"}
 	defines { "_HAS_EXCEPTIONS=0" }
 	targetdir "../bin"
 	location("./" .. act .. postfix)
 
-	
+
 	projectRootDir = os.getcwd() .. "/../"
-	print("Project root directroy: " .. projectRootDir);
+	print("Project root directory: " .. projectRootDir);
 
 	dofile ("findOpenCL.lua")
 	dofile ("findDirectX11.lua")
 	dofile ("findOpenGLGlewGlut.lua")
-	
-	language "C++"
-	
-if not _OPTIONS["ios"] then
-	
---	include "../Demos3/CpuDemos"
-	include "../Demos3/GpuDemos"
-	include "../Demos3/Wavefront"
-	include "../btgui/MultiThreading"
 
-	
+	language "C++"
+
+	if _OPTIONS["gtest"] then
+		include "../test/gtest-1.7.0"
+--		include "../test/hello_gtest"
+		include "../test/TestBullet3OpenCL"
+	end
+
+if findOpenGL() then
+	include "../Demos3/AllBullet2Demos"
+	include "../Demos3/GpuDemos"
+--	include "../Demos3/CpuDemos"
+--	include "../Demos3/Wavefront"
+--	include "../btgui/MultiThreading"
+
+	include "../btgui/OpenGLWindow"
+
+--	include "../Demos3/ImplicitCloth"
+--	include "../Demos3/SimpleOpenGL3"
+
+	include "../btgui/lua-5.2.3"
+	include "../test/lua"
+    include "../btgui/Gwen"
+    include "../btgui/GwenOpenGLTest"
+end
+
 --		include "../demo/gpudemo"
---	include "../btgui/MidiTest"
+if _OPTIONS["midi"] then
+                include "../btgui/MidiTest"
+end
+
 --		include "../opencl/vector_add_simplified"
 --		include "../opencl/vector_add"
-		include "../btgui/Gwen"
-		include "../btgui/GwenOpenGLTest"
-		include "../test/clew"
-		include "../Demos3/GpuGuiInitialize"
-		
-		include "../test/OpenCL/BasicInitialize"
-		include "../test/OpenCL/KernelLaunch"--	
+--		include "../test/clew"
+--		include "../Demos3/GpuGuiInitialize"
+
+--		include "../test/OpenCL/BasicInitialize"
+		include "../test/OpenCL/KernelLaunch"--
 --		include "../test/OpenCL/BroadphaseCollision"
 --		include "../test/OpenCL/NarrowphaseCollision"
 		include "../test/OpenCL/ParallelPrimitives"
 		include "../test/OpenCL/RadixSortBenchmark"
-		include "../test/OpenCL/BitonicSort"
+
+		include "../src/BulletSoftBody"
+		include "../src/BulletDynamics"
+		include "../src/BulletCollision"
+		include "../src/LinearMath"
 
 		include "../src/Bullet3Dynamics"
 		include "../src/Bullet3Common"
@@ -131,37 +148,25 @@ if not _OPTIONS["ios"] then
 		include "../src/Bullet3Fluids"
 		include "../src/Bullet3FluidsOpenCL"
 		include "../src/Bullet3Serialize/Bullet2FileLoader"
-	
 		include "../src/Bullet3OpenCL"
-		
-		
-			
+
 --		include "../demo/gpu_initialize"
 --		include "../opencl/lds_bank_conflict"
 --		include "../opencl/reduce"
-			include "../btgui/OpenGLTrueTypeFont"
+		include "../btgui/OpenGLTrueTypeFont"
 --		include "../btgui/OpenGLWindow"
 --		include "../demo/ObjLoader"
-
-		
 --		include "../test/b3DynamicBvhBroadphase"
-		
+
 	if _OPTIONS["enet"] then
 		include "../btgui/enet"
 		include "../test/enet/server"
 		include "../test/enet/client"
 	end
-	
 
+	include "../Demos"
+	include "../Extras"
 
 	if _OPTIONS["bullet2gpu"] then
-		include "../src/LinearMath"	
-	include "../src/BulletCollision"	
-	include "../src/BulletDynamics"	
-	include "../src/BulletSoftBody"		
-	include "../Demos/HelloWorld"
-	
-		include "../Demos3"
 	end
 
-		end

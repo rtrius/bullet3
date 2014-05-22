@@ -63,22 +63,26 @@ bool TestAabbAgainstAabb2Global(const btAabbCL* aabb1, __global const btAabbCL* 
 }
 
 
-__kernel void   computePairsKernelTwoArrays( __global const btAabbCL* unsortedAabbs, __global const btAabbCL* sortedAabbs, volatile __global int4* pairsOut,volatile  __global int* pairCount, int numUnsortedAabbs, int numSortedAabbs, int axis, int maxPairs)
+__kernel void   computePairsKernelTwoArrays( __global const btAabbCL* unsortedAabbs, __global const int* unsortedAabbMapping,  __global const int* unsortedAabbMapping2, volatile __global int4* pairsOut,volatile  __global int* pairCount, int numUnsortedAabbs, int numUnSortedAabbs2, int axis, int maxPairs)
 {
 	int i = get_global_id(0);
 	if (i>=numUnsortedAabbs)
 		return;
 
 	int j = get_global_id(1);
-	if (j>=numSortedAabbs)
+	if (j>=numUnSortedAabbs2)
 		return;
 
-	if (TestAabbAgainstAabb2GlobalGlobal(&unsortedAabbs[i],&sortedAabbs[j]))
+
+	__global const btAabbCL* unsortedAabbPtr = &unsortedAabbs[unsortedAabbMapping[i]];
+	__global const btAabbCL* unsortedAabbPtr2 = &unsortedAabbs[unsortedAabbMapping2[j]];
+
+	if (TestAabbAgainstAabb2GlobalGlobal(unsortedAabbPtr,unsortedAabbPtr2))
 	{
 		int4 myPair;
 		
-		int xIndex = unsortedAabbs[i].m_minIndices[3];
-		int yIndex = sortedAabbs[j].m_minIndices[3];
+		int xIndex = unsortedAabbPtr[0].m_minIndices[3];
+		int yIndex = unsortedAabbPtr2[0].m_minIndices[3];
 		if (xIndex>yIndex)
 		{
 			int tmp = xIndex;
@@ -96,6 +100,32 @@ __kernel void   computePairsKernelTwoArrays( __global const btAabbCL* unsortedAa
 		if (curPair<maxPairs)
 		{
 				pairsOut[curPair] = myPair; //flush to main memory
+		}
+	}
+}
+
+
+
+__kernel void   computePairsKernelBruteForce( __global const btAabbCL* aabbs, volatile __global int4* pairsOut,volatile  __global int* pairCount, int numObjects, int axis, int maxPairs)
+{
+	int i = get_global_id(0);
+	if (i>=numObjects)
+		return;
+	for (int j=i+1;j<numObjects;j++)
+	{
+		if (TestAabbAgainstAabb2GlobalGlobal(&aabbs[i],&aabbs[j]))
+		{
+			int4 myPair;
+			myPair.x = aabbs[i].m_minIndices[3];
+			myPair.y = aabbs[j].m_minIndices[3];
+			myPair.z = NEW_PAIR_MARKER;
+			myPair.w = NEW_PAIR_MARKER;
+
+			int curPair = atomic_inc (pairCount);
+			if (curPair<maxPairs)
+			{
+					pairsOut[curPair] = myPair; //flush to main memory
+			}
 		}
 	}
 }
@@ -320,36 +350,40 @@ __kernel void   copyAabbsKernel( __global const btAabbCL* allAabbs, __global btA
 }
 
 
-__kernel void   flipFloatKernel( __global const btAabbCL* aabbs, volatile __global int2* sortData, int numObjects, int axis)
+__kernel void   flipFloatKernel( __global const btAabbCL* allAabbs, __global const int* smallAabbMapping, __global int2* sortData, int numObjects, int axis)
 {
 	int i = get_global_id(0);
 	if (i>=numObjects)
 		return;
-		
-		sortData[i].x = FloatFlip(aabbs[i].m_minElems[axis]);
-		sortData[i].y = i;
+	
+	
+	sortData[i].x = FloatFlip(allAabbs[smallAabbMapping[i]].m_minElems[axis]);
+	sortData[i].y = i;
 		
 }
 
 
-__kernel void   scatterKernel( __global const btAabbCL* aabbs, volatile __global const int2* sortData, __global btAabbCL* sortedAabbs, int numObjects)
+__kernel void   scatterKernel( __global const btAabbCL* allAabbs, __global const int* smallAabbMapping, volatile __global const int2* sortData, __global btAabbCL* sortedAabbs, int numObjects)
 {
 	int i = get_global_id(0);
 	if (i>=numObjects)
 		return;
-
-		sortedAabbs[i] = aabbs[sortData[i].y];
+	
+	sortedAabbs[i] = allAabbs[smallAabbMapping[sortData[i].y]];
 }
 
 
 
-__kernel void   prepareSumVarianceKernel( __global const btAabbCL* aabbs, __global float4* sum, __global float4* sum2,int numAabbs)
+__kernel void   prepareSumVarianceKernel( __global const btAabbCL* allAabbs, __global const int* smallAabbMapping, __global float4* sum, __global float4* sum2,int numAabbs)
 {
 	int i = get_global_id(0);
 	if (i>numAabbs)
 		return;
+	
+	btAabbCL smallAabb = allAabbs[smallAabbMapping[i]];
+	
 	float4 s;
-	s = (aabbs[i].m_max+aabbs[i].m_min)*0.5f;
+	s = (smallAabb.m_max+smallAabb.m_min)*0.5f;
 	sum[i]=s;
 	sum2[i]=s*s;	
 }

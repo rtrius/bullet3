@@ -1,3 +1,13 @@
+	function findOpenGL()
+		configuration{}
+		if os.is("Linux") then
+			if os.isdir("/usr/include") and os.isfile("/usr/include/GL/gl.h") then return true
+			end
+			return false
+		end
+		--assume OpenGL is available on Mac OSX, Windows etc
+		return true
+	end
 
 	function initOpenGL()
 		configuration {}

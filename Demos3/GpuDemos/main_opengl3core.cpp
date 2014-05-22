@@ -2,7 +2,7 @@
 //#include "GpuDemo.h"
 
 #ifdef _WIN32
-#include <Windows.h> //for GetLocalTime/GetSystemTime
+#include <windows.h> //for GetLocalTime/GetSystemTime
 #else
 #include <sys/time.h>//gettimeofday
 #endif
@@ -56,8 +56,50 @@ bool dump_timings = false;
 int maxFrameCount = 102;
 extern char OpenSansData[];
 extern char* gPairBenchFileName;
+extern float shadowMapWidth;
+extern float shadowMapHeight;
+extern bool gDebugLauncherCL;
+extern bool gAllowCpuOpenCL;
+extern bool gUseLargeBatches;
+
 extern bool gDebugForceLoadingFromSource;
 extern bool gDebugSkipLoadingBinary;
+extern bool useShadowMap;
+extern float shadowMapWorldSize;
+extern bool gUseJacobi;
+extern bool useUniformGrid;
+
+extern bool gUseDbvt;
+extern bool gDumpContactStats;
+extern bool gCalcWorldSpaceAabbOnCpu;
+extern bool gUseCalculateOverlappingPairsHost;
+extern bool gIntegrateOnCpu;
+extern bool gConvertConstraintOnCpu;
+
+
+static const char* sStartFileName = "bullet3StartDemo.txt";
+
+static void saveCurrentDemoEntry(int currentEntry,const char* startFileName)
+{
+	FILE* f = fopen(startFileName,"w");
+	if (f)
+	{
+		fprintf(f,"%d\n",currentEntry);
+		fclose(f);
+	}
+};
+
+static int loadCurrentDemoEntry(const char* startFileName)
+{
+	int currentEntry= 0;
+	FILE* f = fopen(startFileName,"r");
+	if (f)
+	{
+		fscanf(f,"%d",&currentEntry);
+		fclose(f);
+	}
+	return currentEntry;
+};
 
 static void MyResizeCallback( float width, float height)
 {
@@ -85,10 +127,11 @@ enum
 };
 
 b3AlignedObjectArray<const char*> demoNames;
-int selectedDemo = 0;
+int selectedDemo = 1;
 GpuDemo::CreateFunc* allDemos[]=
 {
 		//ConcaveCompound2Scene::MyCreateFunc,
+	
 	
 	
 
@@ -98,9 +141,10 @@ GpuDemo::CreateFunc* allDemos[]=
 	
 //	ConcaveSphereScene::MyCreateFunc,
 
-		
+	
 	ConcaveScene::MyCreateFunc,
-
+	
+	
 	GpuBoxPlaneScene::MyCreateFunc,
 	GpuConstraintsDemo::MyCreateFunc,
 	//GpuConvexPlaneScene::MyCreateFunc,
@@ -141,7 +185,7 @@ GpuDemo::CreateFunc* allDemos[]=
 
 
 
-	//ParticleDemo::MyCreateFunc,
+	ParticleDemo::MyCreateFunc,
 
 
 
@@ -164,6 +208,7 @@ void	MyComboBoxCallback(int comboId, const char* item)
 				gReset = true;
 				selectedDemo = i;
 				printf("selected demo %s!\n", item);
+				saveCurrentDemoEntry(i,sStartFileName);
 			}
 		}
 	}
@@ -231,9 +276,21 @@ static void MyMouseButtonCallback(int button, int state, float x, float y)
 }
 
 extern bool useShadowMap;
-
+static bool wireframe=false;
 void MyKeyboardCallback(int key, int state)
 {
+	if (key=='w' && state)
+	{
+		wireframe=!wireframe;
+		if (wireframe)
+		{
+			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+		} else
+		{
+			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+		}
+	}
+
 	if (key=='s' && state)
 	{
 		useShadowMap=!useShadowMap;
@@ -408,6 +465,7 @@ sth_stash* initFont(GLPrimitiveRenderer* primRender)
 void Usage()
 {
 	printf("\nprogram.exe [--selected_demo=<int>] [--benchmark] [--maxFrameCount=<int>][--dump_timings] [--disable_opencl] [--cl_device=<int>]  [--cl_platform=<int>] [--disable_cached_cl_kernels] [--load_cl_kernels_from_disk] [--x_dim=<int>] [--y_dim=<num>] [--z_dim=<int>] [--x_gap=<float>] [--y_gap=<float>] [--z_gap=<float>] [--use_concave_mesh] [--pair_benchmark_file=<filename>] [--new_batching] [--no_instanced_collision_shapes]\n");
+	printf("[--disable_shadowmap] [--shadowmap_size=int] [--shadowmap_resolution=<int>] [--use_jacobi] [--use_uniform_grid]\n");
 };
 
 
@@ -548,6 +606,7 @@ void writeTextureToPng(int textureWidth, int textureHeight, const char* fileName
 #include "Bullet3Dynamics/ConstraintSolver/b3Point2PointConstraint.h"
 
 
+
 int main(int argc, char* argv[])
 {
 
@@ -560,6 +619,7 @@ int main(int argc, char* argv[])
 
 	//b3OpenCLUtils::setCachePath("/Users/erwincoumans/develop/mycache");
 	
+
 	b3SetCustomEnterProfileZoneFunc(b3ProfileManager::Start_Profile);
 	b3SetCustomLeaveProfileZoneFunc(b3ProfileManager::Stop_Profile);
 
@@ -580,6 +640,8 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 
+	selectedDemo =  loadCurrentDemoEntry(sStartFileName);
+
 
 	args.GetCmdLineArgument("selected_demo",selectedDemo);
 
@@ -591,7 +653,18 @@ int main(int argc, char* argv[])
 	bool benchmark=args.CheckCmdLineFlag("benchmark");
 	args.GetCmdLineArgument("max_framecount",maxFrameCount);
 
+	args.GetCmdLineArgument("shadowmap_size",shadowMapWorldSize);
+
+	args.GetCmdLineArgument("shadowmap_resolution",shadowMapWidth);
+	shadowMapHeight=shadowMapWidth;
+	if (args.CheckCmdLineFlag("disable_shadowmap"))
+	{
+		useShadowMap = false;
+	}
+
 	args.GetCmdLineArgument("pair_benchmark_file",gPairBenchFileName);
+
+	gDebugLauncherCL = args.CheckCmdLineFlag("debug_kernel_launch");
 
 	dump_timings=args.CheckCmdLineFlag("dump_timings");
 	ci.useOpenCL = !args.CheckCmdLineFlag("disable_opencl");
@@ -603,6 +676,21 @@ int main(int argc, char* argv[])
 	ci.m_useInstancedCollisionShapes = !args.CheckCmdLineFlag("no_instanced_collision_shapes");
 	args.GetCmdLineArgument("cl_device", ci.preferredOpenCLDeviceIndex);
 	args.GetCmdLineArgument("cl_platform", ci.preferredOpenCLPlatformIndex);
+	gAllowCpuOpenCL = args.CheckCmdLineFlag("allow_opencl_cpu");
+	gUseLargeBatches = args.CheckCmdLineFlag("use_large_batches");
+
+	gUseJacobi = args.CheckCmdLineFlag("use_jacobi");
+	gUseDbvt = args.CheckCmdLineFlag("use_dbvt");
+	gDumpContactStats = args.CheckCmdLineFlag("dump_contact_stats");
+	gCalcWorldSpaceAabbOnCpu = args.CheckCmdLineFlag("calc_aabb_cpu");
+	gUseCalculateOverlappingPairsHost = args.CheckCmdLineFlag("calc_pairs_cpu");
+	gIntegrateOnCpu = args.CheckCmdLineFlag("integrate_cpu");
+	gConvertConstraintOnCpu = args.CheckCmdLineFlag("convert_constraints_cpu");
+	useUniformGrid = args.CheckCmdLineFlag("use_uniform_grid");
+
+
+
+
 	args.GetCmdLineArgument("x_dim", ci.arraySizeX);
 	args.GetCmdLineArgument("y_dim", ci.arraySizeY);
 	args.GetCmdLineArgument("z_dim", ci.arraySizeZ);
@@ -614,6 +702,8 @@ int main(int argc, char* argv[])
 
 	gDebugForceLoadingFromSource = args.CheckCmdLineFlag("load_cl_kernels_from_disk");
 	gDebugSkipLoadingBinary = args.CheckCmdLineFlag("disable_cached_cl_kernels");
+	
+
 #ifndef B3_NO_PROFILE
 	b3ProfileManager::Reset();
 #endif //B3_NO_PROFILE
@@ -671,7 +761,7 @@ int main(int argc, char* argv[])
 			delete demo;
 		}
 
-		gui->registerComboBox(MYCOMBOBOX1,numItems,&demoNames[0]);
+		gui->registerComboBox(MYCOMBOBOX1,numItems,&demoNames[0],selectedDemo);
 		gui->setComboBoxCallback(MyComboBoxCallback);
 	}
 
@@ -766,7 +856,8 @@ int main(int argc, char* argv[])
 		bool useGpu = false;
 
 		
-		int maxObjectCapacity=128*1024;
+		//int maxObjectCapacity=128*1024;
+		int maxObjectCapacity=1024*1024;
 		maxObjectCapacity = b3Max(maxObjectCapacity,ci.arraySizeX*ci.arraySizeX*ci.arraySizeX+10);
 
 		{

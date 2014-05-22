@@ -12,7 +12,17 @@ premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/ParallelP
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/sap.cl" --headerfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/sapKernels.h" --stringname="sapCL" stringify
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/sapFast.cl" --headerfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/sapFastKernels.h" --stringname="sapFastCL" stringify
 
+premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/gridBroadphase.cl" --headerfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/gridBroadphaseKernels.h" --stringname="gridBroadphaseCL" stringify
+premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/parallelLinearBvh.cl" --headerfile="../src/Bullet3OpenCL/BroadphaseCollision/kernels/parallelLinearBvhKernels.h" --stringname="parallelLinearBvhCL" stringify
+
+
+
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/sat.cl" --headerfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/satKernels.h" --stringname="satKernelsCL" stringify
+premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/satConcave.cl" --headerfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/satConcaveKernels.h" --stringname="satConcaveKernelsCL" stringify
+premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/mpr.cl" --headerfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/mprKernels.h" --stringname="mprKernelsCL" stringify
+
+
+
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/satClipHullContacts.cl" --headerfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/satClipHullContacts.h" --stringname="satClipKernelsCL" stringify
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/primitiveContacts.cl" --headerfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/primitiveContacts.h" --stringname="primitiveContactsKernelsCL" stringify
 premake4 --file=stringifyKernel.lua --kernelfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/bvhTraversal.cl" --headerfile="../src/Bullet3OpenCL/NarrowphaseCollision/kernels/bvhTraversal.h" --stringname="bvhTraversalKernelCL" stringify
@@ -49,6 +59,7 @@ premake4 --file=stringifyKernel.lua --kernelfile="../btgui/OpenGLWindow/Shaders/
 
 
 
+premake4 --file=stringifyKernel.lua --kernelfile="../Demos3/GpuDemos/broadphase/pairsKernel.cl" --headerfile="../Demos3/GpuDemos/broadphase/pairsKernel.h" --stringname="pairsKernelsCL" stringify
 
 
 

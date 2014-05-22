@@ -9,8 +9,10 @@ class b3Vector3;
 #include "b3SapAabb.h"
 #include "Bullet3Common/shared/b3Int2.h"
 
+#include "b3GpuBroadphaseInterface.h"
 
-class b3GpuSapBroadphase
+
+class b3GpuSapBroadphase : public b3GpuBroadphaseInterface
 {
 	
 	cl_context				m_context;
@@ -22,7 +24,7 @@ class b3GpuSapBroadphase
 	cl_kernel				m_sapKernel;
 	cl_kernel				m_sap2Kernel;
 	cl_kernel				m_prepareSumVarianceKernel;
-	cl_kernel				m_computePairsIncremental3dSapKernel;
+	
 
 	class b3RadixSort32CL* m_sorter;
 
@@ -51,23 +53,34 @@ class b3GpuSapBroadphase
 	
 	int	m_currentBuffer;
 
-	public:
+public:
 
 	b3OpenCLArray<int> m_pairCount;
 
+
 	b3OpenCLArray<b3SapAabb>	m_allAabbsGPU;
 	b3AlignedObjectArray<b3SapAabb>	m_allAabbsCPU;
+
+	virtual b3OpenCLArray<b3SapAabb>&	getAllAabbsGPU()
+	{
+		return m_allAabbsGPU;
+	}
+	virtual b3AlignedObjectArray<b3SapAabb>&	getAllAabbsCPU()
+	{
+		return m_allAabbsCPU;
+	}
 
 	b3OpenCLArray<b3Vector3>	m_sum;
 	b3OpenCLArray<b3Vector3>	m_sum2;
 	b3OpenCLArray<b3Vector3>	m_dst;
 
-	b3OpenCLArray<b3SapAabb>	m_smallAabbsGPU;
-	b3AlignedObjectArray<b3SapAabb>	m_smallAabbsCPU;
+	b3OpenCLArray<int>	m_smallAabbsMappingGPU;
+	b3AlignedObjectArray<int> m_smallAabbsMappingCPU;
 
-	b3OpenCLArray<b3SapAabb>	m_largeAabbsGPU;
-	b3AlignedObjectArray<b3SapAabb>	m_largeAabbsCPU;
+	b3OpenCLArray<int>	m_largeAabbsMappingGPU;
+	b3AlignedObjectArray<int> m_largeAabbsMappingCPU;
 
+	
 	b3OpenCLArray<b3Int4>		m_overlappingPairs;
 
 	//temporary gpu work memory
@@ -76,27 +89,63 @@ class b3GpuSapBroadphase
 
 	class b3PrefixScanFloat4CL*		m_prefixScanFloat4;
 
-	b3GpuSapBroadphase(cl_context ctx,cl_device_id device, cl_command_queue  q );
+	enum b3GpuSapKernelType
+	{
+		B3_GPU_SAP_KERNEL_BRUTE_FORCE_CPU=1,
+		B3_GPU_SAP_KERNEL_BRUTE_FORCE_GPU,
+		B3_GPU_SAP_KERNEL_ORIGINAL,
+		B3_GPU_SAP_KERNEL_BARRIER,
+		B3_GPU_SAP_KERNEL_LOCAL_SHARED_MEMORY
+	};
+
+	b3GpuSapBroadphase(cl_context ctx,cl_device_id device, cl_command_queue  q , b3GpuSapKernelType kernelType=B3_GPU_SAP_KERNEL_LOCAL_SHARED_MEMORY);
 	virtual ~b3GpuSapBroadphase();
 	
-	void  calculateOverlappingPairs(int maxPairs);
-	void  calculateOverlappingPairsHost(int maxPairs);
+	static b3GpuBroadphaseInterface* CreateFuncBruteForceCpu(cl_context ctx,cl_device_id device, cl_command_queue  q)
+	{
+		return new b3GpuSapBroadphase(ctx,device,q,B3_GPU_SAP_KERNEL_BRUTE_FORCE_CPU);
+	}
+
+	static b3GpuBroadphaseInterface* CreateFuncBruteForceGpu(cl_context ctx,cl_device_id device, cl_command_queue  q)
+	{
+		return new b3GpuSapBroadphase(ctx,device,q,B3_GPU_SAP_KERNEL_BRUTE_FORCE_GPU);
+	}
+
+	static b3GpuBroadphaseInterface* CreateFuncOriginal(cl_context ctx,cl_device_id device, cl_command_queue  q)
+	{
+		return new b3GpuSapBroadphase(ctx,device,q,B3_GPU_SAP_KERNEL_ORIGINAL);
+	}
+	static b3GpuBroadphaseInterface* CreateFuncBarrier(cl_context ctx,cl_device_id device, cl_command_queue  q)
+	{
+		return new b3GpuSapBroadphase(ctx,device,q,B3_GPU_SAP_KERNEL_BARRIER);
+	}
+	static b3GpuBroadphaseInterface* CreateFuncLocalMemory(cl_context ctx,cl_device_id device, cl_command_queue  q)
+	{
+		return new b3GpuSapBroadphase(ctx,device,q,B3_GPU_SAP_KERNEL_LOCAL_SHARED_MEMORY);
+	}
+	
+
+	virtual void  calculateOverlappingPairs(int maxPairs);
+	virtual void  calculateOverlappingPairsHost(int maxPairs);
 	
 	void  reset();
 
 	void init3dSap();
-	void calculateOverlappingPairsHostIncremental3Sap();
+	virtual void calculateOverlappingPairsHostIncremental3Sap();
 
-	void createProxy(const b3Vector3& aabbMin,  const b3Vector3& aabbMax, int userPtr ,short int collisionFilterGroup,short int collisionFilterMask);
-	void createLargeProxy(const b3Vector3& aabbMin,  const b3Vector3& aabbMax, int userPtr ,short int collisionFilterGroup,short int collisionFilterMask);
+	virtual void createProxy(const b3Vector3& aabbMin,  const b3Vector3& aabbMax, int userPtr ,short int collisionFilterGroup,short int collisionFilterMask);
+	virtual void createLargeProxy(const b3Vector3& aabbMin,  const b3Vector3& aabbMax, int userPtr ,short int collisionFilterGroup,short int collisionFilterMask);
 
 	//call writeAabbsToGpu after done making all changes (createProxy etc)
-	void writeAabbsToGpu();
+	virtual void writeAabbsToGpu();
 
-	int getNumAabbWS() const;
-	cl_mem	getAabbBufferWS();
-	int	getNumOverlap();
-	cl_mem	getOverlappingPairBuffer();
+	virtual cl_mem	getAabbBufferWS();
+	virtual int	getNumOverlap();
+	virtual cl_mem	getOverlappingPairBuffer();
+	
+	virtual b3OpenCLArray<b3Int4>& getOverlappingPairsGPU();
+	virtual b3OpenCLArray<int>& getSmallAabbIndicesGPU();
+	virtual b3OpenCLArray<int>& getLargeAabbIndicesGPU();
 };
 
 #endif //B3_GPU_SAP_BROADPHASE_H

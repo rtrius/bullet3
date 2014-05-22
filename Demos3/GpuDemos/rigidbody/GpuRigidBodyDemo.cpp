@@ -4,6 +4,8 @@
 #include "Bullet3Common/b3Quaternion.h"
 #include "OpenGLWindow/b3gWindowInterface.h"
 #include "Bullet3OpenCL/BroadphaseCollision/b3GpuSapBroadphase.h"
+#include "Bullet3OpenCL/BroadphaseCollision/b3GpuGridBroadphase.h"
+
 #include "../GpuDemoInternalData.h"
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 #include "OpenGLWindow/OpenGLInclude.h"
@@ -14,15 +16,16 @@
 #include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
 #include "GpuRigidBodyDemoInternalData.h"
 #include "Bullet3Collision/BroadPhaseCollision/b3DynamicBvhBroadphase.h"
-#include "Bullet3Collision/NarrowPhaseCollision/b3RigidBodyCL.h"
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3RigidBodyData.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhaseInternalData.h"
 
+#include "OpenGLWindow/GLPrimitiveRenderer.h"
 
 static b3KeyboardCallback oldCallback = 0;
 extern bool gReset;
-
+bool useUniformGrid = false;
 bool convertOnCpu = false;
-
+static bool sShowShadowMap = true;
 #define MSTRINGIFY(A) #A
 
 static const char* s_rigidBodyKernelString = MSTRINGIFY(
@@ -101,7 +104,7 @@ void	GpuRigidBodyDemo::initPhysics(const ConstructionInfo& ci)
 	}
 
 	m_instancingRenderer = ci.m_instancingRenderer;
-
+	m_primRenderer = ci.m_primRenderer;
 	initCL(ci.preferredOpenCLDeviceIndex,ci.preferredOpenCLPlatformIndex);
 
 	if (m_clData->m_clContext)
@@ -113,12 +116,21 @@ void	GpuRigidBodyDemo::initPhysics(const ConstructionInfo& ci)
 		
 		m_data->m_config.m_maxConvexBodies = b3Max(m_data->m_config.m_maxConvexBodies,ci.arraySizeX*ci.arraySizeY*ci.arraySizeZ+10);
 		m_data->m_config.m_maxConvexShapes = m_data->m_config.m_maxConvexBodies;
-		m_data->m_config.m_maxBroadphasePairs = 16*m_data->m_config.m_maxConvexBodies;
+		int maxPairsPerBody = 16;
+		m_data->m_config.m_maxBroadphasePairs = maxPairsPerBody*m_data->m_config.m_maxConvexBodies;
 		m_data->m_config.m_maxContactCapacity = m_data->m_config.m_maxBroadphasePairs;
 		
 
 		b3GpuNarrowPhase* np = new b3GpuNarrowPhase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue,m_data->m_config);
-		b3GpuSapBroadphase* bp = new b3GpuSapBroadphase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
+		b3GpuBroadphaseInterface* bp =0;
+
+		if (useUniformGrid)
+		{
+			bp = new b3GpuGridBroadphase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
+		} else
+		{
+			bp = new b3GpuSapBroadphase(m_clData->m_clContext,m_clData->m_clDevice,m_clData->m_clQueue);
+		}
 		m_data->m_np = np;
 		m_data->m_bp = bp;
 		m_data->m_broadphaseDbvt = new b3DynamicBvhBroadphase(m_data->m_config.m_maxConvexBodies);
@@ -164,6 +176,23 @@ void	GpuRigidBodyDemo::exitPhysics()
 void GpuRigidBodyDemo::renderScene()
 {
 	m_instancingRenderer->renderScene();
+	if (sShowShadowMap)
+	{
+		glDisable(GL_DEPTH_TEST);
+
+			float borderColor[4]={0,0,0,1};
+			m_primRenderer->drawRect(9,29,191,211,borderColor);
+			float color[4]={1,1,1,1};
+			//m_shadowData->m_instancingRenderer->renderScene();
+			m_instancingRenderer->enableShadowMap();
+			glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE );
+		//	glTexParameteri( GL_TEXTURE_2D, GL_DEPTH_TEXTURE_MODE, GL_LUMINANCE );
+			m_primRenderer->drawTexturedRect(10,30,190,210,color,0,0,1,1,true);
+			glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+			glEnable(GL_DEPTH_TEST);
+
+	}
+
 }
 
 void GpuRigidBodyDemo::clientMoveAndDisplay()
@@ -240,7 +269,7 @@ void GpuRigidBodyDemo::clientMoveAndDisplay()
 			B3_PROFILE("cl2gl_convert");
 			int ciErrNum = 0;
 			cl_mem bodies = m_data->m_rigidBodyPipeline->getBodyBuffer();
-			b3LauncherCL launch(m_clData->m_clQueue,m_data->m_copyTransformsToVBOKernel);
+			b3LauncherCL launch(m_clData->m_clQueue,m_data->m_copyTransformsToVBOKernel,"m_copyTransformsToVBOKernel");
 			launch.setBuffer(bodies);
 			launch.setBuffer(m_data->m_instancePosOrnColor->getBufferCL());
 			launch.setConst(numObjects);
@@ -419,6 +448,8 @@ bool	GpuRigidBodyDemo::mouseButtonCallback(int button, int state, float x, float
 						b3Quaternion orn(0,0,0,1);
 						int fixedSphere = m_data->m_np->registerConvexHullShape(0,0,0,0);//>registerSphereShape(0.1);
 						m_data->m_pickFixedBody = m_data->m_rigidBodyPipeline->registerPhysicsInstance(0,pos,orn,fixedSphere,0,false);
+						m_data->m_rigidBodyPipeline->writeAllInstancesToGpu();
+						m_data->m_bp->writeAabbsToGpu();
 					
 						if (m_data->m_pickGraphicsShapeIndex<0)
 						{
@@ -426,6 +457,7 @@ bool	GpuRigidBodyDemo::mouseButtonCallback(int button, int state, float x, float
 							int numVertices = sizeof(point_sphere_vertices)/strideInBytes;
 							int numIndices = sizeof(point_sphere_indices)/sizeof(int);
 							m_data->m_pickGraphicsShapeIndex = m_instancingRenderer->registerShape(&point_sphere_vertices[0],numVertices,point_sphere_indices,numIndices,B3_GL_POINTS);
+							
 							float color[4] ={1,0,0,1};
 							float scaling[4]={1,1,1,1};
 

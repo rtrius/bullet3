@@ -36,7 +36,7 @@ bool gDebugSkipLoadingBinary = false;
 #define B3_MAX_CL_DEVICES 16 //who needs 16 devices?
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #endif
 
 #include <assert.h>
@@ -79,20 +79,19 @@ void MyFatalBreakAPPLE(   const char *  errstr ,
                        size_t        cb ,
                        void *        user_data  )
 {
-    b3Error("Error: %s\n", errstr);
+   
 
     const char* patloc = strstr(errstr, "Warning");
     //find out if it is a warning or error, exit if error
 
     if (patloc)
     {
-        b3Warning("warning\n");
+		b3Warning("Warning: %s\n", errstr);
     } else
     {
-        b3Error("error\n");
+		b3Error("Error: %s\n", errstr);
         b3Assert(0);
     }
-
 
 }
 
@@ -597,7 +596,7 @@ cl_program b3OpenCLUtils_compileCLProgramFromString(cl_context clContext, cl_dev
 
 	if (disableBinaryCaching)
 	{
-		kernelSourceOrg = 0;
+		//kernelSourceOrg = 0;
 	}
 
 	cl_program m_cpProgram=0;

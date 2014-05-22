@@ -1,5 +1,16 @@
 Bullet 3.x GPU rigid body pipeline using OpenCL.
 
+Note that the Bullet 2.x svn repository from http://bullet.googlecode.com
+is being merged into this repository. 
+
+1) The old Bullet2 demos are moved from ObsoleteDemos to AllBullet2Demos
+2) A new Bullet 3 API is created
+3) All Bullet2 functionality is added to Bullet 3
+Until this is done, you can use the Demos3/BasicGpuDemo/b3GpuDynamicsWorld
+or explore the Demos3/GpuDemos to check out Bullet 3.
+
+You can still use svn or svn externals using the github git repository: use svn co https://github.com/erwincoumans/bullet3/trunk
+
 The entire collision detection and rigid body dynamics is executed on the GPU.
 
 Requirements:
@@ -60,6 +71,15 @@ There are some command-line options, you can see using the --help option. For ex
 [--x_dim=<int>]                     Change default demo settings (x,y,z)
 [--pair_benchmark_file=<filename>]  Load AABB's from disk for the PairBench
 [--no_instanced_collision_shapes]   Disable collision shape instancing (for tests)
+[--no_shadow_map]                   Disable shadowmap rendering
+[--shadowmap_resolution=<int>]      Change the resolution of the shadowmap
+[--shadowmap_size=<int>]            Change the worldspace size of the shadowmap
+[--use_uniform_grid]                Use uniform grid broadphase (no all scenes work)
+[--use_jacobi]                      Use GPU parallel Jacobi solver (instead of PGS)
+[--use_large_batches]               Use a different strategy for the constrains solver
+[--debug_kernel_launch]             Show debug info at start/end of each kernel launch
+[--use_dbvt]                        Use the CPU dynamic BVH tree broadphase
+[--allow_opencl_cpu]                Allow to use an OpenCL CPU device
 
 
 You can use mouse picking to grab objects. When holding the ALT of CONTROL key, you have Maya style camera mouse controls.

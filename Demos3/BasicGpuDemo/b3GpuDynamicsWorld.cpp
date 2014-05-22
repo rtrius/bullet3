@@ -13,6 +13,7 @@
 #include "BulletDynamics/ConstraintSolver/btGeneric6DofConstraint.h"
 
 #include "LinearMath/btQuickprof.h"
+//#include "Bullet3Common/b3Logging.h"
 #include "Bullet3OpenCL/BroadphaseCollision/b3GpuSapBroadphase.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuRigidBodyPipeline.h"
@@ -20,7 +21,6 @@
 #include "Bullet3Dynamics/ConstraintSolver/b3Generic6DofConstraint.h"
 
 #include "Bullet3Collision/NarrowPhaseCollision/b3RigidBodyCL.h"
-#include "Bullet3Common/b3Logging.h"
 
 
 #ifdef _WIN32
@@ -28,9 +28,9 @@
 #endif
 
 
-#if (BT_BULLET_VERSION >= 282)
-#define BT_USE_BODY_UPDATE_REVISION
-#endif
+//#if (BT_BULLET_VERSION >= 282)
+//#define BT_USE_BODY_UPDATE_REVISION
+//#endif
 
 
 b3GpuDynamicsWorld::b3GpuDynamicsWorld(class b3GpuSapBroadphase* bp,class b3GpuNarrowPhase* np, class b3GpuRigidBodyPipeline* rigidBodyPipeline)
@@ -54,7 +54,7 @@ b3GpuDynamicsWorld::~b3GpuDynamicsWorld()
 }
 
 
-
+#include <windows.h>
 
 int		b3GpuDynamicsWorld::stepSimulation( btScalar timeStepUnused, int maxSubStepsUnused, btScalar fixedTimeStep)
 {
@@ -62,10 +62,7 @@ int		b3GpuDynamicsWorld::stepSimulation( btScalar timeStepUnused, int maxSubStep
 	///Please use the CPU version in btDiscreteDynamicsWorld if you don't like this
 		
 
-#ifndef BT_NO_PROFILE
 	CProfileManager::Reset();
-#endif //BT_NO_PROFILE
-
 
 	BT_PROFILE("stepSimulation");
 
@@ -97,7 +94,7 @@ int		b3GpuDynamicsWorld::stepSimulation( btScalar timeStepUnused, int maxSubStep
 					{
 						btGeneric6DofConstraint* dof2  = (btGeneric6DofConstraint*) constraint;
 						b3Generic6DofConstraint* dof3  = (b3Generic6DofConstraint*) c;
-						const b3RigidBodyCL* bodiesCL = m_np->getBodiesCpu();
+						const b3RigidBodyData* bodiesCL = m_np->getBodiesCpu();
 
 						b3Transform frameInA = (b3Transform&) dof2->getFrameOffsetA();
 						b3Transform frameInB = (b3Transform&) dof2->getFrameOffsetB();
@@ -115,13 +112,13 @@ int		b3GpuDynamicsWorld::stepSimulation( btScalar timeStepUnused, int maxSubStep
 	
 	// detect any change (very simple)
 	{
-		BT_PROFILE("body update revision detection (CPU)");
+		B3_PROFILE("body update revision detection (CPU)");
 #ifdef BT_USE_BODY_UPDATE_REVISION
 		b3Assert(m_bodyUpdateRevisions.size() == m_collisionObjects.size());
 		b3Assert(m_np->getNumRigidBodies() == m_bodyUpdateRevisions.size());
 #endif //BT_USE_BODY_UPDATE_REVISION
 
-		
+		 b3RigidBodyData* bodiesCL = (b3RigidBodyData*)m_np->getBodiesCpu();
 		for (int i=0;i<this->m_collisionObjects.size();i++)
 		{
 			if (i>=m_np->getNumRigidBodies())
@@ -196,7 +193,7 @@ int		b3GpuDynamicsWorld::stepSimulation( btScalar timeStepUnused, int maxSubStep
 	{
 		BT_PROFILE("scatter transforms into rigidbody (CPU)");
 			
-		const b3RigidBodyCL* bodiesCL = m_np->getBodiesCpu();
+		const b3RigidBodyData* bodiesCL = m_np->getBodiesCpu();
 
 		for (int i=0;i<this->m_collisionObjects.size();i++)
 		{
@@ -233,13 +230,16 @@ int		b3GpuDynamicsWorld::stepSimulation( btScalar timeStepUnused, int maxSubStep
 		}
 	}
 
-	clearForces();
-	
+	{
+		B3_PROFILE("clearForces");
+		clearForces();
+	}
 
-#ifndef B3_NO_PROFILE
+#ifndef BT_NO_PROFILE
 	CProfileManager::Increment_Frame_Counter();
-#endif //B3_NO_PROFILE
-
+//	CProfileManager::dumpAll();
+#endif //BT_NO_PROFILE
+	
 
 	return 1;
 }
@@ -491,6 +491,35 @@ void	b3GpuDynamicsWorld::removeRigidBody(btRigidBody* colObj)
 }
 
 
+void b3GpuDynamicsWorld::reset()
+{
+	m_staticBody = 0;
+
+	if (m_collisionObjects.size())
+		b3Warning("m_collisionObjects should be empty before calling b3GpuDynamicsWorld::reset");
+	m_collisionObjects.clear();
+	if (m_bodyUpdateRevisions.size())
+		b3Warning("world (m_bodyUpdateRevisions) should be empty before calling b3GpuDynamicsWorld::reset");
+	m_bodyUpdateRevisions.clear();
+	
+	if (m_constraints.size())
+		b3Warning("m_constraints should be empty before calling b3GpuDynamicsWorld::reset");
+	m_constraints.clear();
+
+
+	m_uniqueShapes.resize(0);
+	m_uniqueShapeMapping.resize(0);
+	m_np->reset();
+	m_bp->reset();
+	m_rigidBodyPipeline->reset();
+#ifdef BT_USE_BODY_UPDATE_REVISION
+	m_bodyUpdateRevisions.resize(0);
+#endif
+
+	btConvexHullShape* nullShape = new btConvexHullShape();
+	m_staticBody = new btRigidBody(0,0,nullShape);
+	addRigidBody(m_staticBody,0,0);
+}
 
 void	b3GpuDynamicsWorld::removeCollisionObject(btCollisionObject* colObj)
 {
@@ -503,14 +532,7 @@ void	b3GpuDynamicsWorld::removeCollisionObject(btCollisionObject* colObj)
 	}
 	if (getNumCollisionObjects()==0)
 	{
-		m_uniqueShapes.resize(0);
-		m_uniqueShapeMapping.resize(0);
-		m_np->reset();
-		m_bp->reset();
-		m_rigidBodyPipeline->reset();
-#ifdef BT_USE_BODY_UPDATE_REVISION
-		m_bodyUpdateRevisions.resize(0);
-#endif
+		reset();
 	}
 
 }
@@ -613,7 +635,7 @@ void	b3GpuDynamicsWorld::addConstraint(btTypedConstraint* constraint, bool disab
 	case D6_CONSTRAINT_TYPE:
 		{
 			btGeneric6DofConstraint* dof2  = (btGeneric6DofConstraint*) constraint;
-			const b3RigidBodyCL* bodiesCL = m_np->getBodiesCpu();
+			const b3RigidBodyData* bodiesCL = m_np->getBodiesCpu();
 
 			int rbA = dof2->getRigidBodyA().getUserIndex();
 			int rbB = dof2->getRigidBodyB().getUserIndex();

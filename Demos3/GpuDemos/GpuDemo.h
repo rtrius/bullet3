@@ -77,8 +77,8 @@ public:
 	
 	virtual void clientMoveAndDisplay()=0;
 
-	virtual void resize(int width, int height) {}
-	
+	unsigned char* loadImage(const char* fileName, int& width, int& height, int& n);
+
 	int	registerGraphicsSphereShape(const ConstructionInfo& ci, float radius, bool usePointSprites=true, int largeSphereThreshold=100, int mediumSphereThreshold=10);
 
 	struct GpuDemoInternalData*	getInternalData();

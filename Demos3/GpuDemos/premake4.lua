@@ -67,6 +67,23 @@ function createProject(vendor)
 			"../../btgui/Timing/b3Clock.h",
 		}
 
+	if _OPTIONS["midi"] then
+		if os.is("Windows") then
+			files {"../../btgui/MidiTest/RtMidi.cpp"}
+			links {"winmm"}
+			defines {"__WINDOWS_MM__", "WIN32","B3_USE_MIDI"}
+		end
+	
+		if os.is("Linux") then 
+		end
+	
+		if os.is("MacOSX") then
+			files {"../../btgui/MidiTest/RtMidi.cpp"}
+			links{"CoreAudio.framework", "coreMIDI.framework", "Cocoa.framework"}
+			defines {"__MACOSX_CORE__","B3_USE_MIDI"}
+		end
+	end
+	
 		if os.is("Windows") then 
 			files{  
 				"../../btgui/OpenGLWindow/Win32OpenGLWindow.cpp",
@@ -76,7 +93,7 @@ function createProject(vendor)
 			}
 		end
 		if os.is("Linux") then
-			links{"X11"}
+			links{"X11","pthread"}
 			files {
 				"../../btgui/OpenGLWindow/X11OpenGLWindow.cpp",
 				"../../btgui/OpenGLWindow/X11OpenGLWindows.h"

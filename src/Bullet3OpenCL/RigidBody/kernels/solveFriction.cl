@@ -430,7 +430,8 @@ void BatchSolveKernelFriction(__global Body* gBodies,
                       __global Constraint4* gConstraints,
                       __global int* gN,
                       __global int* gOffsets,
-                       int maxBatch,
+                      __global int* batchSizes,
+                       int maxBatch1,
                        int cellBatch,
                        int4 nSplit
                       )
@@ -457,6 +458,8 @@ void BatchSolveKernelFriction(__global Body* gBodies,
 	
 	if( gN[cellIdx] == 0 ) 
 		return;
+
+	int maxBatch = batchSizes[cellIdx];
 
 	const int start = gOffsets[cellIdx];
 	const int end = start + gN[cellIdx];
@@ -497,4 +500,28 @@ void BatchSolveKernelFriction(__global Body* gBodies,
 	}
 	
     
+}
+
+
+
+
+
+
+__kernel void solveSingleFrictionKernel(__global Body* gBodies,
+                      __global Shape* gShapes,
+                      __global Constraint4* gConstraints,
+                       int cellIdx,
+                       int batchOffset,
+                       int numConstraintsInBatch
+                      )
+{
+
+	int index = get_global_id(0);
+	if (index < numConstraintsInBatch)
+	{
+		
+		int idx=batchOffset+index;
+	
+		solveFrictionConstraint( gBodies, gShapes, &gConstraints[idx] );
+	}    
 }

@@ -401,7 +401,8 @@ void BatchSolveKernelContact(__global Body* gBodies,
                       __global Constraint4* gConstraints,
                       __global int* gN,
                       __global int* gOffsets,
-                       int maxBatch,
+                      __global	int* batchSizes,
+                       int maxBatch1,
                        int cellBatch,
                        int4 nSplit
                       )
@@ -418,6 +419,8 @@ void BatchSolveKernelContact(__global Body* gBodies,
 //	debugInfo[gIdx].m_valInt0 = gIdx;
 	//debugInfo[gIdx].m_valInt1 = GET_GROUP_SIZE;
 
+	
+	
 
 	int zIdx = (wgIdx/((nSplit.x*nSplit.y)/4))*2+((cellBatch&4)>>2);
 	int remain= (wgIdx%((nSplit.x*nSplit.y)/4));
@@ -432,6 +435,7 @@ void BatchSolveKernelContact(__global Body* gBodies,
 	if( gN[cellIdx] == 0 ) 
 		return;
 
+	int maxBatch = batchSizes[cellIdx];
 	
 	
 	const int start = gOffsets[cellIdx];
@@ -475,4 +479,23 @@ void BatchSolveKernelContact(__global Body* gBodies,
 	}
 	
     
+}
+
+
+
+__kernel void solveSingleContactKernel(__global Body* gBodies,
+                      __global Shape* gShapes,
+                      __global Constraint4* gConstraints,
+                       int cellIdx,
+                       int batchOffset,
+                       int numConstraintsInBatch
+                      )
+{
+
+	int index = get_global_id(0);
+	if (index < numConstraintsInBatch)
+	{
+		int idx=batchOffset+index;
+		solveContactConstraint( gBodies, gShapes, &gConstraints[idx] );
+	}    
 }

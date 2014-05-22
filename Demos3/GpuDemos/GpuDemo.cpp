@@ -4,7 +4,9 @@
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 #include "OpenGLWindow/ShapeData.h"
 #include "OpenGLWindow/GLInstancingRenderer.h"
-
+#include "OpenGLWindow/OpenGLInclude.h"
+bool gAllowCpuOpenCL = false;
+#include "stb_image/stb_image.h"
 GpuDemo::GpuDemo()
 :m_clData(0)
 {
@@ -32,6 +34,8 @@ void GpuDemo::exitCL()
 	
 }
 
+
+
 void GpuDemo::initCL(int preferredDeviceIndex, int preferredPlatformIndex)
 {
 	void* glCtx=0;
@@ -40,12 +44,11 @@ void GpuDemo::initCL(int preferredDeviceIndex, int preferredPlatformIndex)
 	
     
 	int ciErrNum = 0;
-	//#ifdef CL_PLATFORM_INTEL
-	//cl_device_type deviceType = CL_DEVICE_TYPE_ALL;
-	//#else
+
 	cl_device_type deviceType = CL_DEVICE_TYPE_GPU;
-	//#endif
-	
+	if (gAllowCpuOpenCL)
+		deviceType = CL_DEVICE_TYPE_ALL;
+
 	
 	
 	//	if (useInterop)
@@ -118,4 +121,11 @@ int	GpuDemo::registerGraphicsSphereShape(const ConstructionInfo& ci, float radiu
 		}
 	}
 	return graphicsShapeIndex;
+}
+
+
+unsigned char* GpuDemo::loadImage(const char* fileName, int& width, int& height, int& n)
+{
+		unsigned char *data = stbi_load(fileName, &width, &height, &n, 0);
+		return data;
 }
