@@ -158,9 +158,7 @@ public:
 	virtual void clientMoveAndDisplay()
 	{
 		RigidBodyGpuData rbData;
-
-		//	fix
-		//rbData.load(m_data->m_bp, m_data->m_np);
+		rbData.load(m_data->m_bp, m_data->m_np);
 		
 		m_solver->stepSimulation(m_sphFluid, rbData);
 		

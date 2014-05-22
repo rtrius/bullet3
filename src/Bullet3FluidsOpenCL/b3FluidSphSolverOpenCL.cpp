@@ -241,9 +241,8 @@ void b3FluidSphSolverOpenCL::stepSimulation(b3FluidSph* fluid, RigidBodyGpuData&
 			launcher.launch1D(numFluidParticles);
 		}
 		
-		//	fix
-		//if(!USE_HASH_GRID) m_fluidRigidInteractor.interact(fluidDataCL, gridDataCL, 0, rbData);
-		//else m_fluidRigidInteractor.interact(fluidDataCL, 0, hashGridDataCL, rbData);
+		if(!USE_HASH_GRID) m_fluidRigidInteractor.interact(fluidDataCL, gridDataCL, 0, rbData);
+		else m_fluidRigidInteractor.interact(fluidDataCL, 0, hashGridDataCL, rbData);
 		
 		{
 			b3BufferInfoCL bufferInfo[] = 

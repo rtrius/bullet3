@@ -59,16 +59,15 @@ struct RigidBodyGpuData
 	int m_numGpuChildShapes;
 	cl_mem m_gpuChildShapes; 		//b3GpuChildShape
 	
-	void load(b3GpuSapBroadphase* broadphase, b3GpuNarrowPhase* narrowPhase)
+	void load(b3GpuBroadphaseInterface* broadphase, b3GpuNarrowPhase* narrowPhase)
 	{
 		m_numRigidBodies = narrowPhase->getNumBodiesGpu();
 		m_numRigidBodyInertias = narrowPhase->getNumBodyInertiasGpu();
-
-		//	fix
-		//m_numWorldSpaceAabbs = broadphase->getNumAabbWS();
+		
+		m_numWorldSpaceAabbs = broadphase->getAllAabbsGPU().size();
 		m_rigidBodies = narrowPhase->getBodiesGpu();
 		m_rigidBodyInertias = narrowPhase->getBodyInertiasGpu();
-		m_worldSpaceAabbs = broadphase->getAabbBufferWS();		//if useDbvt == true in b3GpuRigidBodyPipeline.cpp this is incorrect
+		m_worldSpaceAabbs = broadphase->getAllAabbsGPU().getBufferCL();		//if useDbvt == true in b3GpuRigidBodyPipeline.cpp this is incorrect
 		
 		m_numCollidables = narrowPhase->getNumCollidablesGpu();
 		m_collidables = narrowPhase->getCollidablesGpu();
