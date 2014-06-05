@@ -94,7 +94,6 @@ void	btSoftBody::initDefaults()
 	m_pose.m_com		=	btVector3(0,0,0);
 	m_pose.m_rot.setIdentity();
 	m_pose.m_scl.setIdentity();
-	m_tag				=	0;
 	m_timeacc			=	0;
 	m_bUpdateRtCst		=	true;
 	m_bounds[0]			=	btVector3(0,0,0);
@@ -180,60 +179,6 @@ btSoftBody::Material*		btSoftBody::appendMaterial()
 		ZeroInitialize(*pm);
 	m_materials.push_back(pm);
 	return(pm);
-}
-
-//
-void			btSoftBody::appendNote(	const char* text,
-									   const btVector3& o,
-									   const btVector4& c,
-									   Node* n0,
-									   Node* n1,
-									   Node* n2,
-									   Node* n3)
-{
-	Note	n;
-	ZeroInitialize(n);
-	n.m_rank		=	0;
-	n.m_text		=	text;
-	n.m_offset		=	o;
-	n.m_coords[0]	=	c.x();
-	n.m_coords[1]	=	c.y();
-	n.m_coords[2]	=	c.z();
-	n.m_coords[3]	=	c.w();
-	n.m_nodes[0]	=	n0;n.m_rank+=n0?1:0;
-	n.m_nodes[1]	=	n1;n.m_rank+=n1?1:0;
-	n.m_nodes[2]	=	n2;n.m_rank+=n2?1:0;
-	n.m_nodes[3]	=	n3;n.m_rank+=n3?1:0;
-	m_notes.push_back(n);
-}
-
-//
-void			btSoftBody::appendNote(	const char* text,
-									   const btVector3& o,
-									   Node* feature)
-{
-	appendNote(text,o,btVector4(1,0,0,0),feature);
-}
-
-//
-void			btSoftBody::appendNote(	const char* text,
-									   const btVector3& o,
-									   Link* feature)
-{
-	static const btScalar	w=1/(btScalar)2;
-	appendNote(text,o,btVector4(w,w,0,0),	feature->m_n[0],
-		feature->m_n[1]);
-}
-
-//
-void			btSoftBody::appendNote(	const char* text,
-									   const btVector3& o,
-									   Face* feature)
-{
-	static const btScalar	w=1/(btScalar)3;
-	appendNote(text,o,btVector4(w,w,w,0),	feature->m_n[0],
-		feature->m_n[1],
-		feature->m_n[2]);
 }
 
 //
@@ -2084,13 +2029,6 @@ void				btSoftBody::pointersToIndices()
 	{
 		m_anchors[i].m_node=PTR2IDX(m_anchors[i].m_node,base);
 	}
-	for(i=0,ni=m_notes.size();i<ni;++i)
-	{
-		for(int j=0;j<m_notes[i].m_rank;++j)
-		{
-			m_notes[i].m_nodes[j]=PTR2IDX(m_notes[i].m_nodes[j],base);
-		}
-	}
 #undef	PTR2IDX
 }
 
@@ -2127,13 +2065,6 @@ void				btSoftBody::indicesToPointers(const int* map)
 	for(i=0,ni=m_anchors.size();i<ni;++i)
 	{
 		m_anchors[i].m_node=IDX2PTR(m_anchors[i].m_node,base);
-	}
-	for(i=0,ni=m_notes.size();i<ni;++i)
-	{
-		for(int j=0;j<m_notes[i].m_rank;++j)
-		{
-			m_notes[i].m_nodes[j]=IDX2PTR(m_notes[i].m_nodes[j],base);
-		}
 	}
 #undef	IDX2PTR
 }

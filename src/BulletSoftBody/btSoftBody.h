@@ -162,9 +162,6 @@ public:
 
 	// Internal types
 
-	typedef btAlignedObjectArray<btScalar>	tScalarArray;
-	typedef btAlignedObjectArray<btVector3>	tVector3Array;
-
 	/// sCti is Softbody contact info
 	struct	sCti
 	{
@@ -277,22 +274,13 @@ public:
 		btScalar				m_c2;			// ima*dt
 	};
 	
-	struct	Note : Element
-	{
-		const char*				m_text;			// Text
-		btVector3				m_offset;		// Offset
-		int						m_rank;			// Rank
-		Node*					m_nodes[4];		// Nodes
-		btScalar				m_coords[4];	// Coordinates
-	};	
-	
 	struct	Pose
 	{
 		bool					m_bvolume;		// Is valid
 		bool					m_bframe;		// Is frame
 		btScalar				m_volume;		// Rest volume
-		tVector3Array			m_pos;			// Reference positions
-		tScalarArray			m_wgh;			// Weights
+		btAlignedObjectArray<btVector3>			m_pos;			// Reference positions
+		btAlignedObjectArray<btScalar>			m_wgh;			// Weights
 		btVector3				m_com;			// COM
 		btMatrix3x3				m_rot;			// Rotation
 		btMatrix3x3				m_scl;			// Scale
@@ -301,9 +289,9 @@ public:
 	
 	struct	Cluster
 	{
-		tScalarArray				m_masses;
+		btAlignedObjectArray<btScalar>				m_masses;
 		btAlignedObjectArray<Node*>	m_nodes;		
-		tVector3Array				m_framerefs;
+		btAlignedObjectArray<btVector3>				m_framerefs;
 		btTransform					m_framexform;
 		btScalar					m_idmass;
 		btScalar					m_imass;
@@ -606,50 +594,33 @@ public:
 			btScalar maxt=SIMD_INFINITY);
 	};
 
-	// Typedefs
-
-	typedef void 				(*psolver_t)(btSoftBody*,btScalar,btScalar);
-	typedef void 				(*vsolver_t)(btSoftBody*,btScalar);
-	typedef btAlignedObjectArray<Cluster*>		tClusterArray;
-	typedef btAlignedObjectArray<Note>			tNoteArray;
-	typedef btAlignedObjectArray<Node>			tNodeArray;
-	typedef btAlignedObjectArray<btDbvtNode*>	tLeafArray;
-	typedef btAlignedObjectArray<Link>			tLinkArray;
-	typedef btAlignedObjectArray<Face>			tFaceArray;
-	typedef btAlignedObjectArray<Tetra>			tTetraArray;
-	typedef btAlignedObjectArray<Anchor>		tAnchorArray;
-	typedef btAlignedObjectArray<RContact>		tRContactArray;
-	typedef btAlignedObjectArray<SContact>		tSContactArray;
-	typedef btAlignedObjectArray<Material*>		tMaterialArray;
-	typedef btAlignedObjectArray<Joint*>		tJointArray;
-	typedef btAlignedObjectArray<btSoftBody*>	tSoftBodyArray;	
+	typedef void (*psolver_t)(btSoftBody*,btScalar,btScalar);
+	typedef void (*vsolver_t)(btSoftBody*,btScalar);
 
 	// Fields
 
 	Config					m_cfg;			// Configuration
 	SolverState				m_sst;			// Solver state
 	Pose					m_pose;			// Pose
-	void*					m_tag;			// User data
 	btSoftBodyWorldInfo*	m_worldInfo;	// World info
-	tNoteArray				m_notes;		// Notes
-	tNodeArray				m_nodes;		// Nodes
-	tLinkArray				m_links;		// Links
-	tFaceArray				m_faces;		// Faces
-	tTetraArray				m_tetras;		// Tetras
-	tAnchorArray			m_anchors;		// Anchors
-	tRContactArray			m_rcontacts;	// Rigid contacts
-	tSContactArray			m_scontacts;	// Soft contacts
-	tJointArray				m_joints;		// Joints
-	tMaterialArray			m_materials;	// Materials
+	btAlignedObjectArray<Node>				m_nodes;
+	btAlignedObjectArray<Link>				m_links;
+	btAlignedObjectArray<Face>				m_faces;
+	btAlignedObjectArray<Tetra>				m_tetras;
+	btAlignedObjectArray<Anchor>			m_anchors;
+	btAlignedObjectArray<RContact>			m_rcontacts;	// Rigid contacts
+	btAlignedObjectArray<SContact>			m_scontacts;	// Soft contacts
+	btAlignedObjectArray<Joint*>				m_joints;
+	btAlignedObjectArray<Material*>				m_materials;
 	btScalar				m_timeacc;		// Time accumulator
 	btVector3				m_bounds[2];	// Spatial bounds	
 	bool					m_bUpdateRtCst;	// Update runtime constants
 	btDbvt					m_ndbvt;		// Nodes tree
 	btDbvt					m_fdbvt;		// Faces tree
 	btDbvt					m_cdbvt;		// Clusters tree
-	tClusterArray			m_clusters;		// Clusters
+	btAlignedObjectArray<Cluster*>			m_clusters;
 
-	btAlignedObjectArray<bool>m_clusterConnectivity;//cluster connectivity, for self-collision
+	btAlignedObjectArray<bool> m_clusterConnectivity;//cluster connectivity, for self-collision
 
 	btTransform			m_initialWorldTransform;
 	btVector3			m_windVelocity;
@@ -677,11 +648,6 @@ public:
 	
 	Material* appendMaterial();
 	
-	void appendNote(const char* text, const btVector3& o, const btVector4& c=btVector4(1,0,0,0), Node* n0=0, Node* n1=0, Node* n2=0, Node* n3=0);
-	void appendNote(const char* text, const btVector3& o, Node* feature);
-	void appendNote(const char* text, const btVector3& o, Link* feature);
-	void appendNote(const char* text, const btVector3& o, Face* feature);
-		
 	void appendNode(const btVector3& x,btScalar m);
 	
 	void appendLink(int model=-1,Material* mat=0);

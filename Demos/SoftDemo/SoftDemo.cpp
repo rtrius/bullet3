@@ -1770,7 +1770,7 @@ void	SoftDemo::renderme()
 	btVector3	ps(0,0,0);
 	int			nps=0;
 
-	btSoftBodyArray&	sbs=getSoftDynamicsWorld()->getSoftBodyArray();
+	btAlignedObjectArray<btSoftBody*>&	sbs=getSoftDynamicsWorld()->getSoftBodyArray();
 	for(int ib=0;ib<sbs.size();++ib)
 	{
 		btSoftBody*	psb=sbs[ib];
@@ -1958,7 +1958,7 @@ void	SoftDemo::keyboardCallback(unsigned char key, int x, int y)
 	case	'c':	getSoftDynamicsWorld()->setDrawFlags(getSoftDynamicsWorld()->getDrawFlags()^fDrawFlags::Clusters);break;
 	case	'`':
 		{
-			btSoftBodyArray&	sbs=getSoftDynamicsWorld()->getSoftBodyArray();
+			btAlignedObjectArray<btSoftBody*>&	sbs=getSoftDynamicsWorld()->getSoftBodyArray();
 			for(int ib=0;ib<sbs.size();++ib)
 			{
 				btSoftBody*	psb=sbs[ib];
@@ -2012,7 +2012,7 @@ void	SoftDemo::mouseFunc(int button, int state, int x, int y)
 					const btVector3			rayFrom=m_cameraPosition;
 					const btVector3			rayTo=getRayTo(x,y);
 					const btVector3			rayDir=(rayTo-rayFrom).normalized();
-					btSoftBodyArray&		sbs=getSoftDynamicsWorld()->getSoftBodyArray();
+					btAlignedObjectArray<btSoftBody*>&		sbs=getSoftDynamicsWorld()->getSoftBodyArray();
 					for(int ib=0;ib<sbs.size();++ib)
 					{
 						btSoftBody*				psb=sbs[ib];

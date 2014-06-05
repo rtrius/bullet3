@@ -19,14 +19,12 @@ subject to the following restrictions:
 #include "BulletDynamics/Dynamics/btDiscreteDynamicsWorld.h"
 #include "btSoftBody.h"
 
-typedef	btAlignedObjectArray<btSoftBody*> btSoftBodyArray;
-
 class btSoftBodySolver;
 
 class btSoftRigidDynamicsWorld : public btDiscreteDynamicsWorld
 {
 
-	btSoftBodyArray	m_softBodies;
+	btAlignedObjectArray<btSoftBody*> m_softBodies;
 	int				m_drawFlags;
 	bool			m_drawNodeTree;
 	bool			m_drawFaceTree;
@@ -78,12 +76,12 @@ public:
 		return	BT_SOFT_RIGID_DYNAMICS_WORLD;
 	}
 
-	btSoftBodyArray& getSoftBodyArray()
+	btAlignedObjectArray<btSoftBody*>& getSoftBodyArray()
 	{
 		return m_softBodies;
 	}
 
-	const btSoftBodyArray& getSoftBodyArray() const
+	const btAlignedObjectArray<btSoftBody*>& getSoftBodyArray() const
 	{
 		return m_softBodies;
 	}

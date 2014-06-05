@@ -365,21 +365,6 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		}
 	}
 	
-
-	/* Notes	*/ 
-	if(0!=(drawflags&fDrawFlags::Notes))
-	{
-		for(i=0;i<psb->m_notes.size();++i)
-		{
-			const btSoftBody::Note&	n=psb->m_notes[i];
-			btVector3				p=n.m_offset;
-			for(int j=0;j<n.m_rank;++j)
-			{
-				p+=n.m_nodes[j]->m_x*n.m_coords[j];
-			}
-			idraw->draw3dText(p,n.m_text);
-		}
-	}
 	/* Node tree	*/ 
 	if(0!=(drawflags&fDrawFlags::NodeTree))		DrawNodeTree(psb,idraw);
 	/* Face tree	*/ 
