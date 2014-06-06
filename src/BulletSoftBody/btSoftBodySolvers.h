@@ -44,13 +44,9 @@ public:
 protected:
 	int m_numberOfPositionIterations;
 	int m_numberOfVelocityIterations;
-	// Simulation timescale
-	float m_timeScale;
 	
 public:
-	btSoftBodySolver() :
-		m_numberOfPositionIterations( 10 ),
-		m_timeScale( 1 )
+	btSoftBodySolver()
 	{
 		m_numberOfVelocityIterations = 0;
 		m_numberOfPositionIterations = 5;
@@ -114,11 +110,6 @@ public:
 		return m_numberOfVelocityIterations;
 	}
 
-	/** Return the timescale that the simulation is using */
-	float getTimeScale()
-	{
-		return m_timeScale;
-	}
 
 #if 0
 	/**

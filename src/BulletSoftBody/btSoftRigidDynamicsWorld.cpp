@@ -117,7 +117,7 @@ void	btSoftRigidDynamicsWorld::solveSoftBodiesConstraints( btScalar timeStep )
 	}
 
 	// Solve constraints solver-wise
-	m_softBodySolver->solveConstraints( timeStep * m_softBodySolver->getTimeScale() );
+	m_softBodySolver->solveConstraints(timeStep);
 
 }
 

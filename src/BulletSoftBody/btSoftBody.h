@@ -94,16 +94,8 @@ public:
 		Default	=	SDF_RS,
 		END
 	};};
-
-	struct fMaterial { enum _ {
-		DebugDraw	=	0x0001,	/// Enable debug draw
-		
-		Default		=	DebugDraw,
-		END
-	};};
-
+	
 	// API Types
-
 	struct sRayCast
 	{
 		btSoftBody*	body;		/// soft body
@@ -138,7 +130,7 @@ public:
 		btScalar				m_kLST;			// Linear stiffness coefficient [0,1]
 		btScalar				m_kAST;			// Area/Angular stiffness coefficient [0,1]
 		btScalar				m_kVST;			// Volume stiffness coefficient [0,1]
-		int						m_flags;
+		bool					m_debugDraw;
 	};
 
 	
@@ -481,7 +473,6 @@ public:
 	
 	struct	Config
 	{
-		btScalar				kVCF;			// Velocities correction factor (Baumgarte)
 		btScalar				kDP;			// Damping coefficient [0,1]
 		btScalar				kPR;			// Pressure coefficient [-inf,+inf]
 		btScalar				kVC;			// Volume conversation coefficient [0,+inf]
@@ -498,7 +489,6 @@ public:
 		btScalar				kSK_SPLT_CL;	// Soft vs rigid impulse split [0,1] (cluster only)
 		btScalar				kSS_SPLT_CL;	// Soft vs rigid impulse split [0,1] (cluster only)
 		btScalar				maxvolume;		// Maximum volume ratio for pose
-		btScalar				timescale;		// Time scale
 		int						viterations;	// Velocities solver iterations
 		int						piterations;	// Positions solver iterations
 		int						citerations;	// Cluster solver iterations
@@ -507,8 +497,7 @@ public:
 	
 	struct	SolverState
 	{
-		btScalar				sdt;			// dt*timescale
-		btScalar				isdt;			// 1/sdt
+		btScalar				sdt;			// dt
 		btScalar				velmrg;			// velocity margin
 		btScalar				radmrg;			// radial margin
 		btScalar				updmrg;			// Update margin
@@ -534,9 +523,6 @@ public:
 			const btVector3& c,
 			btScalar maxt=SIMD_INFINITY);
 	};
-
-	typedef void (*psolver_t)(btSoftBody*,btScalar,btScalar);
-	typedef void (*vsolver_t)(btSoftBody*,btScalar);
 
 	// Fields
 
@@ -660,7 +646,6 @@ public:
 	void predictMotion(btScalar dt);
 	void solveConstraints();
 	static void solveClusters(const btAlignedObjectArray<btSoftBody*>& bodies);
-	void integrateMotion();
 	void defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap);
 	void defaultCollisionHandler(btSoftBody* psb);
 	

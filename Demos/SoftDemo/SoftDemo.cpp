@@ -645,7 +645,7 @@ static void	Init_Collide2(SoftDemo* pdemo)
 				BUNNY_NUM_TRIANGLES);
 			btSoftBody::Material*	pm=psb->appendMaterial();
 			pm->m_kLST				=	0.5;
-			pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;
+			pm->m_debugDraw = false;
 			psb->generateBendingConstraints(2,pm);
 			psb->m_cfg.piterations	=	2;
 			psb->m_cfg.kDF			=	0.5;
@@ -696,7 +696,7 @@ static void	Init_Collide3(SoftDemo* pdemo)
 			7,7,0,true);
 		btSoftBody::Material*	pm=psb->appendMaterial();
 		pm->m_kLST				=	0.1;
-		pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;
+		pm->m_debugDraw = false;
 		psb->generateBendingConstraints(2,pm);
 		psb->m_materials[0]->m_kLST	=	0.5;
 		psb->m_cfg.collisions		|=	btSoftBody::fCollision::VF_SS;
@@ -725,7 +725,7 @@ static void	Init_Aero(SoftDemo* pdemo)
 			segments,segments,
 			0,true);
 		btSoftBody::Material*	pm=psb->appendMaterial();
-		pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;
+		pm->m_debugDraw = false;
 		psb->generateBendingConstraints(2,pm);
 		psb->m_aeroForce.m_liftCoeff =	0.004;
 		psb->m_aeroForce.m_dragCoeff =	0.0003;
@@ -770,7 +770,7 @@ static void	Init_Aero2(SoftDemo* pdemo)
 		psb->getCollisionShape()->setMargin(0.5);
 		btSoftBody::Material* pm=psb->appendMaterial();
 		pm->m_kLST		=	0.0004;
-		pm->m_flags		-=	btSoftBody::fMaterial::DebugDraw;
+		pm->m_debugDraw = false;
 		psb->generateBendingConstraints(2,pm);
 		
 		psb->m_aeroForce.m_liftCoeff = 0.05;
@@ -940,7 +940,7 @@ static void	Init_Cloth(SoftDemo* pdemo)
 	psb->getCollisionShape()->setMargin(0.5);
 	btSoftBody::Material* pm=psb->appendMaterial();
 	pm->m_kLST		=	0.4;
-	pm->m_flags		-=	btSoftBody::fMaterial::DebugDraw;
+	pm->m_debugDraw = false;
 	psb->generateBendingConstraints(2,pm);
 	psb->setTotalMass(150);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
@@ -960,7 +960,7 @@ static void	Init_Bunny(SoftDemo* pdemo)
 		BUNNY_NUM_TRIANGLES);
 	btSoftBody::Material*	pm=psb->appendMaterial();
 	pm->m_kLST				=	0.5;
-	pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;
+	pm->m_debugDraw = false;
 	psb->generateBendingConstraints(2,pm);
 	psb->m_cfg.piterations	=	2;
 	psb->m_cfg.kDF			=	0.5;
@@ -1086,7 +1086,7 @@ static btSoftBody*	Ctor_ClusterBunny(SoftDemo* pdemo,const btVector3& x,const bt
 	btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,gVerticesBunny,&gIndicesBunny[0][0],BUNNY_NUM_TRIANGLES);
 	btSoftBody::Material*	pm=psb->appendMaterial();
 	pm->m_kLST				=	1;
-	pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;
+	pm->m_debugDraw = false;
 	psb->generateBendingConstraints(2,pm);
 	psb->m_cfg.piterations	=	2;
 	psb->m_cfg.kDF			=	1;
@@ -1109,7 +1109,7 @@ static btSoftBody*	Ctor_ClusterTorus(SoftDemo* pdemo,const btVector3& x,const bt
 	btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,gVertices,&gIndices[0][0],NUM_TRIANGLES);
 	btSoftBody::Material*	pm=psb->appendMaterial();
 	pm->m_kLST				=	1;
-	pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;			
+	pm->m_debugDraw = false;
 	psb->generateBendingConstraints(2,pm);
 	psb->m_cfg.piterations	=	2;
 	psb->m_cfg.collisions	=	btSoftBody::fCollision::CL_SS+
@@ -1185,7 +1185,7 @@ static void	Init_ClusterCollide1(SoftDemo* pdemo)
 		true);
 	btSoftBody::Material* pm=psb->appendMaterial();
 	pm->m_kLST		=	0.4;
-	pm->m_flags		-=	btSoftBody::fMaterial::DebugDraw;
+	pm->m_debugDraw = false;
 	psb->m_cfg.kDF	=	1;
 	psb->m_cfg.kSRHR_CL		=	1;
 	psb->m_cfg.kSR_SPLT_CL	=	0;
@@ -1217,7 +1217,7 @@ static void	Init_ClusterCollide2(SoftDemo* pdemo)
 				&gIndices[0][0],
 				NUM_TRIANGLES);
 			btSoftBody::Material* pm=psb->appendMaterial();
-			pm->m_flags		-=	btSoftBody::fMaterial::DebugDraw;
+			pm->m_debugDraw = false;
 			psb->generateBendingConstraints(2,pm);
 			psb->m_cfg.piterations=2;
 			psb->m_cfg.kDF			=1;

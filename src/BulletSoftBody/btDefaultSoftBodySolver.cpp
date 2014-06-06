@@ -52,7 +52,7 @@ void btDefaultSoftBodySolver::updateSoftBodies( )
 		btSoftBody*	psb=(btSoftBody*)m_softBodySet[i];
 		if (psb->isActive())
 		{
-			psb->integrateMotion();	
+			psb->updateNormals();	
 		}
 	}
 } // updateSoftBodies
@@ -73,7 +73,7 @@ void btDefaultSoftBodySolver::solveConstraints( float solverdt )
 			psb->solveConstraints();
 		}
 	}	
-} // btDefaultSoftBodySolver::solveConstraints
+}
 
 
 void btDefaultSoftBodySolver::copySoftBodyToVertexBuffer( const btSoftBody *const softBody, btVertexBufferDescriptor *vertexBuffer )

@@ -32,7 +32,7 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo,int node_count,  const btV
 	pm->m_kLST	=	1;
 	pm->m_kAST	=	1;
 	pm->m_kVST	=	1;
-	pm->m_flags	=	fMaterial::Default;
+	pm->m_debugDraw = true;
 
 	/* Nodes			*/ 
 	const btScalar		margin=getCollisionShape()->getMargin();
@@ -62,7 +62,6 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo)
 void	btSoftBody::initDefaults()
 {
 	m_internalType		=	CO_SOFT_BODY;
-	m_cfg.kVCF			=	1;
 	m_cfg.kDP			=	0;
 	m_cfg.kPR			=	0;
 	m_cfg.kVC			=	0;
@@ -79,7 +78,6 @@ void	btSoftBody::initDefaults()
 	m_cfg.kSK_SPLT_CL	=	(btScalar)0.5;
 	m_cfg.kSS_SPLT_CL	=	(btScalar)0.5;
 	m_cfg.maxvolume		=	(btScalar)1;
-	m_cfg.timescale		=	1;
 	m_cfg.viterations	=	0;
 	m_cfg.piterations	=	1;	
 	m_cfg.citerations	=	4;
@@ -1482,8 +1480,7 @@ void			btSoftBody::predictMotion(btScalar dt)
 	}
 
 	/* Prepare				*/ 
-	m_sst.sdt		=	dt*m_cfg.timescale;
-	m_sst.isdt		=	1/m_sst.sdt;
+	m_sst.sdt		=	dt;
 	m_sst.velmrg	=	m_sst.sdt*3;
 	m_sst.radmrg	=	getCollisionShape()->getMargin();
 	m_sst.updmrg	=	m_sst.radmrg*(btScalar)0.25;
@@ -1629,7 +1626,7 @@ void btSoftBody::solveConstraints()
 			btSoftBody::PSolve_SContacts(this,1,ti);
 			btSoftBody::PSolve_Links(this,1,ti);
 		}
-		const btScalar	vc=m_sst.isdt*(1-m_cfg.kDP);
+		const btScalar	vc = (1 - m_cfg.kDP) /  m_sst.sdt;
 		for(i=0,ni=m_nodes.size();i<ni;++i)
 		{
 			Node&	n=m_nodes[i];
@@ -1670,13 +1667,6 @@ void			btSoftBody::solveClusters(const btAlignedObjectArray<btSoftBody*>& bodies
 	{
 		bodies[i]->cleanupClusters();
 	}
-}
-
-//
-void			btSoftBody::integrateMotion()
-{
-	/* Update			*/ 
-	updateNormals();
 }
 
 //
@@ -2039,7 +2029,10 @@ void					btSoftBody::updatePose()
 			Apq[2]+=a.z()*b;
 		}
 		btMatrix3x3		r,s;
-		PolarDecompose(Apq,r,s);
+		
+		const btPolarDecomposition polar;  
+		polar.decompose(Apq, r, s);
+		
 		pose.m_rot=r;
 		pose.m_scl=pose.m_aqq*r.transpose()*Apq;
 		if(m_cfg.maxvolume>1)
@@ -2233,7 +2226,10 @@ void					btSoftBody::updateClusters()
 				const btVector3&	b=c.m_framerefs[i];
 				m[0]+=a[0]*b;m[1]+=a[1]*b;m[2]+=a[2]*b;
 			}
-			PolarDecompose(m,r,s);
+			
+			const btPolarDecomposition polar;  
+			polar.decompose(m, r, s);
+			
 			c.m_framexform.setOrigin(c.m_com);
 			c.m_framexform.setBasis(r);		
 			/* Inertia			*/ 

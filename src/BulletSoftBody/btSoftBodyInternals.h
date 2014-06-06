@@ -577,16 +577,6 @@ private:
 };
 
 //
-// Polar decomposition,
-// "Computing the Polar Decomposition with Applications", Nicholas J. Higham, 1986.
-//
-static inline int			PolarDecompose(	const btMatrix3x3& m,btMatrix3x3& q,btMatrix3x3& s)
-{
-	static const btPolarDecomposition polar;  
-	return polar.decompose(m, q, s);
-}
-
-//
 // btSoftColliders
 //
 struct btSoftColliders
@@ -596,18 +586,12 @@ struct btSoftColliders
 	//
 	struct	ClusterBase : btDbvt::ICollide
 	{
-		btScalar			erp;
-		btScalar			idt;
 		btScalar			m_margin;
 		btScalar			friction;
-		btScalar			threshold;
 		ClusterBase()
 		{
-			erp			=(btScalar)1;
-			idt			=0;
-			m_margin		=0;
-			friction	=0;
-			threshold	=(btScalar)0;
+			m_margin = 0;
+			friction = 0;
 		}
 		bool				SolveContact(	const btGjkEpaSolver2::sResults& res,
 			btSoftBody::Body ba,const btSoftBody::Body bb,
@@ -701,7 +685,6 @@ struct btSoftColliders
 		{
 			psb			=	ps;
 			m_colObjWrap			=	colObWrap;
-			idt			=	ps->m_sst.isdt;
 			m_margin		=	m_colObjWrap->getCollisionShape()->getMargin()+psb->getCollisionShape()->getMargin();
 			///Bullet rigid body uses multiply instead of minimum to determine combined friction. Some customization would be useful.
 			friction	=	btMin(psb->m_cfg.kDF,m_colObjWrap->getCollisionObject()->getFriction());
@@ -761,7 +744,6 @@ struct btSoftColliders
 		}
 		void		ProcessSoftSoft(btSoftBody* psa,btSoftBody* psb)
 		{
-			idt			=	psa->m_sst.isdt;
 			//m_margin		=	(psa->getCollisionShape()->getMargin()+psb->getCollisionShape()->getMargin())/2;
 			m_margin		=	(psa->getCollisionShape()->getMargin()+psb->getCollisionShape()->getMargin());
 			friction	=	btMin(psa->m_cfg.kDF,psb->m_cfg.kDF);

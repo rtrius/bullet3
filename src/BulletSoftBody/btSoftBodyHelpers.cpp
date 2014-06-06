@@ -260,7 +260,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			for(i=0;i<psb->m_nodes.size();++i)
 			{
 				const btSoftBody::Node&	n=psb->m_nodes[i];
-				if(0==(n.m_material->m_flags&btSoftBody::fMaterial::DebugDraw)) continue;
+				if(!n.m_material->m_debugDraw) continue;
 				idraw->drawLine(n.m_x-btVector3(scl,0,0),n.m_x+btVector3(scl,0,0),btVector3(1,0,0));
 				idraw->drawLine(n.m_x-btVector3(0,scl,0),n.m_x+btVector3(0,scl,0),btVector3(0,1,0));
 				idraw->drawLine(n.m_x-btVector3(0,0,scl),n.m_x+btVector3(0,0,scl),btVector3(0,0,1));
@@ -272,7 +272,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			for(i=0;i<psb->m_links.size();++i)
 			{
 				const btSoftBody::Link&	l=psb->m_links[i];
-				if(0==(l.m_material->m_flags&btSoftBody::fMaterial::DebugDraw)) continue;
+				if(!l.m_material->m_debugDraw) continue;
 				idraw->drawLine(l.m_n[0]->m_x,l.m_n[1]->m_x,lcolor);
 			}
 		}
@@ -282,7 +282,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			for(i=0;i<psb->m_nodes.size();++i)
 			{
 				const btSoftBody::Node&	n=psb->m_nodes[i];
-				if(0==(n.m_material->m_flags&btSoftBody::fMaterial::DebugDraw)) continue;
+				if(!n.m_material->m_debugDraw) continue;
 				const btVector3			d=n.m_n*nscl;
 				idraw->drawLine(n.m_x,n.m_x+d,ncolor);
 				idraw->drawLine(n.m_x,n.m_x-d,ncolor*0.5);
@@ -315,7 +315,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		for(i=0;i<psb->m_faces.size();++i)
 		{
 			const btSoftBody::Face&	f=psb->m_faces[i];
-			if(0==(f.m_material->m_flags&btSoftBody::fMaterial::DebugDraw)) continue;
+			if(!f.m_material->m_debugDraw) continue;
 			const btVector3			x[]={f.m_n[0]->m_x,f.m_n[1]->m_x,f.m_n[2]->m_x};
 			const btVector3			c=(x[0]+x[1]+x[2])/3;
 			idraw->drawTriangle((x[0]-c)*scl+c,
@@ -333,7 +333,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		for(int i=0;i<psb->m_tetras.size();++i)
 		{
 			const btSoftBody::Tetra&	t=psb->m_tetras[i];
-			if(0==(t.m_material->m_flags&btSoftBody::fMaterial::DebugDraw)) continue;
+			if(!t.m_material->m_debugDraw) continue;
 			const btVector3				x[]={t.m_n[0]->m_x,t.m_n[1]->m_x,t.m_n[2]->m_x,t.m_n[3]->m_x};
 			const btVector3				c=(x[0]+x[1]+x[2]+x[3])/4;
 			idraw->drawTriangle((x[0]-c)*scl+c,(x[1]-c)*scl+c,(x[2]-c)*scl+c,col,alp);
@@ -357,7 +357,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		for(i=0;i<psb->m_nodes.size();++i)
 		{
 			const btSoftBody::Node&	n=psb->m_nodes[i];		
-			if(0==(n.m_material->m_flags&btSoftBody::fMaterial::DebugDraw)) continue;
+			if(!n.m_material->m_debugDraw) continue;
 			if(n.m_im<=0)
 			{
 				drawVertex(idraw,n.m_x,0.25,btVector3(1,0,0));
