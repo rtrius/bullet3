@@ -82,7 +82,6 @@ void	btSoftBody::initDefaults()
 	m_cfg.timescale		=	1;
 	m_cfg.viterations	=	0;
 	m_cfg.piterations	=	1;	
-	m_cfg.diterations	=	0;
 	m_cfg.citerations	=	4;
 	m_cfg.collisions	=	fCollision::Default;
 	m_pose.m_bvolume	=	false;
@@ -95,7 +94,6 @@ void	btSoftBody::initDefaults()
 	m_bounds[0]			=	btVector3(0,0,0);
 	m_bounds[1]			=	btVector3(0,0,0);
 	m_worldTransform.setIdentity();
-	setSolver(eSolverPresets::Positions);
 	
 	/* Collision shape	*/ 
 	///for now, create a collision shape internally
@@ -1466,32 +1464,6 @@ bool			btSoftBody::rayTest(const btVector3& rayFrom,
 }
 
 //
-void			btSoftBody::setSolver(eSolverPresets::_ preset)
-{
-	m_cfg.m_vsequence.clear();
-	m_cfg.m_psequence.clear();
-	m_cfg.m_dsequence.clear();
-	switch(preset)
-	{
-	case	eSolverPresets::Positions:
-		m_cfg.m_psequence.push_back(ePSolver::Anchors);
-		m_cfg.m_psequence.push_back(ePSolver::RContacts);
-		m_cfg.m_psequence.push_back(ePSolver::SContacts);
-		m_cfg.m_psequence.push_back(ePSolver::Linear);	
-		break;	
-	case	eSolverPresets::Velocities:
-		m_cfg.m_vsequence.push_back(eVSolver::Linear);
-
-		m_cfg.m_psequence.push_back(ePSolver::Anchors);
-		m_cfg.m_psequence.push_back(ePSolver::RContacts);
-		m_cfg.m_psequence.push_back(ePSolver::SContacts);
-
-		m_cfg.m_dsequence.push_back(ePSolver::Linear);
-		break;
-	}
-}
-
-//
 void			btSoftBody::predictMotion(btScalar dt)
 {
 
@@ -1600,13 +1572,12 @@ void			btSoftBody::predictMotion(btScalar dt)
 }
 
 //
-void			btSoftBody::solveConstraints()
+void btSoftBody::solveConstraints()
 {
-
-	/* Apply clusters		*/ 
+	//
 	applyClusters(false);
-	/* Prepare links		*/ 
-
+	
+	// Prepare links
 	int i,ni;
 
 	for(i=0,ni=m_links.size();i<ni;++i)
@@ -1615,7 +1586,8 @@ void			btSoftBody::solveConstraints()
 		l.m_c3		=	l.m_n[1]->m_q-l.m_n[0]->m_q;
 		l.m_c2		=	1/(l.m_c3.length2()*l.m_c0);
 	}
-	/* Prepare anchors		*/ 
+	
+	// Prepare anchors
 	for(i=0,ni=m_anchors.size();i<ni;++i)
 	{
 		Anchor&			a=m_anchors[i];
@@ -1629,34 +1601,33 @@ void			btSoftBody::solveConstraints()
 		a.m_c2	=	m_sst.sdt*a.m_node->m_im;
 		a.m_body->activate();
 	}
-	/* Solve velocities		*/ 
+	
+	// Solve velocities
 	if(m_cfg.viterations>0)
 	{
-		/* Solve			*/ 
+		// Solve
 		for(int isolve=0;isolve<m_cfg.viterations;++isolve)
 		{
-			for(int iseq=0;iseq<m_cfg.m_vsequence.size();++iseq)
-			{
-				getSolver(m_cfg.m_vsequence[iseq])(this,1);
-			}
+			btSoftBody::VSolve_Links(this,1);
 		}
-		/* Update			*/ 
+		
+		// Update
 		for(i=0,ni=m_nodes.size();i<ni;++i)
 		{
 			Node&	n=m_nodes[i];
 			n.m_x	=	n.m_q+n.m_v*m_sst.sdt;
 		}
 	}
-	/* Solve positions		*/ 
+	// Solve positions
 	if(m_cfg.piterations>0)
 	{
 		for(int isolve=0;isolve<m_cfg.piterations;++isolve)
 		{
 			const btScalar ti=isolve/(btScalar)m_cfg.piterations;
-			for(int iseq=0;iseq<m_cfg.m_psequence.size();++iseq)
-			{
-				getSolver(m_cfg.m_psequence[iseq])(this,1,ti);
-			}
+			btSoftBody::PSolve_Anchors(this,1,ti);
+			btSoftBody::PSolve_RContacts(this,1,ti);
+			btSoftBody::PSolve_SContacts(this,1,ti);
+			btSoftBody::PSolve_Links(this,1,ti);
 		}
 		const btScalar	vc=m_sst.isdt*(1-m_cfg.kDP);
 		for(i=0,ni=m_nodes.size();i<ni;++i)
@@ -1666,43 +1637,10 @@ void			btSoftBody::solveConstraints()
 			n.m_f	=	btVector3(0,0,0);		
 		}
 	}
-	/* Solve drift			*/ 
-	if(m_cfg.diterations>0)
-	{
-		const btScalar	vcf=m_cfg.kVCF*m_sst.isdt;
-		for(i=0,ni=m_nodes.size();i<ni;++i)
-		{
-			Node&	n=m_nodes[i];
-			n.m_q	=	n.m_x;
-		}
-		for(int idrift=0;idrift<m_cfg.diterations;++idrift)
-		{
-			for(int iseq=0;iseq<m_cfg.m_dsequence.size();++iseq)
-			{
-				getSolver(m_cfg.m_dsequence[iseq])(this,1,0);
-			}
-		}
-		for(int i=0,ni=m_nodes.size();i<ni;++i)
-		{
-			Node&	n=m_nodes[i];
-			n.m_v	+=	(n.m_x-n.m_q)*vcf;
-		}
-	}
-	/* Apply clusters		*/ 
+	
+	// Apply clusters
 	dampClusters();
 	applyClusters(true);
-}
-
-//
-void			btSoftBody::staticSolve(int iterations)
-{
-	for(int isolve=0;isolve<iterations;++isolve)
-	{
-		for(int iseq=0;iseq<m_cfg.m_psequence.size();++iseq)
-		{
-			getSolver(m_cfg.m_psequence[iseq])(this,1,0);
-		}
-	}
 }
 
 //
@@ -2822,39 +2760,6 @@ void				btSoftBody::VSolve_Links(btSoftBody* psb,btScalar kst)
 		n[0]->m_v+=	l.m_c3*(j*n[0]->m_im);
 		n[1]->m_v-=	l.m_c3*(j*n[1]->m_im);
 	}
-}
-
-//
-btSoftBody::psolver_t	btSoftBody::getSolver(ePSolver::_ solver)
-{
-	switch(solver)
-	{
-	case	ePSolver::Anchors:		
-		return(&btSoftBody::PSolve_Anchors);
-	case	ePSolver::Linear:		
-		return(&btSoftBody::PSolve_Links);
-	case	ePSolver::RContacts:	
-		return(&btSoftBody::PSolve_RContacts);
-	case	ePSolver::SContacts:	
-		return(&btSoftBody::PSolve_SContacts);	
-		default:
-		{
-		}
-	}
-	return(0);
-}
-
-//
-btSoftBody::vsolver_t	btSoftBody::getSolver(eVSolver::_ solver)
-{
-	switch(solver)
-	{
-	case	eVSolver::Linear:		return(&btSoftBody::VSolve_Links);
-		default:
-		{
-		}
-	}
-	return(0);
 }
 
 //

@@ -589,7 +589,6 @@ static void	Init_CapsuleCollision(SoftDemo* pdemo)
 
 	psb->m_cfg.piterations = 10;
 	psb->m_cfg.citerations = 10;
-	psb->m_cfg.diterations = 10;
 //	psb->m_cfg.viterations = 10;
 
 
@@ -1933,16 +1932,6 @@ void	SoftDemo::keyboardCallback(unsigned char key, int x, int y)
 	case	',':	m_raycast=!m_raycast;break;
 	case	';':	m_autocam=!m_autocam;break;
 	case	'c':	getSoftDynamicsWorld()->setDrawFlags(getSoftDynamicsWorld()->getDrawFlags()^fDrawFlags::Clusters);break;
-	case	'`':
-		{
-			btAlignedObjectArray<btSoftBody*>&	sbs=getSoftDynamicsWorld()->getSoftBodyArray();
-			for(int ib=0;ib<sbs.size();++ib)
-			{
-				btSoftBody*	psb=sbs[ib];
-				psb->staticSolve(128);
-			}
-		}
-		break;
 	default:		DemoApplication::keyboardCallback(key,x,y);
 	}
 }

@@ -71,30 +71,6 @@ public:
 	btSoftBodySolver *m_softBodySolver;
 
 	// Enumerations
-
-
-	///eVSolver : velocities solvers
-	struct	eVSolver { enum _ {
-		Linear,		///Linear solver
-		END
-	};};
-
-	///ePSolver : positions solvers
-	struct	ePSolver { enum _ {
-		Linear,		///Linear solver
-		Anchors,	///Anchor solver
-		RContacts,	///Rigid contacts solver
-		SContacts,	///Soft contacts solver
-		END
-	};};
-
-	struct	eSolverPresets { enum _ {
-		Positions,
-		Velocities,
-		Default	=	Positions,
-		END
-	};};
-
 	struct	eFeature { enum _ {
 		None,
 		Node,
@@ -104,11 +80,7 @@ public:
 		END
 	};};
 
-	typedef btAlignedObjectArray<eVSolver::_>	tVSolverArray;
-	typedef btAlignedObjectArray<ePSolver::_>	tPSolverArray;
-
 	// Flags
-
 	struct fCollision { enum _ {
 		RVSmask	=	0x000f,	///Rigid versus soft mask
 		SDF_RS	=	0x0001,	///SDF based rigid vs soft
@@ -529,12 +501,8 @@ public:
 		btScalar				timescale;		// Time scale
 		int						viterations;	// Velocities solver iterations
 		int						piterations;	// Positions solver iterations
-		int						diterations;	// Drift solver iterations
 		int						citerations;	// Cluster solver iterations
 		int						collisions;		// Collisions flags
-		tVSolverArray			m_vsequence;	// Velocity solvers sequence
-		tPSolverArray			m_psequence;	// Position solvers sequence
-		tPSolverArray			m_dsequence;	// Drift solvers sequence
 	};
 	
 	struct	SolverState
@@ -689,10 +657,8 @@ public:
 
 	///Ray casting using rayFrom and rayTo in worldspace, (not direction!)
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, sRayCast& results);
-	void setSolver(eSolverPresets::_ preset);	//Solver presets
 	void predictMotion(btScalar dt);
 	void solveConstraints();
-	void staticSolve(int iterations);
 	static void solveClusters(const btAlignedObjectArray<btSoftBody*>& bodies);
 	void integrateMotion();
 	void defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap);
@@ -754,8 +720,6 @@ public:
 	static void PSolve_SContacts(btSoftBody* psb,btScalar,btScalar ti);
 	static void PSolve_Links(btSoftBody* psb,btScalar kst,btScalar ti);
 	static void VSolve_Links(btSoftBody* psb,btScalar kst);
-	static psolver_t getSolver(ePSolver::_ solver);
-	static vsolver_t getSolver(eVSolver::_ solver);
 	
 	/************************************************************************************
 	///Aero force
