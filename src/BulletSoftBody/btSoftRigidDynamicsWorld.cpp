@@ -51,10 +51,6 @@ btSoftRigidDynamicsWorld::btSoftRigidDynamicsWorld(
 	m_sbi.m_sparsesdf.Initialize();
 	m_sbi.m_sparsesdf.Reset();
 
-	m_sbi.air_density		=	(btScalar)1.2;
-	m_sbi.water_density	=	0;
-	m_sbi.water_offset		=	0;
-	m_sbi.water_normal		=	btVector3(0,0,0);
 	m_sbi.m_gravity.setValue(0,-10,0);
 
 	m_sbi.m_sparsesdf.Initialize();

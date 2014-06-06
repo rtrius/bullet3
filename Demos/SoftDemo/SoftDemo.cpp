@@ -728,9 +728,9 @@ static void	Init_Aero(SoftDemo* pdemo)
 		btSoftBody::Material*	pm=psb->appendMaterial();
 		pm->m_flags				-=	btSoftBody::fMaterial::DebugDraw;
 		psb->generateBendingConstraints(2,pm);
-		psb->m_cfg.kLF			=	0.004;
-		psb->m_cfg.kDG			=	0.0003;
-		psb->m_cfg.aeromodel	=	btSoftBody::eAeroModel::V_TwoSided;
+		psb->m_aeroForce.m_liftCoeff =	0.004;
+		psb->m_aeroForce.m_dragCoeff =	0.0003;
+		psb->m_aeroForce.m_model = btSoftBody::eAeroModel::V_TwoSided;
 		btTransform		trs;
 		btQuaternion	rot;
 		btVector3		ra=Vector3Rand()*0.1;
@@ -774,17 +774,14 @@ static void	Init_Aero2(SoftDemo* pdemo)
 		pm->m_flags		-=	btSoftBody::fMaterial::DebugDraw;
 		psb->generateBendingConstraints(2,pm);
 		
-		psb->m_cfg.kLF			=	0.05;
-		psb->m_cfg.kDG			=	0.01;
-
-		//psb->m_cfg.kLF			=	0.004;
-		//psb->m_cfg.kDG			=	0.0003;
+		psb->m_aeroForce.m_liftCoeff = 0.05;
+		psb->m_aeroForce.m_dragCoeff = 0.01;
 
 		psb->m_cfg.piterations = 2;
-		psb->m_cfg.aeromodel	=	btSoftBody::eAeroModel::V_TwoSidedLiftDrag;
+		psb->m_aeroForce.m_model = btSoftBody::eAeroModel::V_TwoSidedLiftDrag;
 
 		
-		psb->setWindVelocity(btVector3(4, -12.0, -25.0));
+		psb->m_aeroForce.m_windVelocity = btVector3(4, -12.0, -25.0);
 
 		btTransform		trs;
 		btQuaternion	rot;
@@ -1619,10 +1616,6 @@ void	SoftDemo::clientResetScene()
 
 
 
-	m_softBodyWorldInfo.air_density		=	(btScalar)1.2;
-	m_softBodyWorldInfo.water_density	=	0;
-	m_softBodyWorldInfo.water_offset		=	0;
-	m_softBodyWorldInfo.water_normal		=	btVector3(0,0,0);
 	m_softBodyWorldInfo.m_gravity.setValue(0,-10,0);
 
 
@@ -1865,24 +1858,8 @@ void	SoftDemo::renderme()
 		}
 #undef RES
 	}
-	/* Water level	*/ 
-	static const btVector3	axis[]={btVector3(1,0,0),
-		btVector3(0,1,0),
-		btVector3(0,0,1)};
-	if(m_softBodyWorldInfo.water_density>0)
-	{
-		const btVector3	c=	btVector3((btScalar)0.25,(btScalar)0.25,1);
-		const btScalar	a=	(btScalar)0.5;
-		const btVector3	n=	m_softBodyWorldInfo.water_normal;
-		const btVector3	o=	-n*m_softBodyWorldInfo.water_offset;
-		const btVector3	x=	btCross(n,axis[n.minAxis()]).normalized();
-		const btVector3	y=	btCross(x,n).normalized();
-		const btScalar	s=	25;
-		idraw->drawTriangle(o-x*s-y*s,o+x*s-y*s,o+x*s+y*s,c,a);
-		idraw->drawTriangle(o-x*s-y*s,o+x*s+y*s,o-x*s+y*s,c,a);
-	}
+	
 	//
-
 	int lineWidth=280;
 	int xStart = m_glutScreenWidth - lineWidth;
 	int yStart = 20;

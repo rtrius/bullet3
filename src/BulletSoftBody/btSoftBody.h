@@ -41,22 +41,14 @@ class btSoftBodySolver;
 
 struct	btSoftBodyWorldInfo
 {
-	btScalar				air_density;
-	btScalar				water_density;
-	btScalar				water_offset;
 	btScalar				m_maxDisplacement;
-	btVector3				water_normal;
 	btBroadphaseInterface*	m_broadphase;
 	btDispatcher*	m_dispatcher;
 	btVector3				m_gravity;
 	btSparseSdf<3>			m_sparsesdf;
 
-	btSoftBodyWorldInfo()
-		:air_density((btScalar)1.2),
-		water_density(0),
-		water_offset(0),
+	btSoftBodyWorldInfo() :
 		m_maxDisplacement(1000.f),//avoid soft body from 'exploding' so use some upper threshold of maximum motion that a node can travel per frame
-		water_normal(0,0,0),
 		m_broadphase(0),
 		m_dispatcher(0),
 		m_gravity(0,-10,0)
@@ -70,6 +62,9 @@ struct	btSoftBodyWorldInfo
 class	btSoftBody : public btCollisionObject
 {
 public:
+
+
+
 	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
 
 	// The solver object that handles this soft body
@@ -77,16 +72,6 @@ public:
 
 	// Enumerations
 
-	struct eAeroModel { enum _ {
-		V_Point,			///Vertex normals are oriented toward velocity
-		V_TwoSided,			///Vertex normals are flipped to match velocity	
-		V_TwoSidedLiftDrag, ///Vertex normals are flipped to match velocity and lift and drag forces are applied
-		V_OneSided,			///Vertex normals are taken as it is	
-		F_TwoSided,			///Face normals are flipped to match velocity
-		F_TwoSidedLiftDrag,	///Face normals are flipped to match velocity and lift and drag forces are applied 
-		F_OneSided,			///Face normals are taken as it is		
-		END
-	};};
 
 	///eVSolver : velocities solvers
 	struct	eVSolver { enum _ {
@@ -169,15 +154,6 @@ public:
 		btVector3		m_normal;	// Outward normal
 		btScalar		m_offset;	// Offset from origin
 	};	
-
-	
-	struct	sMedium
-	{
-		btVector3		m_velocity;
-		btScalar		m_pressure;
-		btScalar		m_density;
-	};
-
 	
 	struct	Element
 	{
@@ -533,11 +509,8 @@ public:
 	
 	struct	Config
 	{
-		eAeroModel::_			aeromodel;		// Aerodynamic model (default: V_Point)
 		btScalar				kVCF;			// Velocities correction factor (Baumgarte)
 		btScalar				kDP;			// Damping coefficient [0,1]
-		btScalar				kDG;			// Drag coefficient [0,+inf]
-		btScalar				kLF;			// Lift coefficient [0,+inf]
 		btScalar				kPR;			// Pressure coefficient [-inf,+inf]
 		btScalar				kVC;			// Volume conversation coefficient [0,+inf]
 		btScalar				kDF;			// Dynamic friction coefficient [0,1]
@@ -612,7 +585,6 @@ public:
 	btAlignedObjectArray<SContact>			m_scontacts;	// Soft contacts
 	btAlignedObjectArray<Joint*>				m_joints;
 	btAlignedObjectArray<Material*>				m_materials;
-	btScalar				m_timeacc;		// Time accumulator
 	btVector3				m_bounds[2];	// Spatial bounds	
 	bool					m_bUpdateRtCst;	// Update runtime constants
 	btDbvt					m_ndbvt;		// Nodes tree
@@ -623,7 +595,6 @@ public:
 	btAlignedObjectArray<bool> m_clusterConnectivity;//cluster connectivity, for self-collision
 
 	btTransform			m_initialWorldTransform;
-	btVector3			m_windVelocity;
 	btScalar        	m_restLengthScale;
 	
 	// Api
@@ -671,9 +642,7 @@ public:
 	
 	void addForce(const btVector3& force);									//Add force (or gravity) to the entire body
 	void addForce(const btVector3& force, int node);						//Add force (or gravity) to a node of the body
-	void addAeroForceToNode(const btVector3& windVelocity,int nodeIndex);	//Add aero force to a node of the body
-	void addAeroForceToFace(const btVector3& windVelocity,int faceIndex);	//Add aero force to a face of the body
-
+	
 	void addVelocity(const btVector3& velocity);	//Add velocity to the entire body	
 	void setVelocity(const btVector3& velocity);	//Set velocity for the entire body
 	void addVelocity(const btVector3& velocity, int node);	//Add velocity to a node of the body
@@ -724,14 +693,11 @@ public:
 	void predictMotion(btScalar dt);
 	void solveConstraints();
 	void staticSolve(int iterations);
-	static void solveCommonConstraints(btSoftBody** bodies,int count,int iterations);
 	static void solveClusters(const btAlignedObjectArray<btSoftBody*>& bodies);
 	void integrateMotion();
 	void defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap);
 	void defaultCollisionHandler(btSoftBody* psb);
 	
-	void setWindVelocity( const btVector3 &velocity );	///<Set a wind velocity for interaction with the air.
-	const btVector3& getWindVelocity();					///<Return the wind velocity for interaction with the air.
 
 	// Set the solver that handles this soft body
 	// Should not be allowed to get out of sync with reality
@@ -790,12 +756,52 @@ public:
 	static void VSolve_Links(btSoftBody* psb,btScalar kst);
 	static psolver_t getSolver(ePSolver::_ solver);
 	static vsolver_t getSolver(eVSolver::_ solver);
+	
+	/************************************************************************************
+	///Aero force
+	************************************************************************************/
+	struct eAeroModel 
+	{ 
+		enum _ 
+		{
+			V_Point,			///Vertex normals are oriented toward velocity
+			V_TwoSided,			///Vertex normals are flipped to match velocity	
+			V_TwoSidedLiftDrag, ///Vertex normals are flipped to match velocity and lift and drag forces are applied
+			V_OneSided,			///Vertex normals are taken as it is	
+			F_TwoSided,			///Face normals are flipped to match velocity
+			F_TwoSidedLiftDrag,	///Face normals are flipped to match velocity and lift and drag forces are applied 
+			F_OneSided,			///Face normals are taken as it is		
+			END
+		};
+	};
+	
+	
+	struct AeroForce
+	{
+		eAeroModel::_ m_model; 		///<Aerodynamic model (default: V_Point)
+		btVector3 m_windVelocity;
+		btScalar m_dragCoeff;			///<Range [0, +inf]
+		btScalar m_liftCoeff;			///<Range [0, +inf]
+		btScalar m_airDensity;
+		
+		AeroForce()
+		{
+			m_model = eAeroModel::V_Point;
+			m_windVelocity = btVector3(0,0,0);
+			m_dragCoeff = btScalar(0.0);
+			m_liftCoeff = btScalar(0.0);
+			m_airDensity = btScalar(1.2);
+		}
+	};
+	static void addAeroForces(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces);
+	static void addAeroForceToNode(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, int nodeIndex);	//Add aero force to a node of the body
+	static void addAeroForceToFace(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Face>& faces, int faceIndex);	//Add aero force to a face of the body
 
-
-	virtual	int	calculateSerializeBufferSize()	const;
-
-	///fills the dataBuffer and returns the struct name (and 0 on failure)
-	virtual	const char*	serialize(void* dataBuffer,  class btSerializer* serializer) const;
+	AeroForce m_aeroForce;
+	
+	/************************************************************************************
+	///Aero force
+	************************************************************************************/
 };
 
 

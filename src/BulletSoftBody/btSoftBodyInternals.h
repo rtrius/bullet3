@@ -503,40 +503,7 @@ static inline btScalar		VolumeOf(	const btVector3& x0,
 	return(btDot(a,btCross(b,c)));
 }
 
-//
-static void					EvaluateMedium(	const btSoftBodyWorldInfo* wfi,
-										   const btVector3& x,
-										   btSoftBody::sMedium& medium)
-{
-	medium.m_velocity	=	btVector3(0,0,0);
-	medium.m_pressure	=	0;
-	medium.m_density	=	wfi->air_density;
-	if(wfi->water_density>0)
-	{
-		const btScalar	depth=-(btDot(x,wfi->water_normal)+wfi->water_offset);
-		if(depth>0)
-		{
-			medium.m_density	=	wfi->water_density;
-			medium.m_pressure	=	depth*wfi->water_density*wfi->m_gravity.length();
-		}
-	}
-}
 
-//
-static inline void			ApplyClampedForce(	btSoftBody::Node& n,
-											  const btVector3& f,
-											  btScalar dt)
-{
-	const btScalar	dtim=dt*n.m_im;
-	if((f*dtim).length2()>n.m_v.length2())
-	{/* Clamp	*/ 
-		n.m_f-=ProjectOnAxis(n.m_v,f.normalized())/dtim;						
-	}
-	else
-	{/* Apply	*/ 
-		n.m_f+=f;
-	}
-}
 
 //
 static inline int		MatchEdge(	const btSoftBody::Node* a,
