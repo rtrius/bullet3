@@ -45,7 +45,6 @@ btSoftRigidDynamicsWorld::btSoftRigidDynamicsWorld(
 	m_drawFlags			=	fDrawFlags::Std;
 	m_drawNodeTree		=	true;
 	m_drawFaceTree		=	false;
-	m_drawClusterTree	=	false;
 	m_sbi.m_broadphase = pairCache;
 	m_sbi.m_dispatcher = dispatcher;
 	m_sbi.m_sparsesdf.Initialize();
@@ -111,11 +110,6 @@ void	btSoftRigidDynamicsWorld::solveSoftBodiesConstraints( btScalar timeStep )
 {
 	BT_PROFILE("solveSoftConstraints");
 
-	if(m_softBodies.size())
-	{
-		btSoftBody::solveClusters(m_softBodies);
-	}
-
 	// Solve constraints solver-wise
 	m_softBodySolver->solveConstraints(timeStep);
 
@@ -171,7 +165,6 @@ void	btSoftRigidDynamicsWorld::debugDrawWorld()
 			{
 				if(m_drawNodeTree)		btSoftBodyHelpers::DrawNodeTree(psb,m_debugDrawer);
 				if(m_drawFaceTree)		btSoftBodyHelpers::DrawFaceTree(psb,m_debugDrawer);
-				if(m_drawClusterTree)	btSoftBodyHelpers::DrawClusterTree(psb,m_debugDrawer);
 			}
 		}		
 	}	

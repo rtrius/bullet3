@@ -28,7 +28,6 @@ class btSoftRigidDynamicsWorld : public btDiscreteDynamicsWorld
 	int				m_drawFlags;
 	bool			m_drawNodeTree;
 	bool			m_drawFaceTree;
-	bool			m_drawClusterTree;
 	btSoftBodyWorldInfo m_sbi;
 	///Solver classes that encapsulate multiple soft bodies for solving
 	btSoftBodySolver *m_softBodySolver;

@@ -1080,6 +1080,8 @@ static void			Ctor_Gear(SoftDemo* pdemo,const btVector3& pos,btScalar speed)
 	world->addConstraint(hinge);
 }
 
+/** 
+	//CLUSTER_REFACTOR
 //
 static btSoftBody*	Ctor_ClusterBunny(SoftDemo* pdemo,const btVector3& x,const btVector3& a)
 {
@@ -1496,9 +1498,8 @@ static void	Init_TetraCube(SoftDemo* pdemo)
 	psb->m_materials[0]->m_kLST=0.8;
 	pdemo->m_cutting=false;	
 }
-
-
-
+**/
+//CLUSTER_REFACTOR
 
 
 	/* Init		*/ 
@@ -1524,6 +1525,8 @@ static void	Init_TetraCube(SoftDemo* pdemo)
 		Init_Bunny,
 		Init_BunnyMatch,
 		Init_Cutting1,
+	/** 
+		//CLUSTER_REFACTOR
 		Init_ClusterDeform,
 		Init_ClusterCollide1,
 		Init_ClusterCollide2,
@@ -1536,6 +1539,7 @@ static void	Init_TetraCube(SoftDemo* pdemo)
 		Init_ClusterStackMixed,
 		Init_TetraCube,
 		Init_TetraBunny,
+	**/
 	};
 
 void	SoftDemo::clientResetScene()
@@ -1609,10 +1613,11 @@ void	SoftDemo::clientResetScene()
 
 
 	
-
+/** 
+	//CLUSTER_REFACTOR
 	motorcontrol.goal = 0;
 	motorcontrol.maxtorque = 0;
-
+**/
 
 
 	m_softBodyWorldInfo.m_gravity.setValue(0,-10,0);
@@ -1923,10 +1928,13 @@ void	SoftDemo::keyboardCallback(unsigned char key, int x, int y)
 	switch(key)
 	{
 	case    'd':	sDemoMode = !sDemoMode; break;
+/** 
+	//CLUSTER_REFACTOR
 	case	'n':	motorcontrol.maxtorque=10;motorcontrol.goal+=1;break;
 	case	'm':	motorcontrol.maxtorque=10;motorcontrol.goal-=1;break;
 	case	'l':	steercontrol_f.angle+=0.1;steercontrol_r.angle+=0.1;break;
 	case	'k':	steercontrol_f.angle-=0.1;steercontrol_r.angle-=0.1;break;
+**/
 	case	']':	++current_demo;clientResetScene();break;
 	case	'[':	--current_demo;clientResetScene();break;
 	case	',':	m_raycast=!m_raycast;break;
@@ -2059,11 +2067,12 @@ void	SoftDemo::initPhysics()
 
 	
 	m_azi = 0;
-
+/** 
+	//CLUSTER_REFACTOR
 	//reset and disable motorcontrol at the start
 	motorcontrol.goal = 0;
 	motorcontrol.maxtorque = 0;
-
+**/
 	btCollisionShape* groundShape = 0;
 	{
 		int i;

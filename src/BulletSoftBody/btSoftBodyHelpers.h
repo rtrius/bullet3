@@ -63,11 +63,6 @@ struct	btSoftBodyHelpers
 		btIDebugDraw* idraw,
 		int mindepth=0,
 		int maxdepth=-1);
-	/* Draw cluster tree													*/ 
-	static void				DrawClusterTree(btSoftBody* psb,
-		btIDebugDraw* idraw,
-		int mindepth=0,
-		int maxdepth=-1);
 	/* Draw rigid frame														*/ 
 	static	void			DrawFrame(		btSoftBody* psb,
 		btIDebugDraw* idraw);

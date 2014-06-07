@@ -30,7 +30,6 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo,int node_count,  const btV
 	/* Default material	*/ 
 	Material*	pm=appendMaterial();
 	pm->m_kLST	=	1;
-	pm->m_kAST	=	1;
 	pm->m_kVST	=	1;
 	pm->m_debugDraw = true;
 
@@ -71,12 +70,6 @@ void	btSoftBody::initDefaults()
 	m_cfg.kKHR			=	(btScalar)0.1;
 	m_cfg.kSHR			=	(btScalar)1.0;
 	m_cfg.kAHR			=	(btScalar)0.7;
-	m_cfg.kSRHR_CL		=	(btScalar)0.1;
-	m_cfg.kSKHR_CL		=	(btScalar)1;
-	m_cfg.kSSHR_CL		=	(btScalar)0.5;
-	m_cfg.kSR_SPLT_CL	=	(btScalar)0.5;
-	m_cfg.kSK_SPLT_CL	=	(btScalar)0.5;
-	m_cfg.kSS_SPLT_CL	=	(btScalar)0.5;
 	m_cfg.maxvolume		=	(btScalar)1;
 	m_cfg.viterations	=	0;
 	m_cfg.piterations	=	1;	
@@ -97,8 +90,6 @@ void	btSoftBody::initDefaults()
 	///for now, create a collision shape internally
 	m_collisionShape = new btSoftBodyCollisionShape(this);
 	m_collisionShape->setMargin(0.25f);
-	
-	m_initialWorldTransform.setIdentity();
 
 	m_restLengthScale = btScalar(1.0);
 }
@@ -110,11 +101,8 @@ btSoftBody::~btSoftBody()
 	delete m_collisionShape;	
 	int i;
 
-	releaseClusters();
 	for(i=0;i<m_materials.size();++i) 
 		btAlignedFree(m_materials[i]);
-	for(i=0;i<m_joints.size();++i) 
-		btAlignedFree(m_joints[i]);
 }
 
 //
@@ -321,59 +309,6 @@ void			btSoftBody::appendAnchor(int node,btRigidBody* body, const btVector3& loc
 }
 
 //
-void			btSoftBody::appendLinearJoint(const LJoint::Specs& specs,Cluster* body0,Body body1)
-{
-	LJoint*		pj	=	new(btAlignedAlloc(sizeof(LJoint),16)) LJoint();
-	pj->m_bodies[0]	=	body0;
-	pj->m_bodies[1]	=	body1;
-	pj->m_refs[0]	=	pj->m_bodies[0].xform().inverse()*specs.position;
-	pj->m_refs[1]	=	pj->m_bodies[1].xform().inverse()*specs.position;
-	pj->m_cfm		=	specs.cfm;
-	pj->m_erp		=	specs.erp;
-	pj->m_split		=	specs.split;
-	m_joints.push_back(pj);
-}
-
-//
-void			btSoftBody::appendLinearJoint(const LJoint::Specs& specs,Body body)
-{
-	appendLinearJoint(specs,m_clusters[0],body);
-}
-
-//
-void			btSoftBody::appendLinearJoint(const LJoint::Specs& specs,btSoftBody* body)
-{
-	appendLinearJoint(specs,m_clusters[0],body->m_clusters[0]);
-}
-
-//
-void			btSoftBody::appendAngularJoint(const AJoint::Specs& specs,Cluster* body0,Body body1)
-{
-	AJoint*		pj	=	new(btAlignedAlloc(sizeof(AJoint),16)) AJoint();
-	pj->m_bodies[0]	=	body0;
-	pj->m_bodies[1]	=	body1;
-	pj->m_refs[0]	=	pj->m_bodies[0].xform().inverse().getBasis()*specs.axis;
-	pj->m_refs[1]	=	pj->m_bodies[1].xform().inverse().getBasis()*specs.axis;
-	pj->m_cfm		=	specs.cfm;
-	pj->m_erp		=	specs.erp;
-	pj->m_split		=	specs.split;
-	pj->m_icontrol	=	specs.icontrol;
-	m_joints.push_back(pj);
-}
-
-//
-void			btSoftBody::appendAngularJoint(const AJoint::Specs& specs,Body body)
-{
-	appendAngularJoint(specs,m_clusters[0],body);
-}
-
-//
-void			btSoftBody::appendAngularJoint(const AJoint::Specs& specs,btSoftBody* body)
-{
-	appendAngularJoint(specs,m_clusters[0],body->m_clusters[0]);
-}
-
-//
 void			btSoftBody::addForce(const btVector3& force)
 {
 	for(int i=0,ni=m_nodes.size();i<ni;++i) addForce(force,i);
@@ -551,7 +486,6 @@ void			btSoftBody::transform(const btTransform& trs)
 	updateNormals();
 	updateBounds();
 	updateConstants();
-	m_initialWorldTransform = trs;
 }
 
 //
@@ -693,91 +627,6 @@ btScalar		btSoftBody::getVolume() const
 	return(vol);
 }
 
-//
-int				btSoftBody::clusterCount() const
-{
-	return(m_clusters.size());
-}
-
-//
-btVector3		btSoftBody::clusterCom(const Cluster* cluster)
-{
-	btVector3		com(0,0,0);
-	for(int i=0,ni=cluster->m_nodes.size();i<ni;++i)
-	{
-		com+=cluster->m_nodes[i]->m_x*cluster->m_masses[i];
-	}
-	return(com*cluster->m_imass);
-}
-
-//
-btVector3		btSoftBody::clusterCom(int cluster) const
-{
-	return(clusterCom(m_clusters[cluster]));
-}
-
-//
-btVector3		btSoftBody::clusterVelocity(const Cluster* cluster,const btVector3& rpos)
-{
-	return(cluster->m_lv+btCross(cluster->m_av,rpos));
-}
-
-//
-void			btSoftBody::clusterVImpulse(Cluster* cluster,const btVector3& rpos,const btVector3& impulse)
-{
-	const btVector3	li=cluster->m_imass*impulse;
-	const btVector3	ai=cluster->m_invwi*btCross(rpos,impulse);
-	cluster->m_vimpulses[0]+=li;cluster->m_lv+=li;
-	cluster->m_vimpulses[1]+=ai;cluster->m_av+=ai;
-	cluster->m_nvimpulses++;
-}
-
-//
-void			btSoftBody::clusterDImpulse(Cluster* cluster,const btVector3& rpos,const btVector3& impulse)
-{
-	const btVector3	li=cluster->m_imass*impulse;
-	const btVector3	ai=cluster->m_invwi*btCross(rpos,impulse);
-	cluster->m_dimpulses[0]+=li;
-	cluster->m_dimpulses[1]+=ai;
-	cluster->m_ndimpulses++;
-}
-
-//
-void			btSoftBody::clusterImpulse(Cluster* cluster,const btVector3& rpos,const Impulse& impulse)
-{
-	if(impulse.m_asVelocity)	clusterVImpulse(cluster,rpos,impulse.m_velocity);
-	if(impulse.m_asDrift)		clusterDImpulse(cluster,rpos,impulse.m_drift);
-}
-
-//
-void			btSoftBody::clusterVAImpulse(Cluster* cluster,const btVector3& impulse)
-{
-	const btVector3	ai=cluster->m_invwi*impulse;
-	cluster->m_vimpulses[1]+=ai;cluster->m_av+=ai;
-	cluster->m_nvimpulses++;
-}
-
-//
-void			btSoftBody::clusterDAImpulse(Cluster* cluster,const btVector3& impulse)
-{
-	const btVector3	ai=cluster->m_invwi*impulse;
-	cluster->m_dimpulses[1]+=ai;
-	cluster->m_ndimpulses++;
-}
-
-//
-void			btSoftBody::clusterAImpulse(Cluster* cluster,const Impulse& impulse)
-{
-	if(impulse.m_asVelocity)	clusterVAImpulse(cluster,impulse.m_velocity);
-	if(impulse.m_asDrift)		clusterDAImpulse(cluster,impulse.m_drift);
-}
-
-//
-void			btSoftBody::clusterDCImpulse(Cluster* cluster,const btVector3& impulse)
-{
-	cluster->m_dimpulses[0]+=impulse*cluster->m_imass;
-	cluster->m_ndimpulses++;
-}
 
 struct NodeLinks
 {
@@ -922,215 +771,6 @@ void			btSoftBody::randomizeConstraints()
 		btSwap(m_faces[i],m_faces[NEXTRAND%ni]);
 	}
 #undef NEXTRAND
-}
-
-//
-void			btSoftBody::releaseCluster(int index)
-{
-	Cluster*	c=m_clusters[index];
-	if(c->m_leaf) m_cdbvt.remove(c->m_leaf);
-	c->~Cluster();
-	btAlignedFree(c);
-	m_clusters.remove(c);
-}
-
-//
-void			btSoftBody::releaseClusters()
-{
-	while(m_clusters.size()>0) releaseCluster(0);
-}
-
-//
-int				btSoftBody::generateClusters(int k,int maxiterations)
-{
-	int i;
-	releaseClusters();
-	m_clusters.resize(btMin(k,m_nodes.size()));
-	for(i=0;i<m_clusters.size();++i)
-	{
-		m_clusters[i]			=	new(btAlignedAlloc(sizeof(Cluster),16)) Cluster();
-		m_clusters[i]->m_collide=	true;
-	}
-	k=m_clusters.size();
-	if(k>0)
-	{
-		/* Initialize		*/ 
-		btAlignedObjectArray<btVector3>	centers;
-		btVector3						cog(0,0,0);
-		int								i;
-		for(i=0;i<m_nodes.size();++i)
-		{
-			cog+=m_nodes[i].m_x;
-			m_clusters[(i*29873)%m_clusters.size()]->m_nodes.push_back(&m_nodes[i]);
-		}
-		cog/=(btScalar)m_nodes.size();
-		centers.resize(k,cog);
-		/* Iterate			*/ 
-		const btScalar	slope=16;
-		bool			changed;
-		int				iterations=0;
-		do	{
-			const btScalar	w=2-btMin<btScalar>(1,iterations/slope);
-			changed=false;
-			iterations++;	
-			int i;
-
-			for(i=0;i<k;++i)
-			{
-				btVector3	c(0,0,0);
-				for(int j=0;j<m_clusters[i]->m_nodes.size();++j)
-				{
-					c+=m_clusters[i]->m_nodes[j]->m_x;
-				}
-				if(m_clusters[i]->m_nodes.size())
-				{
-					c			/=	(btScalar)m_clusters[i]->m_nodes.size();
-					c			=	centers[i]+(c-centers[i])*w;
-					changed		|=	((c-centers[i]).length2()>SIMD_EPSILON);
-					centers[i]	=	c;
-					m_clusters[i]->m_nodes.resize(0);
-				}			
-			}
-			for(i=0;i<m_nodes.size();++i)
-			{
-				const btVector3	nx=m_nodes[i].m_x;
-				int				kbest=0;
-				btScalar		kdist=ClusterMetric(centers[0],nx);
-				for(int j=1;j<k;++j)
-				{
-					const btScalar	d=ClusterMetric(centers[j],nx);
-					if(d<kdist)
-					{
-						kbest=j;
-						kdist=d;
-					}
-				}
-				m_clusters[kbest]->m_nodes.push_back(&m_nodes[i]);
-			}		
-		} while(changed&&(iterations<maxiterations));
-		/* Merge		*/ 
-		btAlignedObjectArray<int>	cids;
-		cids.resize(m_nodes.size(),-1);
-		for(i=0;i<m_clusters.size();++i)
-		{
-			for(int j=0;j<m_clusters[i]->m_nodes.size();++j)
-			{
-				cids[int(m_clusters[i]->m_nodes[j]-&m_nodes[0])]=i;
-			}
-		}
-		for(i=0;i<m_faces.size();++i)
-		{
-			const int idx[]={	int(m_faces[i].m_n[0]-&m_nodes[0]),
-				int(m_faces[i].m_n[1]-&m_nodes[0]),
-				int(m_faces[i].m_n[2]-&m_nodes[0])};
-			for(int j=0;j<3;++j)
-			{
-				const int cid=cids[idx[j]];
-				for(int q=1;q<3;++q)
-				{
-					const int kid=idx[(j+q)%3];
-					if(cids[kid]!=cid)
-					{
-						if(m_clusters[cid]->m_nodes.findLinearSearch(&m_nodes[kid])==m_clusters[cid]->m_nodes.size())
-						{
-							m_clusters[cid]->m_nodes.push_back(&m_nodes[kid]);
-						}
-					}
-				}
-			}
-		}
-		/* Master		*/ 
-		if(m_clusters.size()>1)
-		{
-			Cluster*	pmaster=new(btAlignedAlloc(sizeof(Cluster),16)) Cluster();
-			pmaster->m_collide	=	false;
-			pmaster->m_nodes.reserve(m_nodes.size());
-			for(int i=0;i<m_nodes.size();++i) pmaster->m_nodes.push_back(&m_nodes[i]);
-			m_clusters.push_back(pmaster);
-			btSwap(m_clusters[0],m_clusters[m_clusters.size()-1]);
-		}
-		/* Terminate	*/ 
-		for(i=0;i<m_clusters.size();++i)
-		{
-			if(m_clusters[i]->m_nodes.size()==0)
-			{
-				releaseCluster(i--);
-			}
-		}
-	} else
-	{
-		//create a cluster for each tetrahedron (if tetrahedra exist) or each face
-		if (m_tetras.size())
-		{
-			m_clusters.resize(m_tetras.size());
-			for(i=0;i<m_clusters.size();++i)
-			{
-				m_clusters[i]			=	new(btAlignedAlloc(sizeof(Cluster),16)) Cluster();
-				m_clusters[i]->m_collide=	true;
-			}
-			for (i=0;i<m_tetras.size();i++)
-			{
-				for (int j=0;j<4;j++)
-				{
-					m_clusters[i]->m_nodes.push_back(m_tetras[i].m_n[j]);
-				}
-			}
-
-		} else
-		{
-			m_clusters.resize(m_faces.size());
-			for(i=0;i<m_clusters.size();++i)
-			{
-				m_clusters[i]			=	new(btAlignedAlloc(sizeof(Cluster),16)) Cluster();
-				m_clusters[i]->m_collide=	true;
-			}
-
-			for(i=0;i<m_faces.size();++i)
-			{
-				for(int j=0;j<3;++j)
-				{
-					m_clusters[i]->m_nodes.push_back(m_faces[i].m_n[j]);
-				}
-			}
-		}
-	}
-
-	if (m_clusters.size())
-	{
-		initializeClusters();
-		updateClusters();
-
-
-		//for self-collision
-		m_clusterConnectivity.resize(m_clusters.size()*m_clusters.size());
-		{
-			for (int c0=0;c0<m_clusters.size();c0++)
-			{
-				m_clusters[c0]->m_clusterIndex=c0;
-				for (int c1=0;c1<m_clusters.size();c1++)
-				{
-					
-					bool connected=false;
-					Cluster* cla = m_clusters[c0];
-					Cluster* clb = m_clusters[c1];
-					for (int i=0;!connected&&i<cla->m_nodes.size();i++)
-					{
-						for (int j=0;j<clb->m_nodes.size();j++)
-						{
-							if (cla->m_nodes[i] == clb->m_nodes[j])
-							{
-								connected=true;
-								break;
-							}
-						}
-					}
-					m_clusterConnectivity[c0+c1*m_clusters.size()]=connected;
-				}
-			}
-		}
-	}
-
-	return(m_clusters.size());
 }
 
 //
@@ -1512,8 +1152,10 @@ void			btSoftBody::predictMotion(btScalar dt)
 		n.m_x	+=	n.m_v*m_sst.sdt;
 		n.m_f	=	btVector3(0,0,0);
 	}
-	/* Clusters				*/ 
-	updateClusters();
+	
+	// Clusters
+	//updateClusters();
+	
 	/* Bounds				*/ 
 	updateBounds();	
 	/* Nodes				*/ 
@@ -1565,14 +1207,13 @@ void			btSoftBody::predictMotion(btScalar dt)
 	/* Optimize dbvt's		*/ 
 	m_ndbvt.optimizeIncremental(1);
 	m_fdbvt.optimizeIncremental(1);
-	m_cdbvt.optimizeIncremental(1);
 }
 
 //
 void btSoftBody::solveConstraints()
 {
 	//
-	applyClusters(false);
+	//applyClusters(false);
 	
 	// Prepare links
 	int i,ni;
@@ -1636,37 +1277,8 @@ void btSoftBody::solveConstraints()
 	}
 	
 	// Apply clusters
-	dampClusters();
-	applyClusters(true);
-}
-
-//
-void			btSoftBody::solveClusters(const btAlignedObjectArray<btSoftBody*>& bodies)
-{
-	const int	nb=bodies.size();
-	int			iterations=0;
-	int i;
-
-	for(i=0;i<nb;++i)
-	{
-		iterations=btMax(iterations,bodies[i]->m_cfg.citerations);
-	}
-	for(i=0;i<nb;++i)
-	{
-		bodies[i]->prepareClusters(iterations);
-	}
-	for(i=0;i<iterations;++i)
-	{
-		const btScalar sor=1;
-		for(int j=0;j<nb;++j)
-		{
-			bodies[j]->solveClusters(sor);
-		}
-	}
-	for(i=0;i<nb;++i)
-	{
-		bodies[i]->cleanupClusters();
-	}
+	//dampClusters();
+	//applyClusters(true);
 }
 
 //
@@ -2132,473 +1744,6 @@ void				btSoftBody::updateConstants()
 }
 
 
-
-//
-void					btSoftBody::initializeClusters()
-{
-	int i;
-
-	for( i=0;i<m_clusters.size();++i)
-	{
-		Cluster&	c=*m_clusters[i];
-		c.m_imass=0;
-		c.m_masses.resize(c.m_nodes.size());
-		for(int j=0;j<c.m_nodes.size();++j)
-		{
-			if (c.m_nodes[j]->m_im==0)
-			{
-				c.m_containsAnchor = true;
-				c.m_masses[j]	=	BT_LARGE_FLOAT;
-			} else
-			{
-				c.m_masses[j]	=	btScalar(1.)/c.m_nodes[j]->m_im;
-			}
-			c.m_imass		+=	c.m_masses[j];
-		}
-		c.m_imass		=	btScalar(1.)/c.m_imass;
-		c.m_com			=	btSoftBody::clusterCom(&c);
-		c.m_lv			=	btVector3(0,0,0);
-		c.m_av			=	btVector3(0,0,0);
-		c.m_leaf		=	0;
-		/* Inertia	*/ 
-		btMatrix3x3&	ii=c.m_locii;
-		ii[0]=ii[1]=ii[2]=btVector3(0,0,0);
-		{
-			int i,ni;
-
-			for(i=0,ni=c.m_nodes.size();i<ni;++i)
-			{
-				const btVector3	k=c.m_nodes[i]->m_x-c.m_com;
-				const btVector3	q=k*k;
-				const btScalar	m=c.m_masses[i];
-				ii[0][0]	+=	m*(q[1]+q[2]);
-				ii[1][1]	+=	m*(q[0]+q[2]);
-				ii[2][2]	+=	m*(q[0]+q[1]);
-				ii[0][1]	-=	m*k[0]*k[1];
-				ii[0][2]	-=	m*k[0]*k[2];
-				ii[1][2]	-=	m*k[1]*k[2];
-			}
-		}
-		ii[1][0]=ii[0][1];
-		ii[2][0]=ii[0][2];
-		ii[2][1]=ii[1][2];
-		
-		ii = ii.inverse();
-
-		/* Frame	*/ 
-		c.m_framexform.setIdentity();
-		c.m_framexform.setOrigin(c.m_com);
-		c.m_framerefs.resize(c.m_nodes.size());
-		{
-			int i;
-			for(i=0;i<c.m_framerefs.size();++i)
-			{
-				c.m_framerefs[i]=c.m_nodes[i]->m_x-c.m_com;
-			}
-		}
-	}
-}
-
-//
-void					btSoftBody::updateClusters()
-{
-	BT_PROFILE("UpdateClusters");
-	int i;
-
-	for(i=0;i<m_clusters.size();++i)
-	{
-		btSoftBody::Cluster&	c=*m_clusters[i];
-		const int				n=c.m_nodes.size();
-		//const btScalar			invn=1/(btScalar)n;
-		if(n)
-		{
-			/* Frame				*/ 
-			const btScalar	eps=btScalar(0.0001);
-			btMatrix3x3		m,r,s;
-			m[0]=m[1]=m[2]=btVector3(0,0,0);
-			m[0][0]=eps*1;
-			m[1][1]=eps*2;
-			m[2][2]=eps*3;
-			c.m_com=clusterCom(&c);
-			for(int i=0;i<c.m_nodes.size();++i)
-			{
-				const btVector3		a=c.m_nodes[i]->m_x-c.m_com;
-				const btVector3&	b=c.m_framerefs[i];
-				m[0]+=a[0]*b;m[1]+=a[1]*b;m[2]+=a[2]*b;
-			}
-			
-			const btPolarDecomposition polar;  
-			polar.decompose(m, r, s);
-			
-			c.m_framexform.setOrigin(c.m_com);
-			c.m_framexform.setBasis(r);		
-			/* Inertia			*/ 
-#if 1/* Constant	*/ 
-			c.m_invwi=c.m_framexform.getBasis()*c.m_locii*c.m_framexform.getBasis().transpose();
-#else
-#if 0/* Sphere	*/ 
-			const btScalar	rk=(2*c.m_extents.length2())/(5*c.m_imass);
-			const btVector3	inertia(rk,rk,rk);
-			const btVector3	iin(btFabs(inertia[0])>SIMD_EPSILON?1/inertia[0]:0,
-				btFabs(inertia[1])>SIMD_EPSILON?1/inertia[1]:0,
-				btFabs(inertia[2])>SIMD_EPSILON?1/inertia[2]:0);
-
-			c.m_invwi=c.m_xform.getBasis().scaled(iin)*c.m_xform.getBasis().transpose();
-#else/* Actual	*/ 		
-			c.m_invwi[0]=c.m_invwi[1]=c.m_invwi[2]=btVector3(0,0,0);
-			for(int i=0;i<n;++i)
-			{
-				const btVector3	k=c.m_nodes[i]->m_x-c.m_com;
-				const btVector3		q=k*k;
-				const btScalar		m=1/c.m_nodes[i]->m_im;
-				c.m_invwi[0][0]	+=	m*(q[1]+q[2]);
-				c.m_invwi[1][1]	+=	m*(q[0]+q[2]);
-				c.m_invwi[2][2]	+=	m*(q[0]+q[1]);
-				c.m_invwi[0][1]	-=	m*k[0]*k[1];
-				c.m_invwi[0][2]	-=	m*k[0]*k[2];
-				c.m_invwi[1][2]	-=	m*k[1]*k[2];
-			}
-			c.m_invwi[1][0]=c.m_invwi[0][1];
-			c.m_invwi[2][0]=c.m_invwi[0][2];
-			c.m_invwi[2][1]=c.m_invwi[1][2];
-			c.m_invwi=c.m_invwi.inverse();
-#endif
-#endif
-			/* Velocities			*/ 
-			c.m_lv=btVector3(0,0,0);
-			c.m_av=btVector3(0,0,0);
-			{
-				int i;
-
-				for(i=0;i<n;++i)
-				{
-					const btVector3	v=c.m_nodes[i]->m_v*c.m_masses[i];
-					c.m_lv	+=	v;
-					c.m_av	+=	btCross(c.m_nodes[i]->m_x-c.m_com,v);
-				}
-			}
-			c.m_lv=c.m_imass*c.m_lv*(1-c.m_ldamping);
-			c.m_av=c.m_invwi*c.m_av*(1-c.m_adamping);
-			c.m_vimpulses[0]	=
-				c.m_vimpulses[1]	= btVector3(0,0,0);
-			c.m_dimpulses[0]	=
-				c.m_dimpulses[1]	= btVector3(0,0,0);
-			c.m_nvimpulses		= 0;
-			c.m_ndimpulses		= 0;
-			/* Matching				*/ 
-			if(c.m_matching>0)
-			{
-				for(int j=0;j<c.m_nodes.size();++j)
-				{
-					Node&			n=*c.m_nodes[j];
-					const btVector3	x=c.m_framexform*c.m_framerefs[j];
-					n.m_x=Lerp(n.m_x,x,c.m_matching);
-				}
-			}			
-			/* Dbvt					*/ 
-			if(c.m_collide)
-			{
-				btVector3	mi=c.m_nodes[0]->m_x;
-				btVector3	mx=mi;
-				for(int j=1;j<n;++j)
-				{
-					mi.setMin(c.m_nodes[j]->m_x);
-					mx.setMax(c.m_nodes[j]->m_x);
-				}			
-				ATTRIBUTE_ALIGNED16(btDbvtVolume)	bounds=btDbvtVolume::FromMM(mi,mx);
-				if(c.m_leaf)
-					m_cdbvt.update(c.m_leaf,bounds,c.m_lv*m_sst.sdt*3,m_sst.radmrg);
-				else
-					c.m_leaf=m_cdbvt.insert(bounds,&c);
-			}
-		}
-	}
-
-
-}
-
-
-
-
-//
-void					btSoftBody::cleanupClusters()
-{
-	for(int i=0;i<m_joints.size();++i)
-	{
-		m_joints[i]->Terminate(m_sst.sdt);
-		if(m_joints[i]->m_delete)
-		{
-			btAlignedFree(m_joints[i]);
-			m_joints.remove(m_joints[i--]);
-		}	
-	}
-}
-
-//
-void					btSoftBody::prepareClusters(int iterations)
-{
-	for(int i=0;i<m_joints.size();++i)
-	{
-		m_joints[i]->Prepare(m_sst.sdt,iterations);
-	}
-}
-
-
-//
-void					btSoftBody::solveClusters(btScalar sor)
-{
-	for(int i=0,ni=m_joints.size();i<ni;++i)
-	{
-		m_joints[i]->Solve(m_sst.sdt,sor);
-	}
-}
-
-//
-void					btSoftBody::applyClusters(bool drift)
-{
-	BT_PROFILE("ApplyClusters");
-//	const btScalar					f0=m_sst.sdt;
-	//const btScalar					f1=f0/2;
-	btAlignedObjectArray<btVector3> deltas;
-	btAlignedObjectArray<btScalar> weights;
-	deltas.resize(m_nodes.size(),btVector3(0,0,0));
-	weights.resize(m_nodes.size(),0);
-	int i;
-
-	if(drift)
-	{
-		for(i=0;i<m_clusters.size();++i)
-		{
-			Cluster&	c=*m_clusters[i];
-			if(c.m_ndimpulses)
-			{
-				c.m_dimpulses[0]/=(btScalar)c.m_ndimpulses;
-				c.m_dimpulses[1]/=(btScalar)c.m_ndimpulses;
-			}
-		}
-	}
-	
-	for(i=0;i<m_clusters.size();++i)
-	{
-		Cluster&	c=*m_clusters[i];	
-		if(0<(drift?c.m_ndimpulses:c.m_nvimpulses))
-		{
-			const btVector3		v=(drift?c.m_dimpulses[0]:c.m_vimpulses[0])*m_sst.sdt;
-			const btVector3		w=(drift?c.m_dimpulses[1]:c.m_vimpulses[1])*m_sst.sdt;
-			for(int j=0;j<c.m_nodes.size();++j)
-			{
-				const int			idx=int(c.m_nodes[j]-&m_nodes[0]);
-				const btVector3&	x=c.m_nodes[j]->m_x;
-				const btScalar		q=c.m_masses[j];
-				deltas[idx]		+=	(v+btCross(w,x-c.m_com))*q;
-				weights[idx]	+=	q;
-			}
-		}
-	}
-	for(i=0;i<deltas.size();++i)
-	{
-		if(weights[i]>0) 
-		{
-			m_nodes[i].m_x+=deltas[i]/weights[i];
-		}
-	}
-}
-
-//
-void					btSoftBody::dampClusters()
-{
-	int i;
-
-	for(i=0;i<m_clusters.size();++i)
-	{
-		Cluster&	c=*m_clusters[i];	
-		if(c.m_ndamping>0)
-		{
-			for(int j=0;j<c.m_nodes.size();++j)
-			{
-				Node&			n=*c.m_nodes[j];
-				if(n.m_im>0)
-				{
-					const btVector3	vx=c.m_lv+btCross(c.m_av,c.m_nodes[j]->m_q-c.m_com);
-					if(vx.length2()<=n.m_v.length2())
-						{
-						n.m_v	+=	c.m_ndamping*(vx-n.m_v);
-						}
-				}
-			}
-		}
-	}
-}
-
-//
-void				btSoftBody::Joint::Prepare(btScalar dt,int)
-{
-	m_bodies[0].activate();
-	m_bodies[1].activate();
-}
-
-//
-void				btSoftBody::LJoint::Prepare(btScalar dt,int iterations)
-{
-	static const btScalar	maxdrift=4;
-	Joint::Prepare(dt,iterations);
-	m_rpos[0]		=	m_bodies[0].xform()*m_refs[0];
-	m_rpos[1]		=	m_bodies[1].xform()*m_refs[1];
-	m_drift			=	Clamp(m_rpos[0]-m_rpos[1],maxdrift)*m_erp/dt;
-	m_rpos[0]		-=	m_bodies[0].xform().getOrigin();
-	m_rpos[1]		-=	m_bodies[1].xform().getOrigin();
-	m_massmatrix	=	ImpulseMatrix(	m_bodies[0].invMass(),m_bodies[0].invWorldInertia(),m_rpos[0],
-		m_bodies[1].invMass(),m_bodies[1].invWorldInertia(),m_rpos[1]);
-	if(m_split>0)
-	{
-		m_sdrift	=	m_massmatrix*(m_drift*m_split);
-		m_drift		*=	1-m_split;
-	}
-	m_drift	/=(btScalar)iterations;
-}
-
-//
-void				btSoftBody::LJoint::Solve(btScalar dt,btScalar sor)
-{
-	const btVector3		va=m_bodies[0].velocity(m_rpos[0]);
-	const btVector3		vb=m_bodies[1].velocity(m_rpos[1]);
-	const btVector3		vr=va-vb;
-	btSoftBody::Impulse	impulse;
-	impulse.m_asVelocity	=	1;
-	impulse.m_velocity		=	m_massmatrix*(m_drift+vr*m_cfm)*sor;
-	m_bodies[0].applyImpulse(-impulse,m_rpos[0]);
-	m_bodies[1].applyImpulse( impulse,m_rpos[1]);
-}
-
-//
-void				btSoftBody::LJoint::Terminate(btScalar dt)
-{
-	if(m_split>0)
-	{
-		m_bodies[0].applyDImpulse(-m_sdrift,m_rpos[0]);
-		m_bodies[1].applyDImpulse( m_sdrift,m_rpos[1]);
-	}
-}
-
-//
-void				btSoftBody::AJoint::Prepare(btScalar dt,int iterations)
-{
-	static const btScalar	maxdrift=SIMD_PI/16;
-	m_icontrol->Prepare(this);
-	Joint::Prepare(dt,iterations);
-	m_axis[0]	=	m_bodies[0].xform().getBasis()*m_refs[0];
-	m_axis[1]	=	m_bodies[1].xform().getBasis()*m_refs[1];
-	m_drift		=	NormalizeAny(btCross(m_axis[1],m_axis[0]));
-	m_drift		*=	btMin(maxdrift,btAcos(Clamp<btScalar>(btDot(m_axis[0],m_axis[1]),-1,+1)));
-	m_drift		*=	m_erp/dt;
-	m_massmatrix=	AngularImpulseMatrix(m_bodies[0].invWorldInertia(),m_bodies[1].invWorldInertia());
-	if(m_split>0)
-	{
-		m_sdrift	=	m_massmatrix*(m_drift*m_split);
-		m_drift		*=	1-m_split;
-	}
-	m_drift	/=(btScalar)iterations;
-}
-
-//
-void				btSoftBody::AJoint::Solve(btScalar dt,btScalar sor)
-{
-	const btVector3		va=m_bodies[0].angularVelocity();
-	const btVector3		vb=m_bodies[1].angularVelocity();
-	const btVector3		vr=va-vb;
-	const btScalar		sp=btDot(vr,m_axis[0]);
-	const btVector3		vc=vr-m_axis[0]*m_icontrol->Speed(this,sp);
-	btSoftBody::Impulse	impulse;
-	impulse.m_asVelocity	=	1;
-	impulse.m_velocity		=	m_massmatrix*(m_drift+vc*m_cfm)*sor;
-	m_bodies[0].applyAImpulse(-impulse);
-	m_bodies[1].applyAImpulse( impulse);
-}
-
-//
-void				btSoftBody::AJoint::Terminate(btScalar dt)
-{
-	if(m_split>0)
-	{
-		m_bodies[0].applyDAImpulse(-m_sdrift);
-		m_bodies[1].applyDAImpulse( m_sdrift);
-	}
-}
-
-//
-void				btSoftBody::CJoint::Prepare(btScalar dt,int iterations)
-{
-	Joint::Prepare(dt,iterations);
-	const bool	dodrift=(m_life==0);
-	m_delete=(++m_life)>m_maxlife;
-	if(dodrift)
-	{
-		m_drift=m_drift*m_erp/dt;
-		if(m_split>0)
-		{
-			m_sdrift	=	m_massmatrix*(m_drift*m_split);
-			m_drift		*=	1-m_split;
-		}
-		m_drift/=(btScalar)iterations;
-	}
-	else
-	{
-		m_drift=m_sdrift=btVector3(0,0,0);
-	}
-}
-
-//
-void				btSoftBody::CJoint::Solve(btScalar dt,btScalar sor)
-{
-	const btVector3		va=m_bodies[0].velocity(m_rpos[0]);
-	const btVector3		vb=m_bodies[1].velocity(m_rpos[1]);
-	const btVector3		vrel=va-vb;
-	const btScalar		rvac=btDot(vrel,m_normal);
-	btSoftBody::Impulse	impulse;
-	impulse.m_asVelocity	=	1;
-	impulse.m_velocity		=	m_drift;
-	if(rvac<0)
-	{
-		const btVector3	iv=m_normal*rvac;
-		const btVector3	fv=vrel-iv;
-		impulse.m_velocity	+=	iv+fv*m_friction;
-	}
-	impulse.m_velocity=m_massmatrix*impulse.m_velocity*sor;
-	
-	if (m_bodies[0].m_soft==m_bodies[1].m_soft)
-	{
-		if ((impulse.m_velocity.getX() ==impulse.m_velocity.getX())&&(impulse.m_velocity.getY() ==impulse.m_velocity.getY())&&
-			(impulse.m_velocity.getZ() ==impulse.m_velocity.getZ()))
-		{
-			if (impulse.m_asVelocity)
-			{
-				if (impulse.m_velocity.length() <m_bodies[0].m_soft->m_maxSelfCollisionImpulse)
-				{
-					
-				} else
-				{
-					m_bodies[0].applyImpulse(-impulse*m_bodies[0].m_soft->m_selfCollisionImpulseFactor,m_rpos[0]);
-					m_bodies[1].applyImpulse( impulse*m_bodies[0].m_soft->m_selfCollisionImpulseFactor,m_rpos[1]);
-				}
-			}
-		}
-	} else
-	{
-		m_bodies[0].applyImpulse(-impulse,m_rpos[0]);
-		m_bodies[1].applyImpulse( impulse,m_rpos[1]);
-	}
-}
-
-//
-void				btSoftBody::CJoint::Terminate(btScalar dt)
-{
-	if(m_split>0)
-	{
-		m_bodies[0].applyDImpulse(-m_sdrift,m_rpos[0]);
-		m_bodies[1].applyDImpulse( m_sdrift,m_rpos[1]);
-	}
-}
-
 //
 void				btSoftBody::applyForces()
 {
@@ -2790,12 +1935,6 @@ void			btSoftBody::defaultCollisionHandler(const btCollisionObjectWrapper* pcoWr
 			m_ndbvt.collideTV(m_ndbvt.m_root,volume,docollide);
 		}
 		break;
-	case	fCollision::CL_RS:
-		{
-			btSoftColliders::CollideCL_RS	collider;
-			collider.ProcessColObj(this,pcoWrap);
-		}
-		break;
 	}
 }
 
@@ -2805,18 +1944,6 @@ void			btSoftBody::defaultCollisionHandler(btSoftBody* psb)
 	const int cf=m_cfg.collisions&psb->m_cfg.collisions;
 	switch(cf&fCollision::SVSmask)
 	{
-	case	fCollision::CL_SS:
-		{
-			
-			//support self-collision if CL_SELF flag set
-			if (this!=psb || psb->m_cfg.collisions&fCollision::CL_SELF)
-			{
-				btSoftColliders::CollideCL_SS	docollide;
-				docollide.ProcessSoftSoft(this,psb);
-			}
-			
-		}
-		break;
 	case	fCollision::VF_SS:
 		{
 			//only self-collision for Cluster, not Vertex-Face yet

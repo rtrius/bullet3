@@ -84,11 +84,9 @@ public:
 	struct fCollision { enum _ {
 		RVSmask	=	0x000f,	///Rigid versus soft mask
 		SDF_RS	=	0x0001,	///SDF based rigid vs soft
-		CL_RS	=	0x0002, ///Cluster vs convex rigid vs soft
 
 		SVSmask	=	0x0030,	///Rigid versus soft mask		
 		VF_SS	=	0x0010,	///Vertex vs face soft vs soft handling
-		CL_SS	=	0x0020, ///Cluster vs cluster soft vs soft handling
 		CL_SELF =	0x0040, ///Cluster soft body self collision
 		
 		Default	=	SDF_RS,
@@ -128,7 +126,6 @@ public:
 	struct	Material : Element
 	{
 		btScalar				m_kLST;			// Linear stiffness coefficient [0,1]
-		btScalar				m_kAST;			// Area/Angular stiffness coefficient [0,1]
 		btScalar				m_kVST;			// Volume stiffness coefficient [0,1]
 		bool					m_debugDraw;
 	};
@@ -227,250 +224,6 @@ public:
 		btMatrix3x3				m_aqq;			// Base scaling
 	};
 	
-	struct	Cluster
-	{
-		btAlignedObjectArray<btScalar>				m_masses;
-		btAlignedObjectArray<Node*>	m_nodes;		
-		btAlignedObjectArray<btVector3>				m_framerefs;
-		btTransform					m_framexform;
-		btScalar					m_idmass;
-		btScalar					m_imass;
-		btMatrix3x3					m_locii;
-		btMatrix3x3					m_invwi;
-		btVector3					m_com;
-		btVector3					m_vimpulses[2];
-		btVector3					m_dimpulses[2];
-		int							m_nvimpulses;
-		int							m_ndimpulses;
-		btVector3					m_lv;
-		btVector3					m_av;
-		btDbvtNode*					m_leaf;
-		btScalar					m_ndamping;	// Node damping
-		btScalar					m_ldamping;	// Linear damping
-		btScalar					m_adamping;	// Angular damping
-		btScalar					m_matching;
-		btScalar					m_maxSelfCollisionImpulse;
-		btScalar					m_selfCollisionImpulseFactor;
-		bool						m_containsAnchor;
-		bool						m_collide;
-		int							m_clusterIndex;
-		Cluster() : m_leaf(0),m_ndamping(0),m_ldamping(0),m_adamping(0),m_matching(0) 
-		,m_maxSelfCollisionImpulse(100.f),
-		m_selfCollisionImpulseFactor(0.01f),
-		m_containsAnchor(false)
-		{}
-	};
-	
-	struct	Impulse
-	{
-		btVector3					m_velocity;
-		btVector3					m_drift;
-		int							m_asVelocity:1;
-		int							m_asDrift:1;
-		Impulse() : m_velocity(0,0,0),m_drift(0,0,0),m_asVelocity(0),m_asDrift(0)	{}
-		Impulse						operator -() const
-		{
-			Impulse i=*this;
-			i.m_velocity=-i.m_velocity;
-			i.m_drift=-i.m_drift;
-			return(i);
-		}
-		Impulse						operator*(btScalar x) const
-		{
-			Impulse i=*this;
-			i.m_velocity*=x;
-			i.m_drift*=x;
-			return(i);
-		}
-	};
-	
-	struct	Body
-	{
-		Cluster*			m_soft;
-		btRigidBody*		m_rigid;
-		const btCollisionObject*	m_collisionObject;
-
-		Body() : m_soft(0),m_rigid(0),m_collisionObject(0)				{}
-		Body(Cluster* p) : m_soft(p),m_rigid(0),m_collisionObject(0)	{}
-		Body(const btCollisionObject* colObj) : m_soft(0),m_collisionObject(colObj)
-		{
-			m_rigid = (btRigidBody*)btRigidBody::upcast(m_collisionObject);
-		}
-
-		void activate() const
-		{
-			if(m_rigid) 
-				m_rigid->activate();
-			if (m_collisionObject)
-				m_collisionObject->activate();
-
-		}
-		const btMatrix3x3& invWorldInertia() const
-		{
-			static const btMatrix3x3	iwi(0,0,0,0,0,0,0,0,0);
-			if(m_rigid) return(m_rigid->getInvInertiaTensorWorld());
-			if(m_soft)	return(m_soft->m_invwi);
-			return(iwi);
-		}
-		btScalar invMass() const
-		{
-			if(m_rigid) return(m_rigid->getInvMass());
-			if(m_soft)	return(m_soft->m_imass);
-			return(0);
-		}
-		const btTransform& xform() const
-		{
-			static const btTransform	identity=btTransform::getIdentity();		
-			if(m_collisionObject) return(m_collisionObject->getWorldTransform());
-			if(m_soft)	return(m_soft->m_framexform);
-			return(identity);
-		}
-		btVector3 linearVelocity() const
-		{
-			if(m_rigid) return(m_rigid->getLinearVelocity());
-			if(m_soft)	return(m_soft->m_lv);
-			return(btVector3(0,0,0));
-		}
-		btVector3 angularVelocity(const btVector3& rpos) const
-		{			
-			if(m_rigid) return(btCross(m_rigid->getAngularVelocity(),rpos));
-			if(m_soft)	return(btCross(m_soft->m_av,rpos));
-			return(btVector3(0,0,0));
-		}
-		btVector3 angularVelocity() const
-		{			
-			if(m_rigid) return(m_rigid->getAngularVelocity());
-			if(m_soft)	return(m_soft->m_av);
-			return(btVector3(0,0,0));
-		}
-		btVector3 velocity(const btVector3& rpos) const
-		{
-			return(linearVelocity()+angularVelocity(rpos));
-		}
-		void applyVImpulse(const btVector3& impulse,const btVector3& rpos) const
-		{
-			if(m_rigid)	m_rigid->applyImpulse(impulse,rpos);
-			if(m_soft)	btSoftBody::clusterVImpulse(m_soft,rpos,impulse);
-		}
-		void applyDImpulse(const btVector3& impulse,const btVector3& rpos) const
-		{
-			if(m_rigid)	m_rigid->applyImpulse(impulse,rpos);
-			if(m_soft)	btSoftBody::clusterDImpulse(m_soft,rpos,impulse);
-		}		
-		void applyImpulse(const Impulse& impulse,const btVector3& rpos) const
-		{
-			if(impulse.m_asVelocity)	
-			{
-//				printf("impulse.m_velocity = %f,%f,%f\n",impulse.m_velocity.getX(),impulse.m_velocity.getY(),impulse.m_velocity.getZ());
-				applyVImpulse(impulse.m_velocity,rpos);
-			}
-			if(impulse.m_asDrift)		
-			{
-//				printf("impulse.m_drift = %f,%f,%f\n",impulse.m_drift.getX(),impulse.m_drift.getY(),impulse.m_drift.getZ());
-				applyDImpulse(impulse.m_drift,rpos);
-			}
-		}
-		void applyVAImpulse(const btVector3& impulse) const
-		{
-			if(m_rigid)	m_rigid->applyTorqueImpulse(impulse);
-			if(m_soft)	btSoftBody::clusterVAImpulse(m_soft,impulse);
-		}
-		void applyDAImpulse(const btVector3& impulse) const
-		{
-			if(m_rigid)	m_rigid->applyTorqueImpulse(impulse);
-			if(m_soft)	btSoftBody::clusterDAImpulse(m_soft,impulse);
-		}
-		void applyAImpulse(const Impulse& impulse) const
-		{
-			if(impulse.m_asVelocity)	applyVAImpulse(impulse.m_velocity);
-			if(impulse.m_asDrift)		applyDAImpulse(impulse.m_drift);
-		}
-		void applyDCImpulse(const btVector3& impulse) const
-		{
-			if(m_rigid)	m_rigid->applyCentralImpulse(impulse);
-			if(m_soft)	btSoftBody::clusterDCImpulse(m_soft,impulse);
-		}
-	};
-	
-	struct	Joint
-	{
-		struct eType { enum _ {
-			Linear=0,
-			Angular,
-			Contact
-		};};
-		struct Specs
-		{
-			Specs() : erp(1),cfm(1),split(1) {}
-			btScalar	erp;
-			btScalar	cfm;
-			btScalar	split;
-		};
-		Body						m_bodies[2];
-		btVector3					m_refs[2];
-		btScalar					m_cfm;
-		btScalar					m_erp;
-		btScalar					m_split;
-		btVector3					m_drift;
-		btVector3					m_sdrift;
-		btMatrix3x3					m_massmatrix;
-		bool						m_delete;
-		virtual						~Joint() {}
-		Joint() : m_delete(false) {}
-		virtual void Prepare(btScalar dt,int iterations);
-		virtual void Solve(btScalar dt,btScalar sor)=0;
-		virtual void Terminate(btScalar dt)=0;
-		virtual eType::_ Type() const=0;
-	};
-	
-	struct	LJoint : Joint
-	{
-		struct Specs : Joint::Specs
-		{
-			btVector3	position;
-		};		
-		btVector3					m_rpos[2];
-		void Prepare(btScalar dt,int iterations);
-		void Solve(btScalar dt,btScalar sor);
-		void Terminate(btScalar dt);
-		eType::_ Type() const { return(eType::Linear); }
-	};
-	
-	struct	AJoint : Joint
-	{
-		struct IControl
-		{
-			virtual void Prepare(AJoint*)				{}
-			virtual btScalar		Speed(AJoint*,btScalar current) { return(current); }
-			static IControl*		Default()						{ static IControl def;return(&def); }
-		};
-		struct Specs : Joint::Specs
-		{
-			Specs() : icontrol(IControl::Default()) {}
-			btVector3	axis;
-			IControl*	icontrol;
-		};		
-		btVector3					m_axis[2];
-		IControl*					m_icontrol;
-		void Prepare(btScalar dt,int iterations);
-		void Solve(btScalar dt,btScalar sor);
-		void Terminate(btScalar dt);
-		eType::_ Type() const { return(eType::Angular); }
-	};
-	
-	struct	CJoint : Joint
-	{		
-		int							m_life;
-		int							m_maxlife;
-		btVector3					m_rpos[2];
-		btVector3					m_normal;
-		btScalar					m_friction;
-		void Prepare(btScalar dt,int iterations);
-		void Solve(btScalar dt,btScalar sor);
-		void Terminate(btScalar dt);
-		eType::_ Type() const { return(eType::Contact); }
-	};
-	
 	struct	Config
 	{
 		btScalar				kDP;			// Damping coefficient [0,1]
@@ -482,12 +235,6 @@ public:
 		btScalar				kKHR;			// Kinetic contacts hardness [0,1]
 		btScalar				kSHR;			// Soft contacts hardness [0,1]
 		btScalar				kAHR;			// Anchors hardness [0,1]
-		btScalar				kSRHR_CL;		// Soft vs rigid hardness [0,1] (cluster only)
-		btScalar				kSKHR_CL;		// Soft vs kinetic hardness [0,1] (cluster only)
-		btScalar				kSSHR_CL;		// Soft vs soft hardness [0,1] (cluster only)
-		btScalar				kSR_SPLT_CL;	// Soft vs rigid impulse split [0,1] (cluster only)
-		btScalar				kSK_SPLT_CL;	// Soft vs rigid impulse split [0,1] (cluster only)
-		btScalar				kSS_SPLT_CL;	// Soft vs rigid impulse split [0,1] (cluster only)
 		btScalar				maxvolume;		// Maximum volume ratio for pose
 		int						viterations;	// Velocities solver iterations
 		int						piterations;	// Positions solver iterations
@@ -537,22 +284,15 @@ public:
 	btAlignedObjectArray<Anchor>			m_anchors;
 	btAlignedObjectArray<RContact>			m_rcontacts;	// Rigid contacts
 	btAlignedObjectArray<SContact>			m_scontacts;	// Soft contacts
-	btAlignedObjectArray<Joint*>				m_joints;
 	btAlignedObjectArray<Material*>				m_materials;
 	btVector3				m_bounds[2];	// Spatial bounds	
 	bool					m_bUpdateRtCst;	// Update runtime constants
 	btDbvt					m_ndbvt;		// Nodes tree
 	btDbvt					m_fdbvt;		// Faces tree
-	btDbvt					m_cdbvt;		// Clusters tree
-	btAlignedObjectArray<Cluster*>			m_clusters;
 
-	btAlignedObjectArray<bool> m_clusterConnectivity;//cluster connectivity, for self-collision
-
-	btTransform			m_initialWorldTransform;
 	btScalar        	m_restLengthScale;
 	
 	// Api
-
 	btSoftBody(	btSoftBodyWorldInfo* worldInfo,int node_count, const btVector3* x, const btScalar* m);
 	btSoftBody(	btSoftBodyWorldInfo* worldInfo);
 
@@ -586,13 +326,6 @@ public:
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 	void appendAnchor(int node,btRigidBody* body, const btVector3& localPivot,bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 
-	void appendLinearJoint(const LJoint::Specs& specs,Cluster* body0,Body body1);
-	void appendLinearJoint(const LJoint::Specs& specs,Body body=Body());
-	void appendLinearJoint(const LJoint::Specs& specs,btSoftBody* body);
-
-	void appendAngularJoint(const AJoint::Specs& specs,Cluster* body0,Body body1);
-	void appendAngularJoint(const AJoint::Specs& specs,Body body=Body());
-	void appendAngularJoint(const AJoint::Specs& specs,btSoftBody* body);
 	
 	void addForce(const btVector3& force);									//Add force (or gravity) to the entire body
 	void addForce(const btVector3& force, int node);						//Add force (or gravity) to a node of the body
@@ -617,26 +350,9 @@ public:
 	void resetLinkRestLengths();					//Set current link lengths as resting lengths
 	btScalar getVolume() const;
 	
-	int clusterCount() const;
-	static btVector3 clusterCom(const Cluster* cluster);	//Cluster center of mass
-	btVector3 clusterCom(int cluster) const;				//Cluster center of mass
-	static btVector3 clusterVelocity(const Cluster* cluster,const btVector3& rpos);	//Cluster velocity at rpos	
-	static void clusterVImpulse(Cluster* cluster,const btVector3& rpos,const btVector3& impulse);
-	static void clusterDImpulse(Cluster* cluster,const btVector3& rpos,const btVector3& impulse);
-	static void clusterImpulse(Cluster* cluster,const btVector3& rpos,const Impulse& impulse);
-	static void clusterVAImpulse(Cluster* cluster,const btVector3& impulse);
-	static void clusterDAImpulse(Cluster* cluster,const btVector3& impulse);
-	static void clusterAImpulse(Cluster* cluster,const Impulse& impulse);
-	static void clusterDCImpulse(Cluster* cluster,const btVector3& impulse);
-	
 	int generateBendingConstraints(int distance, Material* mat=0);	//Generate bending constraints based on distance in the adjency graph
 	void randomizeConstraints();	//Randomize constraints to reduce solver bias	
 	
-	void releaseCluster(int index);
-	void releaseClusters();
-	///generateClusters(K-mean) with k=0 will create a convex cluster for each tetrahedron or triangle
-	///otherwise an approximation will be used (better performance)
-	int generateClusters(int k,int maxiterations=8192);
 	void refine(ImplicitFn* ifn,btScalar accurary,bool cut);
 	bool cutLink(int node0,int node1,btScalar position);
 	bool cutLink(const Node* node0,const Node* node1,btScalar position);
@@ -645,7 +361,6 @@ public:
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, sRayCast& results);
 	void predictMotion(btScalar dt);
 	void solveConstraints();
-	static void solveClusters(const btAlignedObjectArray<btSoftBody*>& bodies);
 	void defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap);
 	void defaultCollisionHandler(btSoftBody* psb);
 	
@@ -692,13 +407,6 @@ public:
 	void updateConstants();
 	void updateLinkConstants();
 	void updateArea(bool averageArea = true);
-	void initializeClusters();
-	void updateClusters();
-	void cleanupClusters();
-	void prepareClusters(int iterations);
-	void solveClusters(btScalar sor);
-	void applyClusters(bool drift);
-	void dampClusters();
 	void applyForces();	
 	static void PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti);
 	static void PSolve_RContacts(btSoftBody* psb,btScalar kst,btScalar ti);
