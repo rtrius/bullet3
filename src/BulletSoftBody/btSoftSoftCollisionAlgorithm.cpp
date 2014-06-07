@@ -38,7 +38,7 @@ void btSoftSoftCollisionAlgorithm::processCollision (const btCollisionObjectWrap
 {
 	btSoftBody* soft0 =	(btSoftBody*)body0Wrap->getCollisionObject();
 	btSoftBody* soft1 =	(btSoftBody*)body1Wrap->getCollisionObject();
-	soft0->getSoftBodySolver()->processCollision(soft0, soft1);
+	soft0->defaultCollisionHandler(soft1);
 }
 
 btScalar btSoftSoftCollisionAlgorithm::calculateTimeOfImpact(btCollisionObject* /*body0*/,btCollisionObject* /*body1*/,const btDispatcherInfo& /*dispatchInfo*/,btManifoldResult* /*resultOut*/)

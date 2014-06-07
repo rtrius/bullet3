@@ -68,149 +68,6 @@ const int maxNumObjects = 32760;
 #define EXTRA_HEIGHT -10.f
 
 
-#ifdef USE_AMD_OPENCL
-#include "btOpenCLUtils.h"
-#include "BulletMultiThreaded/GpuSoftBodySolvers/OpenCL/btSoftBodySolver_OpenCL.h"
-#include "BulletMultiThreaded/GpuSoftBodySolvers/OpenCL/btSoftBodySolver_OpenCLSIMDAware.h"
-#include "BulletMultiThreaded/GpuSoftBodySolvers/OpenCL/btSoftBodySolverVertexBuffer_OpenGL.h"
-
-btOpenCLSoftBodySolver* g_openCLSIMDSolver=0;
-btSoftBodySolverOutputCLtoCPU* g_softBodyOutput = 0;
-
-cl_context			g_cxMainContext;
-cl_device_id		g_cdDevice;
-cl_command_queue	g_cqCommandQue;
-
-void initCL( void* glCtx, void* glDC )
-{
-	int ciErrNum = 0;
-
-#if defined(CL_PLATFORM_MINI_CL)
-	cl_device_type deviceType = CL_DEVICE_TYPE_CPU;//or use CL_DEVICE_TYPE_DEBUG to debug MiniCL
-#elif defined(CL_PLATFORM_INTEL)
-	cl_device_type deviceType = CL_DEVICE_TYPE_CPU;
-#elif defined(CL_PLATFORM_AMD)
-	cl_device_type deviceType = CL_DEVICE_TYPE_GPU;
-#elif defined(CL_PLATFORM_NVIDIA)
-	cl_device_type deviceType = CL_DEVICE_TYPE_GPU;
-#else
-#ifdef __APPLE__
-	cl_device_type deviceType = CL_DEVICE_TYPE_ALL;//GPU;
-#else
-	cl_device_type deviceType = CL_DEVICE_TYPE_CPU;//CL_DEVICE_TYPE_ALL
-#endif//__APPLE__
-#endif
-	
-	g_cxMainContext = btOpenCLUtils::createContextFromType(deviceType, &ciErrNum, glCtx, glDC);
-	oclCHECKERROR(ciErrNum, CL_SUCCESS);
-
-	
-	int numDev = btOpenCLUtils::getNumDevices(g_cxMainContext);
-	if (!numDev)
-	{
-		btAssert(0);
-		exit(0);//this is just a demo, exit now
-	}
-
-	g_cdDevice = btOpenCLUtils::getDevice(g_cxMainContext,0);
-	oclCHECKERROR(ciErrNum, CL_SUCCESS);
-
-	btOpenCLDeviceInfo clInfo;
-	btOpenCLUtils::getDeviceInfo(g_cdDevice,clInfo);
-	btOpenCLUtils::printDeviceInfo(g_cdDevice);
-	
-	// create a command-queue
-	g_cqCommandQue = clCreateCommandQueue(g_cxMainContext, g_cdDevice, 0, &ciErrNum);
-	oclCHECKERROR(ciErrNum, CL_SUCCESS);
-}
-
-class CachingCLFunctions : public CLFunctions
-{
-protected:
-
-	cl_device_id		m_device;
-
-	const char* strip(const char* name, const char* pattern);
-
-public:
-	CachingCLFunctions(cl_command_queue cqCommandQue, cl_context cxMainContext) :
-		CLFunctions(cqCommandQue,cxMainContext)
-	{
-		size_t actualSize;
-		cl_int retval = clGetCommandQueueInfo (	cqCommandQue, CL_QUEUE_DEVICE, sizeof(cl_device_id),
-			&m_device, &actualSize);
-	}
-
-	/**
-	 * Compile a compute shader kernel from a string and return the appropriate cl_kernel object.
-	 */	
-	virtual cl_kernel compileCLKernelFromString( const char* kernelSource, const char* kernelName, const char* additionalMacros , const char* orgSrcFileNameForCaching)
-	{
-		char srcFileNameForCaching[1024];
-		sprintf(srcFileNameForCaching,"%s/%s","../../src/BulletMultiThreaded/GpuSoftBodySolvers/OpenCL",orgSrcFileNameForCaching);
-
-		btAssert(additionalMacros);
-		btAssert(srcFileNameForCaching && strlen(srcFileNameForCaching));
-
-		printf("compiling kernelName: %s ",kernelName);
-		cl_kernel kernel=0;
-		cl_int ciErrNum;
-
-
-		size_t program_length = strlen(kernelSource);
-
-		cl_program m_cpProgram = btOpenCLUtils::compileCLProgramFromString(m_cxMainContext, m_device, kernelSource,  &ciErrNum, additionalMacros);
-
-		
-		// Create the kernel
-		kernel = clCreateKernel(m_cpProgram, kernelName, &ciErrNum);
-		if (ciErrNum != CL_SUCCESS)
-		{
-			const char* msg = "";
-			switch(ciErrNum)
-			{
-			case CL_INVALID_PROGRAM:
-				msg = "Program is not a valid program object.";
-				break;
-			case CL_INVALID_PROGRAM_EXECUTABLE:
-				msg = "There is no successfully built executable for program.";
-				break;
-			case CL_INVALID_KERNEL_NAME:
-				msg = "kernel_name is not found in program.";
-				break;
-			case CL_INVALID_KERNEL_DEFINITION:
-				msg = "the function definition for __kernel function given by kernel_name such as the number of arguments, the argument types are not the same for all devices for which the program executable has been built.";
-				break;
-			case CL_INVALID_VALUE:
-				msg = "kernel_name is NULL.";
-				break;
-			case CL_OUT_OF_HOST_MEMORY:
-				msg = "Failure to allocate resources required by the OpenCL implementation on the host.";
-				break;
-			default:
-				{
-				}
-			}
-
-			printf("Error in clCreateKernel for kernel '%s', error is \"%s\", Line %u in file %s !!!\n\n", kernelName, msg, __LINE__, __FILE__);
-
-	#ifndef BT_SUPPRESS_OPENCL_ASSERTS
-			btAssert(0);
-	#endif //BT_SUPPRESS_OPENCL_ASSERTS
-			m_kernelCompilationFailures++;
-			return 0;
-		}
-
-		printf("ready. \n");
-		if (!kernel)
-			m_kernelCompilationFailures++;
-		return kernel;
-	}
-
-};
-
-
-#endif //USE_AMD_OPENCL
 
 //
 void SoftDemo::createStack( btCollisionShape* boxShape, float halfCubeSize, int size, float zPos )
@@ -556,12 +413,6 @@ static void	Init_Impact(SoftDemo* pdemo)
 
 static void	Init_CapsuleCollision(SoftDemo* pdemo)
 {
-#ifdef USE_AMD_OPENCL
-	btAlignedObjectArray<btSoftBody*> emptyArray;
-	if (g_openCLSIMDSolver)
-		g_openCLSIMDSolver->optimize(emptyArray);
-#endif //USE_AMD_OPENCL
-
 		//TRACEDEMO
 	const btScalar	s=4;
 	const btScalar	h=6;
@@ -588,7 +439,6 @@ static void	Init_CapsuleCollision(SoftDemo* pdemo)
 	psb->setTotalMass(0.1);
 
 	psb->m_cfg.piterations = 10;
-	psb->m_cfg.citerations = 10;
 //	psb->m_cfg.viterations = 10;
 
 
@@ -1693,11 +1543,6 @@ void SoftDemo::clientMoveAndDisplay()
 
 #endif		
 
-#ifdef USE_AMD_OPENCL
-		if (g_openCLSIMDSolver)
-			g_openCLSIMDSolver->copyBackToSoftBodies();
-#endif //USE_AMD_OPENCL
-
 		if(m_drag)
 		{
 			m_node->m_v*=0;
@@ -2175,32 +2020,6 @@ void	SoftDemo::initPhysics()
 	m_solver = solver;
 
 	btSoftBodySolver* softBodySolver = 0;
-#ifdef USE_AMD_OPENCL
-
-	static bool once = true;
-	if (once)
-	{
-		once=false;
-		initCL(0,0);
-	}
-
-	if( g_openCLSIMDSolver  )
-		delete g_openCLSIMDSolver;
-	if( g_softBodyOutput )
-		delete g_softBodyOutput;
-
-	if (1)
-	{
-		g_openCLSIMDSolver = new btOpenCLSoftBodySolverSIMDAware( g_cqCommandQue, g_cxMainContext);
-	//	g_openCLSIMDSolver = new btOpenCLSoftBodySolver( g_cqCommandQue, g_cxMainContext);
-		g_openCLSIMDSolver->setCLFunctions(new CachingCLFunctions(g_cqCommandQue, g_cxMainContext));
-	}	
-
-
-
-	softBodySolver = g_openCLSIMDSolver;
-	g_softBodyOutput = new btSoftBodySolverOutputCLtoCPU;
-#endif //USE_AMD_OPENCL
 
 	btDiscreteDynamicsWorld* world = new btSoftRigidDynamicsWorld(m_dispatcher,m_broadphase,m_solver,m_collisionConfiguration,softBodySolver);
 	m_dynamicsWorld = world;

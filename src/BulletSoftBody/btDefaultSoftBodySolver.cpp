@@ -13,31 +13,17 @@ subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 
-#include "BulletCollision/CollisionShapes/btTriangleIndexVertexArray.h"
-#include "BulletCollision/CollisionDispatch/btCollisionObject.h"
-#include "BulletCollision/CollisionShapes/btCollisionShape.h"
-
 #include "btDefaultSoftBodySolver.h"
-#include "BulletCollision/CollisionShapes/btCapsuleShape.h"
 #include "BulletSoftBody/btSoftBody.h"
+#include "BulletSoftBody/btSoftBodyInternals.h"
 
 
 btDefaultSoftBodySolver::btDefaultSoftBodySolver()
 {
-	// Initial we will clearly need to update solver constants
-	// For now this is global for the cloths linked with this solver - we should probably make this body specific 
-	// for performance in future once we understand more clearly when constants need to be updated
-	m_updateSolverConstants = true;
 }
 
 btDefaultSoftBodySolver::~btDefaultSoftBodySolver()
 {
-}
-
-// In this case the data is already in the soft bodies so there is no need for us to do anything
-void btDefaultSoftBodySolver::copyBackToSoftBodies(bool bMove)
-{
-
 }
 
 void btDefaultSoftBodySolver::optimize( btAlignedObjectArray< btSoftBody * > &softBodies , bool forceUpdate)
@@ -49,92 +35,83 @@ void btDefaultSoftBodySolver::updateSoftBodies( )
 {
 	for ( int i=0; i < m_softBodySet.size(); i++)
 	{
-		btSoftBody*	psb=(btSoftBody*)m_softBodySet[i];
+		btSoftBody*	psb = m_softBodySet[i];
 		if (psb->isActive())
 		{
 			psb->updateNormals();	
 		}
 	}
-} // updateSoftBodies
+}
 
-bool btDefaultSoftBodySolver::checkInitialized()
+
+void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 {
-	return true;
+	//Prepare links
+	for(int i = 0; i < softBody->m_links.size();++i)
+	{
+		btSoftBody::Link& l = softBody->m_links[i];
+		l.m_c3 = l.m_n[1]->m_q - l.m_n[0]->m_q;
+		l.m_c2 = 1 / (l.m_c3.length2() * l.m_c0);
+	}
+	
+	//Prepare anchors
+	for(int i = 0; i < softBody->m_anchors.size(); ++i)
+	{
+		btSoftBody::Anchor& a = softBody->m_anchors[i];
+		const btVector3	ra = a.m_body->getWorldTransform().getBasis() * a.m_local;
+		a.m_c0 = ImpulseMatrix(	softBody->m_sst.sdt, a.m_node->m_im, a.m_body->getInvMass(),
+									a.m_body->getInvInertiaTensorWorld(), ra);
+		a.m_c1 = ra;
+		a.m_c2 = softBody->m_sst.sdt * a.m_node->m_im;
+		a.m_body->activate();
+	}
+	
+	//Solve velocities
+	if(softBody->m_cfg.viterations > 0)
+	{
+		// Solve
+		for(int isolve = 0; isolve < softBody->m_cfg.viterations; ++isolve)
+		{
+			btDefaultSoftBodySolver::VSolve_Links(softBody,1);
+		}
+		
+		// Update
+		for(int i = 0; i < softBody->m_nodes.size();++i)
+		{
+			btSoftBody::Node& n = softBody->m_nodes[i];
+			n.m_x =	n.m_q + n.m_v * softBody->m_sst.sdt;
+		}
+	}
+	
+	//Solve positions
+	if(softBody->m_cfg.piterations > 0)
+	{
+		for(int isolve = 0; isolve < softBody->m_cfg.piterations; ++isolve)
+		{
+			const btScalar ti = isolve / (btScalar)softBody->m_cfg.piterations;
+			btDefaultSoftBodySolver::PSolve_Anchors(softBody,1,ti);
+			btDefaultSoftBodySolver::PSolve_RContacts(softBody,1,ti);
+			btDefaultSoftBodySolver::PSolve_SContacts(softBody,1,ti);
+			btDefaultSoftBodySolver::PSolve_Links(softBody,1,ti);
+		}
+		const btScalar	vc = (1 - softBody->m_cfg.kDP) /  softBody->m_sst.sdt;
+		for(int i = 0; i < softBody->m_nodes.size(); ++i)
+		{
+			btSoftBody::Node& n = softBody->m_nodes[i];
+			n.m_v = (n.m_x - n.m_q)*vc;
+			n.m_f = btVector3(0,0,0);		
+		}
+	}
 }
 
 void btDefaultSoftBodySolver::solveConstraints( float solverdt )
 {
-	// Solve constraints for non-solver softbodies
-	for(int i=0; i < m_softBodySet.size(); ++i)
+	for(int i = 0; i < m_softBodySet.size(); ++i)
 	{
-		btSoftBody*	psb = static_cast<btSoftBody*>(m_softBodySet[i]);
-		if (psb->isActive())
-		{
-			psb->solveConstraints();
-		}
+		btSoftBody*	psb = m_softBodySet[i];
+		if ( psb->isActive() ) solveConstraintsSingleSoftBody(psb);
 	}	
 }
-
-
-void btDefaultSoftBodySolver::copySoftBodyToVertexBuffer( const btSoftBody *const softBody, btVertexBufferDescriptor *vertexBuffer )
-{
-	// Currently only support CPU output buffers
-	// TODO: check for DX11 buffers. Take all offsets into the same DX11 buffer
-	// and use them together on a single kernel call if possible by setting up a
-	// per-cloth target buffer array for the copy kernel.
-
-	if( vertexBuffer->getBufferType() == btVertexBufferDescriptor::CPU_BUFFER )
-	{
-		const btAlignedObjectArray<btSoftBody::Node> &clothVertices( softBody->m_nodes );
-		int numVertices = clothVertices.size();
-
-		const btCPUVertexBufferDescriptor *cpuVertexBuffer = static_cast< btCPUVertexBufferDescriptor* >(vertexBuffer);						
-		float *basePointer = cpuVertexBuffer->getBasePointer();						
-
-		if( vertexBuffer->hasVertexPositions() )
-		{
-			const int vertexOffset = cpuVertexBuffer->getVertexOffset();
-			const int vertexStride = cpuVertexBuffer->getVertexStride();
-			float *vertexPointer = basePointer + vertexOffset;
-
-			for( int vertexIndex = 0; vertexIndex < numVertices; ++vertexIndex )
-			{
-				btVector3 position = clothVertices[vertexIndex].m_x;
-				*(vertexPointer + 0) = position.getX();
-				*(vertexPointer + 1) = position.getY();
-				*(vertexPointer + 2) = position.getZ();
-				vertexPointer += vertexStride;
-			}
-		}
-		if( vertexBuffer->hasNormals() )
-		{
-			const int normalOffset = cpuVertexBuffer->getNormalOffset();
-			const int normalStride = cpuVertexBuffer->getNormalStride();
-			float *normalPointer = basePointer + normalOffset;
-
-			for( int vertexIndex = 0; vertexIndex < numVertices; ++vertexIndex )
-			{
-				btVector3 normal = clothVertices[vertexIndex].m_n;
-				*(normalPointer + 0) = normal.getX();
-				*(normalPointer + 1) = normal.getY();
-				*(normalPointer + 2) = normal.getZ();
-				normalPointer += normalStride;
-			}
-		}
-	}
-} // btDefaultSoftBodySolver::copySoftBodyToVertexBuffer
-
-void btDefaultSoftBodySolver::processCollision( btSoftBody* softBody, btSoftBody* otherSoftBody)
-{
-	softBody->defaultCollisionHandler( otherSoftBody);
-}
-
-// For the default solver just leave the soft body to do its collision processing
-void btDefaultSoftBodySolver::processCollision( btSoftBody *softBody, const btCollisionObjectWrapper* collisionObjectWrap )
-{
-	softBody->defaultCollisionHandler( collisionObjectWrap );
-} // btDefaultSoftBodySolver::processCollision
-
 
 void btDefaultSoftBodySolver::predictMotion( float timeStep )
 {
@@ -149,3 +126,118 @@ void btDefaultSoftBodySolver::predictMotion( float timeStep )
 	}
 }
 
+
+
+
+void btDefaultSoftBodySolver::VSolve_Links(btSoftBody* psb,btScalar kst)
+{
+	for(int i=0,ni=psb->m_links.size();i<ni;++i)
+	{			
+		btSoftBody::Link& l = psb->m_links[i];
+		btSoftBody::Node** n = l.m_n;
+		const btScalar	j=-btDot(l.m_c3,n[0]->m_v-n[1]->m_v)*l.m_c2*kst;
+		n[0]->m_v+=	l.m_c3*(j*n[0]->m_im);
+		n[1]->m_v-=	l.m_c3*(j*n[1]->m_im);
+	}
+}
+
+void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti)
+{
+	const btScalar	kAHR=psb->m_cfg.kAHR*kst;
+	const btScalar	dt=psb->m_sst.sdt;
+	for(int i=0,ni=psb->m_anchors.size();i<ni;++i)
+	{
+		const btSoftBody::Anchor& a = psb->m_anchors[i];
+		const btTransform& t = a.m_body->getWorldTransform();
+		btSoftBody::Node& n = *a.m_node;
+		const btVector3 wa = t*a.m_local;
+		const btVector3 va = a.m_body->getVelocityInLocalPoint(a.m_c1)*dt;
+		const btVector3 vb = n.m_x-n.m_q;
+		const btVector3 vr = (va - vb) + (wa - n.m_x)*kAHR;
+		const btVector3 impulse = a.m_c0 * vr * a.m_influence;
+		n.m_x += impulse * a.m_c2;
+		a.m_body->applyImpulse(-impulse,a.m_c1);
+	}
+}
+
+void btDefaultSoftBodySolver::PSolve_RContacts(btSoftBody* psb, btScalar kst, btScalar ti)
+{
+	const btScalar	dt = psb->m_sst.sdt;
+	const btScalar	mrg = psb->getCollisionShape()->getMargin();
+	for(int i=0,ni=psb->m_rcontacts.size();i<ni;++i)
+	{
+		const btSoftBody::RContact&		c = psb->m_rcontacts[i];
+		const btSoftBody::sCti&			cti = c.m_cti;	
+		if (cti.m_colObj->hasContactResponse()) 
+		{
+			btRigidBody* tmpRigid = (btRigidBody*)btRigidBody::upcast(cti.m_colObj);
+			const btVector3		va = tmpRigid ? tmpRigid->getVelocityInLocalPoint(c.m_c1)*dt : btVector3(0,0,0);
+			const btVector3		vb = c.m_node->m_x-c.m_node->m_q;	
+			const btVector3		vr = vb-va;
+			const btScalar		dn = btDot(vr, cti.m_normal);		
+			if(dn<=SIMD_EPSILON)
+			{
+				const btScalar		dp = btMin( (btDot(c.m_node->m_x, cti.m_normal) + cti.m_offset), mrg );
+				const btVector3		fv = vr - (cti.m_normal * dn);
+				// c0 is the impulse matrix, c3 is 1 - the friction coefficient or 0, c4 is the contact hardness coefficient
+				const btVector3		impulse = c.m_c0 * ( (vr - (fv * c.m_c3) + (cti.m_normal * (dp * c.m_c4))) * kst );
+				c.m_node->m_x -= impulse * c.m_c2;
+				if (tmpRigid)
+					tmpRigid->applyImpulse(impulse,c.m_c1);
+			}
+		}
+	}
+}
+
+void btDefaultSoftBodySolver::PSolve_SContacts(btSoftBody* psb,btScalar,btScalar ti)
+{
+	for(int i=0,ni=psb->m_scontacts.size();i<ni;++i)
+	{
+		const btSoftBody::SContact&		c=psb->m_scontacts[i];
+		const btVector3&	nr=c.m_normal;
+		btSoftBody::Node&				n=*c.m_node;
+		btSoftBody::Face&				f=*c.m_face;
+		const btVector3		p=BaryEval(	f.m_n[0]->m_x,
+			f.m_n[1]->m_x,
+			f.m_n[2]->m_x,
+			c.m_weights);
+		const btVector3		q=BaryEval(	f.m_n[0]->m_q,
+			f.m_n[1]->m_q,
+			f.m_n[2]->m_q,
+			c.m_weights);											
+		const btVector3		vr=(n.m_x-n.m_q)-(p-q);
+		btVector3			corr(0,0,0);
+		btScalar dot = btDot(vr,nr);
+		if(dot<0)
+		{
+			const btScalar	j=c.m_margin-(btDot(nr,n.m_x)-btDot(nr,p));
+			corr+=c.m_normal*j;
+		}
+		corr			-=	ProjectOnPlane(vr,nr)*c.m_friction;
+		n.m_x			+=	corr*c.m_cfm[0];
+		f.m_n[0]->m_x	-=	corr*(c.m_cfm[1]*c.m_weights.x());
+		f.m_n[1]->m_x	-=	corr*(c.m_cfm[1]*c.m_weights.y());
+		f.m_n[2]->m_x	-=	corr*(c.m_cfm[1]*c.m_weights.z());
+	}
+}
+
+void btDefaultSoftBodySolver::PSolve_Links(btSoftBody* psb,btScalar kst,btScalar ti)
+{
+	for(int i=0,ni=psb->m_links.size();i<ni;++i)
+	{			
+		btSoftBody::Link&	l=psb->m_links[i];
+		if(l.m_c0>0)
+		{
+			btSoftBody::Node&			a=*l.m_n[0];
+			btSoftBody::Node&			b=*l.m_n[1];
+			const btVector3	del=b.m_x-a.m_x;
+			const btScalar	len=del.length2();
+			if (l.m_c1+len > SIMD_EPSILON)
+			{
+				const btScalar	k=((l.m_c1-len)/(l.m_c0*(l.m_c1+len)))*kst;
+				a.m_x-=del*(k*a.m_im);
+				b.m_x+=del*(k*b.m_im);
+			}
+		}
+	}
+}

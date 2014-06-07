@@ -65,7 +65,7 @@ void btSoftRigidCollisionAlgorithm::processCollision (const btCollisionObjectWra
 	
 	if (softBody->m_collisionDisabledObjects.findLinearSearch(rigidCollisionObjectWrap->getCollisionObject())==softBody->m_collisionDisabledObjects.size())
 	{
-		softBody->getSoftBodySolver()->processCollision(softBody, rigidCollisionObjectWrap);
+		softBody->defaultCollisionHandler(rigidCollisionObjectWrap);
 	}
 
 

@@ -23,41 +23,27 @@ struct btCollisionObjectWrapper;
 
 class btDefaultSoftBodySolver : public btSoftBodySolver
 {
-protected:		
-	/** Variable to define whether we need to update solver constants on the next iteration */
-	bool m_updateSolverConstants;
-
-	btAlignedObjectArray< btSoftBody * > m_softBodySet;
+protected:
+	btAlignedObjectArray<btSoftBody*> m_softBodySet;
 
 
 public:
 	btDefaultSoftBodySolver();
-	
 	virtual ~btDefaultSoftBodySolver();
-	
-	virtual SolverTypes getSolverType() const
-	{
-		return DEFAULT_SOLVER;
-	}
-
-	virtual bool checkInitialized();
 
 	virtual void updateSoftBodies( );
 
 	virtual void optimize( btAlignedObjectArray< btSoftBody * > &softBodies,bool forceUpdate=false );
 
-	virtual void copyBackToSoftBodies(bool bMove = true);
-
 	virtual void solveConstraints( float solverdt );
 
 	virtual void predictMotion( float solverdt );
 
-	virtual void copySoftBodyToVertexBuffer( const btSoftBody *const softBody, btVertexBufferDescriptor *vertexBuffer );
-
-	virtual void processCollision( btSoftBody *, const btCollisionObjectWrapper* );
-
-	virtual void processCollision( btSoftBody*, btSoftBody* );
-
+	static void VSolve_Links(btSoftBody* psb,btScalar kst);
+	static void PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti);
+	static void PSolve_RContacts(btSoftBody* psb,btScalar kst,btScalar ti);
+	static void PSolve_SContacts(btSoftBody* psb,btScalar,btScalar ti);
+	static void PSolve_Links(btSoftBody* psb,btScalar kst,btScalar ti);
 };
 
 #endif // #ifndef BT_ACCELERATED_SOFT_BODY_CPU_SOLVER_H
