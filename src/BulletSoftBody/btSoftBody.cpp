@@ -24,16 +24,15 @@ subject to the following restrictions:
 btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo,int node_count,  const btVector3* x,  const btScalar* m)
 :m_softBodySolver(0),m_worldInfo(worldInfo)
 {	
-	/* Init		*/ 
+	//
 	initDefaults();
 
-	/* Default material	*/ 
+	// Default material 
 	Material*	pm=appendMaterial();
-	pm->m_kLST	=	1;
-	pm->m_kVST	=	1;
+	pm->m_linearStiffness	=	1;
 	pm->m_debugDraw = true;
 
-	/* Nodes			*/ 
+	// Nodes
 	const btScalar		margin=getCollisionShape()->getMargin();
 	m_nodes.resize(node_count);
 	for(int i=0,ni=node_count;i<ni;++i)
@@ -61,19 +60,18 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo)
 void	btSoftBody::initDefaults()
 {
 	m_internalType		=	CO_SOFT_BODY;
-	m_cfg.kDP			=	0;
-	m_cfg.kPR			=	0;
-	m_cfg.kVC			=	0;
-	m_cfg.kDF			=	(btScalar)0.2;
-	m_cfg.kMT			=	0;
-	m_cfg.kCHR			=	(btScalar)1.0;
-	m_cfg.kKHR			=	(btScalar)0.1;
-	m_cfg.kSHR			=	(btScalar)1.0;
-	m_cfg.kAHR			=	(btScalar)0.7;
+	m_cfg.m_damping = 0;
+	m_cfg.m_pressure = 0;
+	m_cfg.m_volumeConservation = 0;
+	m_cfg.m_dynamicFriction = (btScalar)0.2;
+	m_cfg.m_poseMatching = 0;
+	m_cfg.m_rigidContactHardness = (btScalar)1.0;
+	m_cfg.m_kinematicContactHardness = (btScalar)0.1;
+	m_cfg.m_softContactHardness = (btScalar)1.0;
+	m_cfg.m_anchorHardness = (btScalar)0.7;
 	m_cfg.maxvolume		=	(btScalar)1;
-	m_cfg.viterations	=	0;
-	m_cfg.piterations	=	1;
-	m_cfg.collisions	=	fCollision::Default;
+	m_cfg.m_velocityIterations	=	0;
+	m_cfg.m_positionIterations	=	1;
 	m_pose.m_bvolume	=	false;
 	m_pose.m_bframe		=	false;
 	m_pose.m_volume		=	0;
@@ -1112,10 +1110,7 @@ void			btSoftBody::predictMotion(btScalar dt)
 		m_bUpdateRtCst=false;
 		updateConstants();
 		m_fdbvt.clear();
-		if(m_cfg.collisions&fCollision::VF_SS)
-		{
-			initializeFaceTree();			
-		}
+		initializeFaceTree();
 	}
 
 	/* Prepare				*/ 
@@ -1187,7 +1182,7 @@ void			btSoftBody::predictMotion(btScalar dt)
 	/* Pose					*/ 
 	updatePose();
 	/* Match				*/ 
-	if(m_pose.m_bframe&&(m_cfg.kMT>0))
+	if( m_pose.m_bframe && (m_cfg.m_poseMatching > 0) )
 	{
 		const btMatrix3x3	posetrs=m_pose.m_rot;
 		for(int i=0,ni=m_nodes.size();i<ni;++i)
@@ -1196,7 +1191,7 @@ void			btSoftBody::predictMotion(btScalar dt)
 			if(n.m_im>0)
 			{
 				const btVector3	x=posetrs*m_pose.m_pos[i]+m_pose.m_com;
-				n.m_x=Lerp(n.m_x,x,m_cfg.kMT);
+				n.m_x = Lerp(n.m_x, x, m_cfg.m_poseMatching);
 			}
 		}
 	}
@@ -1659,7 +1654,7 @@ void				btSoftBody::updateLinkConstants()
 	{
 		Link&		l=m_links[i];
 		Material&	m=*l.m_material;
-		l.m_c0	=	(l.m_n[0]->m_im+l.m_n[1]->m_im)/m.m_kLST;
+		l.m_c0	=	(l.m_n[0]->m_im+l.m_n[1]->m_im)/m.m_linearStiffness;
 	}
 }
 
@@ -1676,8 +1671,8 @@ void				btSoftBody::applyForces()
 {
 
 	BT_PROFILE("SoftBody applyForces");
-	const bool						as_pressure =	m_cfg.kPR!=0;
-	const bool						as_volume =		m_cfg.kVC>0;
+	const bool						as_pressure =	(m_cfg.m_pressure != 0);
+	const bool						as_volume =		(m_cfg.m_volumeConservation > 0);
 	const bool						use_volume =	as_pressure	|| as_volume;
 	btScalar						volume =		0;
 	btScalar						ivolumetp =		0;
@@ -1686,8 +1681,8 @@ void				btSoftBody::applyForces()
 	if(use_volume)
 	{
 		volume		=	getVolume();
-		ivolumetp	=	1/btFabs(volume)*m_cfg.kPR;
-		dvolumetv	=	(m_pose.m_volume-volume)*m_cfg.kVC;
+		ivolumetp	=	1 / btFabs(volume) * m_cfg.m_pressure;
+		dvolumetv	=	(m_pose.m_volume-volume) * m_cfg.m_volumeConservation;
 	}
 	
 	// Per vertex forces
@@ -1713,74 +1708,50 @@ void				btSoftBody::applyForces()
 }
 
 //
-void			btSoftBody::defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap)
+void btSoftBody::defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap)
 {
+	btSoftColliders::CollideSDF_RS	docollide;
+	btRigidBody* prb1=(btRigidBody*) btRigidBody::upcast(pcoWrap->getCollisionObject());
+	btTransform	wtr=pcoWrap->getWorldTransform();
 
-	switch(m_cfg.collisions&fCollision::RVSmask)
-	{
-	case	fCollision::SDF_RS:
-		{
-			btSoftColliders::CollideSDF_RS	docollide;		
-			btRigidBody*		prb1=(btRigidBody*) btRigidBody::upcast(pcoWrap->getCollisionObject());
-			btTransform	wtr=pcoWrap->getWorldTransform();
+	const btTransform ctr = pcoWrap->getWorldTransform();
+	const btScalar timemargin = (wtr.getOrigin() - ctr.getOrigin()).length();
+	const btScalar basemargin = getCollisionShape()->getMargin();
+	btVector3 mins;
+	btVector3 maxs;
+	ATTRIBUTE_ALIGNED16(btDbvtVolume) volume;
+	pcoWrap->getCollisionShape()->getAabb(pcoWrap->getWorldTransform(), mins, maxs);
+	volume=btDbvtVolume::FromMM(mins,maxs);
+	volume.Expand(btVector3(basemargin,basemargin,basemargin));
+	docollide.psb =	this;
+	docollide.m_colObj1Wrap = pcoWrap;
+	docollide.m_rigidBody = prb1;
 
-			const btTransform	ctr=pcoWrap->getWorldTransform();
-			const btScalar		timemargin=(wtr.getOrigin()-ctr.getOrigin()).length();
-			const btScalar		basemargin=getCollisionShape()->getMargin();
-			btVector3			mins;
-			btVector3			maxs;
-			ATTRIBUTE_ALIGNED16(btDbvtVolume)		volume;
-			pcoWrap->getCollisionShape()->getAabb(	pcoWrap->getWorldTransform(),
-				mins,
-				maxs);
-			volume=btDbvtVolume::FromMM(mins,maxs);
-			volume.Expand(btVector3(basemargin,basemargin,basemargin));		
-			docollide.psb		=	this;
-			docollide.m_colObj1Wrap = pcoWrap;
-			docollide.m_rigidBody = prb1;
-
-			docollide.dynmargin	=	basemargin+timemargin;
-			docollide.stamargin	=	basemargin;
-			m_ndbvt.collideTV(m_ndbvt.m_root,volume,docollide);
-		}
-		break;
-	}
+	docollide.dynmargin	= basemargin + timemargin;
+	docollide.stamargin	= basemargin;
+	m_ndbvt.collideTV(m_ndbvt.m_root,volume,docollide);
 }
 
 //
-void			btSoftBody::defaultCollisionHandler(btSoftBody* psb)
+void btSoftBody::defaultCollisionHandler(btSoftBody* psb)
 {
-	const int cf=m_cfg.collisions&psb->m_cfg.collisions;
-	switch(cf&fCollision::SVSmask)
+	//only self-collision for Cluster, not Vertex-Face yet
+	if (this != psb)
 	{
-	case	fCollision::VF_SS:
-		{
-			//only self-collision for Cluster, not Vertex-Face yet
-			if (this!=psb)
-			{
-				btSoftColliders::CollideVF_SS	docollide;
-				/* common					*/ 
-				docollide.mrg=	getCollisionShape()->getMargin()+
-					psb->getCollisionShape()->getMargin();
-				/* psb0 nodes vs psb1 faces	*/ 
-				docollide.psb[0]=this;
-				docollide.psb[1]=psb;
-				docollide.psb[0]->m_ndbvt.collideTT(	docollide.psb[0]->m_ndbvt.m_root,
-					docollide.psb[1]->m_fdbvt.m_root,
-					docollide);
-				/* psb1 nodes vs psb0 faces	*/ 
-				docollide.psb[0]=psb;
-				docollide.psb[1]=this;
-				docollide.psb[0]->m_ndbvt.collideTT(	docollide.psb[0]->m_ndbvt.m_root,
-					docollide.psb[1]->m_fdbvt.m_root,
-					docollide);
-			}
-		}
-		break;
-	default:
-		{
-			
-		}
+		btSoftColliders::CollideVF_SS docollide;
+		
+		// common
+		docollide.mrg =	getCollisionShape()->getMargin()+ psb->getCollisionShape()->getMargin();
+		
+		// psb0 nodes vs psb1 faces
+		docollide.psb[0] = this;
+		docollide.psb[1] = psb;
+		docollide.psb[0]->m_ndbvt.collideTT(docollide.psb[0]->m_ndbvt.m_root, docollide.psb[1]->m_fdbvt.m_root, docollide);
+		
+		// psb1 nodes vs psb0 faces
+		docollide.psb[0] = psb;
+		docollide.psb[1] = this;
+		docollide.psb[0]->m_ndbvt.collideTT(docollide.psb[0]->m_ndbvt.m_root, docollide.psb[1]->m_fdbvt.m_root, docollide);
 	}
 }
 

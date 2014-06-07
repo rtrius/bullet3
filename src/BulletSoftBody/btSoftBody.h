@@ -62,9 +62,6 @@ struct	btSoftBodyWorldInfo
 class	btSoftBody : public btCollisionObject
 {
 public:
-
-
-
 	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
 
 	// The solver object that handles this soft body
@@ -76,21 +73,7 @@ public:
 		Node,
 		Link,
 		Face,
-		Tetra,
-		END
-	};};
-
-	// Flags
-	struct fCollision { enum _ {
-		RVSmask	=	0x000f,	///Rigid versus soft mask
-		SDF_RS	=	0x0001,	///SDF based rigid vs soft
-
-		SVSmask	=	0x0030,	///Rigid versus soft mask		
-		VF_SS	=	0x0010,	///Vertex vs face soft vs soft handling
-		CL_SELF =	0x0040, ///Cluster soft body self collision
-		
-		Default	=	SDF_RS,
-		END
+		Tetra
 	};};
 	
 	// API Types
@@ -125,8 +108,7 @@ public:
 	
 	struct	Material : Element
 	{
-		btScalar				m_kLST;			// Linear stiffness coefficient [0,1]
-		btScalar				m_kVST;			// Volume stiffness coefficient [0,1]
+		btScalar				m_linearStiffness;	///<[0,1]; lower stiffness means that Links are easier to stretch.
 		bool					m_debugDraw;
 	};
 
@@ -226,19 +208,18 @@ public:
 	
 	struct	Config
 	{
-		btScalar				kDP;			// Damping coefficient [0,1]
-		btScalar				kPR;			// Pressure coefficient [-inf,+inf]
-		btScalar				kVC;			// Volume conversation coefficient [0,+inf]
-		btScalar				kDF;			// Dynamic friction coefficient [0,1]
-		btScalar				kMT;			// Pose matching coefficient [0,1]		
-		btScalar				kCHR;			// Rigid contacts hardness [0,1]
-		btScalar				kKHR;			// Kinetic contacts hardness [0,1]
-		btScalar				kSHR;			// Soft contacts hardness [0,1]
-		btScalar				kAHR;			// Anchors hardness [0,1]
+		btScalar m_damping;						///<[0, 1]; fraction of velocity removed per timestep(0.05 means that velocity is scaled by 0.95).
+		btScalar m_pressure;					///<[-inf, +inf]
+		btScalar m_volumeConservation; 			///<[0, +inf]
+		btScalar m_dynamicFriction;				///<[0, 1]
+		btScalar m_poseMatching;				///<[0, 1]
+		btScalar m_rigidContactHardness;		///<[0, 1]; contact hardness for dynamic rigid bodies.
+		btScalar m_kinematicContactHardness;	///<[0, 1]; contact hardness for static and kinematic(inverse_mass == 0) rigid bodies.
+		btScalar m_softContactHardness;			///<[0, 1]
+		btScalar m_anchorHardness;				///<[0, 1]
 		btScalar				maxvolume;		// Maximum volume ratio for pose
-		int						viterations;	// Velocities solver iterations
-		int						piterations;	// Positions solver iterations
-		int						collisions;		// Collisions flags
+		int m_velocityIterations;
+		int m_positionIterations;
 	};
 	
 	struct	SolverState

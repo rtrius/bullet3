@@ -561,13 +561,14 @@ struct btSoftColliders
 					const btVector3		vr=vb-va;
 					const btScalar		dn=btDot(vr,c.m_cti.m_normal);
 					const btVector3		fv=vr-c.m_cti.m_normal*dn;
-					const btScalar		fc=psb->m_cfg.kDF*m_colObj1Wrap->getCollisionObject()->getFriction();
+					const btScalar		fc=psb->m_cfg.m_dynamicFriction*m_colObj1Wrap->getCollisionObject()->getFriction();
 					c.m_node	=	&n;
 					c.m_c0		=	ImpulseMatrix(psb->m_sst.sdt,ima,imb,iwi,ra);
 					c.m_c1		=	ra;
 					c.m_c2		=	ima*psb->m_sst.sdt;
 			        c.m_c3		=	fv.length2()<(dn*fc*dn*fc)?0:1-fc;
-					c.m_c4		=	m_colObj1Wrap->getCollisionObject()->isStaticOrKinematicObject()?psb->m_cfg.kKHR:psb->m_cfg.kCHR;
+					c.m_c4		=	m_colObj1Wrap->getCollisionObject()->isStaticOrKinematicObject()
+									? psb->m_cfg.m_kinematicContactHardness : psb->m_cfg.m_rigidContactHardness;
 					psb->m_rcontacts.push_back(c);
 					if (m_rigidBody)
 						m_rigidBody->activate();
@@ -619,9 +620,9 @@ struct btSoftColliders
 					c.m_node		=	node;
 					c.m_face		=	face;
 					c.m_weights		=	w;
-					c.m_friction	=	btMax(psb[0]->m_cfg.kDF,psb[1]->m_cfg.kDF);
-					c.m_cfm[0]		=	ma/ms*psb[0]->m_cfg.kSHR;
-					c.m_cfm[1]		=	mb/ms*psb[1]->m_cfg.kSHR;
+					c.m_friction	=	btMax(psb[0]->m_cfg.m_dynamicFriction,psb[1]->m_cfg.m_dynamicFriction);
+					c.m_cfm[0]		=	ma / ms * psb[0]->m_cfg.m_softContactHardness;
+					c.m_cfm[1]		=	mb / ms * psb[1]->m_cfg.m_softContactHardness;
 					psb[0]->m_scontacts.push_back(c);
 				}
 			}	

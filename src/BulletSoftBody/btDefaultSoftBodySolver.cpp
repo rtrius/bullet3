@@ -67,10 +67,10 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	}
 	
 	//Solve velocities
-	if(softBody->m_cfg.viterations > 0)
+	if(softBody->m_cfg.m_velocityIterations > 0)
 	{
 		// Solve
-		for(int isolve = 0; isolve < softBody->m_cfg.viterations; ++isolve)
+		for(int iteration = 0; iteration < softBody->m_cfg.m_velocityIterations; ++iteration)
 		{
 			btDefaultSoftBodySolver::VSolve_Links(softBody,1);
 		}
@@ -84,17 +84,17 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	}
 	
 	//Solve positions
-	if(softBody->m_cfg.piterations > 0)
+	if(softBody->m_cfg.m_positionIterations > 0)
 	{
-		for(int isolve = 0; isolve < softBody->m_cfg.piterations; ++isolve)
+		for(int iteration = 0; iteration < softBody->m_cfg.m_positionIterations; ++iteration)
 		{
-			const btScalar ti = isolve / (btScalar)softBody->m_cfg.piterations;
+			const btScalar ti = iteration / (btScalar)softBody->m_cfg.m_positionIterations;
 			btDefaultSoftBodySolver::PSolve_Anchors(softBody,1,ti);
 			btDefaultSoftBodySolver::PSolve_RContacts(softBody,1,ti);
 			btDefaultSoftBodySolver::PSolve_SContacts(softBody,1,ti);
 			btDefaultSoftBodySolver::PSolve_Links(softBody,1,ti);
 		}
-		const btScalar	vc = (1 - softBody->m_cfg.kDP) /  softBody->m_sst.sdt;
+		const btScalar	vc = (1 - softBody->m_cfg.m_damping) /  softBody->m_sst.sdt;
 		for(int i = 0; i < softBody->m_nodes.size(); ++i)
 		{
 			btSoftBody::Node& n = softBody->m_nodes[i];
@@ -143,7 +143,7 @@ void btDefaultSoftBodySolver::VSolve_Links(btSoftBody* psb,btScalar kst)
 
 void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti)
 {
-	const btScalar	kAHR=psb->m_cfg.kAHR*kst;
+	const btScalar anchorHardness = psb->m_cfg.m_anchorHardness * kst;
 	const btScalar	dt=psb->m_sst.sdt;
 	for(int i=0,ni=psb->m_anchors.size();i<ni;++i)
 	{
@@ -153,7 +153,7 @@ void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScal
 		const btVector3 wa = t*a.m_local;
 		const btVector3 va = a.m_body->getVelocityInLocalPoint(a.m_c1)*dt;
 		const btVector3 vb = n.m_x-n.m_q;
-		const btVector3 vr = (va - vb) + (wa - n.m_x)*kAHR;
+		const btVector3 vr = (va - vb) + (wa - n.m_x) * anchorHardness;
 		const btVector3 impulse = a.m_c0 * vr * a.m_influence;
 		n.m_x += impulse * a.m_c2;
 		a.m_body->applyImpulse(-impulse,a.m_c1);
