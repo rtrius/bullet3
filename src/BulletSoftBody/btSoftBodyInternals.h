@@ -465,66 +465,6 @@ static inline int		MatchEdge(	const btSoftBody::Node* a,
 }
 
 //
-// btEigen : Extract eigen system,
-// straitforward implementation of http://math.fullerton.edu/mathews/n2003/JacobiMethodMod.html
-// outputs are NOT sorted.
-//
-struct	btEigen
-{
-	static int			system(btMatrix3x3& a,btMatrix3x3* vectors,btVector3* values=0)
-	{
-		static const int		maxiterations=16;
-		static const btScalar	accuracy=(btScalar)0.0001;
-		btMatrix3x3&			v=*vectors;
-		int						iterations=0;
-		vectors->setIdentity();
-		do	{
-			int				p=0,q=1;
-			if(btFabs(a[p][q])<btFabs(a[0][2])) { p=0;q=2; }
-			if(btFabs(a[p][q])<btFabs(a[1][2])) { p=1;q=2; }
-			if(btFabs(a[p][q])>accuracy)
-			{
-				const btScalar	w=(a[q][q]-a[p][p])/(2*a[p][q]);
-				const btScalar	z=btFabs(w);
-				const btScalar	t=w/(z*(btSqrt(1+w*w)+z));
-				if(t==t)/* [WARNING] let hope that one does not get thrown aways by some compilers... */ 
-				{
-					const btScalar	c=1/btSqrt(t*t+1);
-					const btScalar	s=c*t;
-					mulPQ(a,c,s,p,q);
-					mulTPQ(a,c,s,p,q);
-					mulPQ(v,c,s,p,q);
-				} else break;
-			} else break;
-		} while((++iterations)<maxiterations);
-		if(values)
-		{
-			*values=btVector3(a[0][0],a[1][1],a[2][2]);
-		}
-		return(iterations);
-	}
-private:
-	static inline void	mulTPQ(btMatrix3x3& a,btScalar c,btScalar s,int p,int q)
-	{
-		const btScalar	m[2][3]={	{a[p][0],a[p][1],a[p][2]},
-		{a[q][0],a[q][1],a[q][2]}};
-		int i;
-
-		for(i=0;i<3;++i) a[p][i]=c*m[0][i]-s*m[1][i];
-		for(i=0;i<3;++i) a[q][i]=c*m[1][i]+s*m[0][i];
-	}
-	static inline void	mulPQ(btMatrix3x3& a,btScalar c,btScalar s,int p,int q)
-	{
-		const btScalar	m[2][3]={	{a[0][p],a[1][p],a[2][p]},
-		{a[0][q],a[1][q],a[2][q]}};
-		int i;
-
-		for(i=0;i<3;++i) a[i][p]=c*m[0][i]-s*m[1][i];
-		for(i=0;i<3;++i) a[i][q]=c*m[1][i]+s*m[0][i];
-	}
-};
-
-//
 // btSoftColliders
 //
 struct btSoftColliders
@@ -541,13 +481,13 @@ struct btSoftColliders
 		}
 		void		DoNode(btSoftBody::Node& n) const
 		{
-			const btScalar			m=n.m_im>0?dynmargin:stamargin;
-			btSoftBody::RContact	c;
+			const btScalar			m = n.m_invMass > 0 ? dynmargin : stamargin;
+			btSoftBody::RigidContact c;
 
 			if(	(!n.m_battach)&&
 				psb->checkContact(m_colObj1Wrap,n.m_x,m,c.m_cti))
 			{
-				const btScalar	ima=n.m_im;
+				const btScalar	ima = n.m_invMass;
 				const btScalar	imb= m_rigidBody? m_rigidBody->getInvMass() : 0.f;
 				const btScalar	ms=ima+imb;
 				if(ms>0)
@@ -563,13 +503,13 @@ struct btSoftColliders
 					const btVector3		fv=vr-c.m_cti.m_normal*dn;
 					const btScalar		fc=psb->m_cfg.m_dynamicFriction*m_colObj1Wrap->getCollisionObject()->getFriction();
 					c.m_node	=	&n;
-					c.m_c0		=	ImpulseMatrix(psb->m_sst.sdt,ima,imb,iwi,ra);
-					c.m_c1		=	ra;
-					c.m_c2		=	ima*psb->m_sst.sdt;
-			        c.m_c3		=	fv.length2()<(dn*fc*dn*fc)?0:1-fc;
-					c.m_c4		=	m_colObj1Wrap->getCollisionObject()->isStaticOrKinematicObject()
+					c.m_impulseMatrix = ImpulseMatrix(psb->m_sst.sdt,ima,imb,iwi,ra);
+					c.m_relativeNodePosition = ra;
+					c.m_invMassDt = ima * psb->m_sst.sdt;
+			        c.m_combinedFriction =	fv.length2() < (dn*fc*dn*fc) ? 0 : 1 - fc;
+					c.m_hardness =	m_colObj1Wrap->getCollisionObject()->isStaticOrKinematicObject()
 									? psb->m_cfg.m_kinematicContactHardness : psb->m_cfg.m_rigidContactHardness;
-					psb->m_rcontacts.push_back(c);
+					psb->m_rigidContacts.push_back(c);
 					if (m_rigidBody)
 						m_rigidBody->activate();
 				}
@@ -603,18 +543,16 @@ struct btSoftColliders
 			{
 				const btSoftBody::Node*	n[]={face->m_n[0],face->m_n[1],face->m_n[2]};
 				const btVector3			w=BaryCoord(n[0]->m_x,n[1]->m_x,n[2]->m_x,p+o);
-				const btScalar			ma=node->m_im;
-				btScalar				mb=BaryEval(n[0]->m_im,n[1]->m_im,n[2]->m_im,w);
-				if(	(n[0]->m_im<=0)||
-					(n[1]->m_im<=0)||
-					(n[2]->m_im<=0))
+				const btScalar			ma=node->m_invMass;
+				btScalar				mb=BaryEval(n[0]->m_invMass, n[1]->m_invMass, n[2]->m_invMass, w);
+				if(	(n[0]->m_invMass <= 0) || (n[1]->m_invMass <= 0)|| (n[2]->m_invMass <= 0) )
 				{
 					mb=0;
 				}
 				const btScalar	ms=ma+mb;
 				if(ms>0)
 				{
-					btSoftBody::SContact	c;
+					btSoftBody::SoftContact	c;
 					c.m_normal		=	p/-btSqrt(d);
 					c.m_margin		=	m;
 					c.m_node		=	node;
@@ -623,7 +561,7 @@ struct btSoftColliders
 					c.m_friction	=	btMax(psb[0]->m_cfg.m_dynamicFriction,psb[1]->m_cfg.m_dynamicFriction);
 					c.m_cfm[0]		=	ma / ms * psb[0]->m_cfg.m_softContactHardness;
 					c.m_cfm[1]		=	mb / ms * psb[1]->m_cfg.m_softContactHardness;
-					psb[0]->m_scontacts.push_back(c);
+					psb[0]->m_softContacts.push_back(c);
 				}
 			}	
 		}

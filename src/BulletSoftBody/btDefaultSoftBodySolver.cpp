@@ -50,8 +50,8 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	for(int i = 0; i < softBody->m_links.size();++i)
 	{
 		btSoftBody::Link& l = softBody->m_links[i];
-		l.m_c3 = l.m_n[1]->m_q - l.m_n[0]->m_q;
-		l.m_c2 = 1 / (l.m_c3.length2() * l.m_c0);
+		l.m_gradient0to1 = l.m_n[1]->m_q - l.m_n[0]->m_q;
+		l.m_impulseScaling = 1 / (l.m_gradient0to1.length2() * l.m_scaledCombinedInvMass);
 	}
 	
 	//Prepare anchors
@@ -59,10 +59,10 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	{
 		btSoftBody::Anchor& a = softBody->m_anchors[i];
 		const btVector3	ra = a.m_body->getWorldTransform().getBasis() * a.m_local;
-		a.m_c0 = ImpulseMatrix(	softBody->m_sst.sdt, a.m_node->m_im, a.m_body->getInvMass(),
+		a.m_impulseMatrix = ImpulseMatrix(	softBody->m_sst.sdt, a.m_node->m_invMass, a.m_body->getInvMass(),
 									a.m_body->getInvInertiaTensorWorld(), ra);
-		a.m_c1 = ra;
-		a.m_c2 = softBody->m_sst.sdt * a.m_node->m_im;
+		a.m_rotatedPosition = ra;
+		a.m_invMassDt = softBody->m_sst.sdt * a.m_node->m_invMass;
 		a.m_body->activate();
 	}
 	
@@ -90,8 +90,8 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 		{
 			const btScalar ti = iteration / (btScalar)softBody->m_cfg.m_positionIterations;
 			btDefaultSoftBodySolver::PSolve_Anchors(softBody,1,ti);
-			btDefaultSoftBodySolver::PSolve_RContacts(softBody,1,ti);
-			btDefaultSoftBodySolver::PSolve_SContacts(softBody,1,ti);
+			btDefaultSoftBodySolver::PSolve_RigidContacts(softBody,1,ti);
+			btDefaultSoftBodySolver::PSolve_SoftContacts(softBody,1,ti);
 			btDefaultSoftBodySolver::PSolve_Links(softBody,1,ti);
 		}
 		const btScalar	vc = (1 - softBody->m_cfg.m_damping) /  softBody->m_sst.sdt;
@@ -135,9 +135,9 @@ void btDefaultSoftBodySolver::VSolve_Links(btSoftBody* psb,btScalar kst)
 	{			
 		btSoftBody::Link& l = psb->m_links[i];
 		btSoftBody::Node** n = l.m_n;
-		const btScalar	j=-btDot(l.m_c3,n[0]->m_v-n[1]->m_v)*l.m_c2*kst;
-		n[0]->m_v+=	l.m_c3*(j*n[0]->m_im);
-		n[1]->m_v-=	l.m_c3*(j*n[1]->m_im);
+		const btScalar j = -btDot(l.m_gradient0to1, n[0]->m_v - n[1]->m_v) * l.m_impulseScaling * kst;
+		n[0]->m_v += l.m_gradient0to1 * (j * n[0]->m_invMass);
+		n[1]->m_v -= l.m_gradient0to1 * (j * n[1]->m_invMass);
 	}
 }
 
@@ -151,27 +151,27 @@ void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScal
 		const btTransform& t = a.m_body->getWorldTransform();
 		btSoftBody::Node& n = *a.m_node;
 		const btVector3 wa = t*a.m_local;
-		const btVector3 va = a.m_body->getVelocityInLocalPoint(a.m_c1)*dt;
+		const btVector3 va = a.m_body->getVelocityInLocalPoint(a.m_rotatedPosition)*dt;
 		const btVector3 vb = n.m_x-n.m_q;
 		const btVector3 vr = (va - vb) + (wa - n.m_x) * anchorHardness;
-		const btVector3 impulse = a.m_c0 * vr * a.m_influence;
-		n.m_x += impulse * a.m_c2;
-		a.m_body->applyImpulse(-impulse,a.m_c1);
+		const btVector3 impulse = a.m_impulseMatrix * vr * a.m_influence;
+		n.m_x += impulse * a.m_invMassDt;
+		a.m_body->applyImpulse(-impulse,a.m_rotatedPosition);
 	}
 }
 
-void btDefaultSoftBodySolver::PSolve_RContacts(btSoftBody* psb, btScalar kst, btScalar ti)
+void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst, btScalar ti)
 {
 	const btScalar	dt = psb->m_sst.sdt;
 	const btScalar	mrg = psb->getCollisionShape()->getMargin();
-	for(int i=0,ni=psb->m_rcontacts.size();i<ni;++i)
+	for(int i=0,ni=psb->m_rigidContacts.size();i<ni;++i)
 	{
-		const btSoftBody::RContact&		c = psb->m_rcontacts[i];
+		const btSoftBody::RigidContact& c = psb->m_rigidContacts[i];
 		const btSoftBody::sCti&			cti = c.m_cti;	
 		if (cti.m_colObj->hasContactResponse()) 
 		{
 			btRigidBody* tmpRigid = (btRigidBody*)btRigidBody::upcast(cti.m_colObj);
-			const btVector3		va = tmpRigid ? tmpRigid->getVelocityInLocalPoint(c.m_c1)*dt : btVector3(0,0,0);
+			const btVector3		va = tmpRigid ? tmpRigid->getVelocityInLocalPoint(c.m_relativeNodePosition) * dt : btVector3(0,0,0);
 			const btVector3		vb = c.m_node->m_x-c.m_node->m_q;	
 			const btVector3		vr = vb-va;
 			const btScalar		dn = btDot(vr, cti.m_normal);		
@@ -180,20 +180,20 @@ void btDefaultSoftBodySolver::PSolve_RContacts(btSoftBody* psb, btScalar kst, bt
 				const btScalar		dp = btMin( (btDot(c.m_node->m_x, cti.m_normal) + cti.m_offset), mrg );
 				const btVector3		fv = vr - (cti.m_normal * dn);
 				// c0 is the impulse matrix, c3 is 1 - the friction coefficient or 0, c4 is the contact hardness coefficient
-				const btVector3		impulse = c.m_c0 * ( (vr - (fv * c.m_c3) + (cti.m_normal * (dp * c.m_c4))) * kst );
-				c.m_node->m_x -= impulse * c.m_c2;
+				const btVector3		impulse = c.m_impulseMatrix * ( (vr - (fv * c.m_combinedFriction) + (cti.m_normal * (dp * c.m_hardness))) * kst );
+				c.m_node->m_x -= impulse * c.m_invMassDt;
 				if (tmpRigid)
-					tmpRigid->applyImpulse(impulse,c.m_c1);
+					tmpRigid->applyImpulse(impulse,c.m_relativeNodePosition);
 			}
 		}
 	}
 }
 
-void btDefaultSoftBodySolver::PSolve_SContacts(btSoftBody* psb,btScalar,btScalar ti)
+void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btScalar ti)
 {
-	for(int i=0,ni=psb->m_scontacts.size();i<ni;++i)
+	for(int i=0,ni=psb->m_softContacts.size();i<ni;++i)
 	{
-		const btSoftBody::SContact&		c=psb->m_scontacts[i];
+		const btSoftBody::SoftContact& c = psb->m_softContacts[i];
 		const btVector3&	nr=c.m_normal;
 		btSoftBody::Node&				n=*c.m_node;
 		btSoftBody::Face&				f=*c.m_face;
@@ -226,17 +226,17 @@ void btDefaultSoftBodySolver::PSolve_Links(btSoftBody* psb,btScalar kst,btScalar
 	for(int i=0,ni=psb->m_links.size();i<ni;++i)
 	{			
 		btSoftBody::Link&	l=psb->m_links[i];
-		if(l.m_c0>0)
+		if(l.m_scaledCombinedInvMass > 0)
 		{
 			btSoftBody::Node&			a=*l.m_n[0];
 			btSoftBody::Node&			b=*l.m_n[1];
 			const btVector3	del=b.m_x-a.m_x;
 			const btScalar	len=del.length2();
-			if (l.m_c1+len > SIMD_EPSILON)
+			if (l.m_restLengthSquared+len > SIMD_EPSILON)
 			{
-				const btScalar	k=((l.m_c1-len)/(l.m_c0*(l.m_c1+len)))*kst;
-				a.m_x-=del*(k*a.m_im);
-				b.m_x+=del*(k*b.m_im);
+				const btScalar k = ( (l.m_restLengthSquared-len)/(l.m_scaledCombinedInvMass*(l.m_restLengthSquared+len)) ) * kst;
+				a.m_x -= del * (k * a.m_invMass);
+				b.m_x += del * (k * b.m_invMass);
 			}
 		}
 	}

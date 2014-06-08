@@ -197,7 +197,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			{
 				const btSoftBody::Node&	n=psb->m_nodes[i];
 				if(!n.m_material->m_debugDraw) continue;
-				const btVector3			d=n.m_n*nscl;
+				const btVector3 d = n.m_normal * nscl;
 				idraw->drawLine(n.m_x,n.m_x+d,ncolor);
 				idraw->drawLine(n.m_x,n.m_x-d,ncolor*0.5);
 			}
@@ -208,9 +208,9 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			static const btVector3		axis[]={btVector3(1,0,0),
 				btVector3(0,1,0),
 				btVector3(0,0,1)};
-			for(i=0;i<psb->m_rcontacts.size();++i)
+			for(i=0;i<psb->m_rigidContacts.size();++i)
 			{		
-				const btSoftBody::RContact&	c=psb->m_rcontacts[i];
+				const btSoftBody::RigidContact&	c = psb->m_rigidContacts[i];
 				const btVector3				o=	c.m_node->m_x-c.m_cti.m_normal*
 					(btDot(c.m_node->m_x,c.m_cti.m_normal)+c.m_cti.m_offset);
 				const btVector3				x=btCross(c.m_cti.m_normal,axis[c.m_cti.m_normal.minAxis()]).normalized();
@@ -272,7 +272,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		{
 			const btSoftBody::Node&	n=psb->m_nodes[i];		
 			if(!n.m_material->m_debugDraw) continue;
-			if(n.m_im<=0)
+			if(n.m_invMass <= 0)
 			{
 				drawVertex(idraw,n.m_x,0.25,btVector3(1,0,0));
 			}
@@ -299,7 +299,7 @@ void			btSoftBodyHelpers::DrawInfos(		btSoftBody* psb,
 		char					buff[1024];
 		if(masses)
 		{
-			sprintf(buff," M(%.2f)",1/n.m_im);
+			sprintf(buff," M(%.2f)",1/n.m_invMass);
 			strcat(text,buff);
 		}
 		if(areas)

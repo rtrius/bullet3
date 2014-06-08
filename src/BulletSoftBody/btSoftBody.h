@@ -124,8 +124,8 @@ public:
 		btVector3				m_q;			// Previous step position
 		btVector3				m_v;			// Velocity
 		btVector3				m_f;			// Force accumulator
-		btVector3				m_n;			// Normal
-		btScalar				m_im;			// 1/mass
+		btVector3				m_normal;
+		btScalar				m_invMass;		///<1 / mass
 		btScalar				m_area;			// Area
 		btDbvtNode*				m_leaf;			// Leaf data
 		int						m_battach:1;	// Attached
@@ -133,45 +133,42 @@ public:
 	
 	struct	Link : Feature
 	{
-		Node*					m_n[2];			// Node pointers
-		btScalar				m_rl;			// Rest length		
-		int						m_bbending:1;	// Bending link
-		btScalar				m_c0;			// (ima+imb)*kLST
-		btScalar				m_c1;			// rl^2
-		btScalar				m_c2;			// |gradient|^2/c0
-		btVector3				m_c3;			// gradient
+		Node*					m_n[2];						// Node pointers
+		btScalar				m_restLength;				///<Constraint tries to keep nodes at this distance
+		int						m_bbending:1;				// Bending link
+		btScalar				m_scaledCombinedInvMass;	///<(inverse_mass_0 + inverse_mass_1) * linearStiffness
+		btScalar				m_restLengthSquared;
+		btScalar				m_impulseScaling;			// |gradient|^2/c0
+		btVector3				m_gradient0to1;
 	};
 	
 	struct	Face : Feature
 	{
 		Node*					m_n[3];			// Node pointers
 		btVector3				m_normal;		// Normal
-		btScalar				m_ra;			// Rest area
+		btScalar				m_area;
 		btDbvtNode*				m_leaf;			// Leaf data
 	};
 	
 	struct	Tetra : Feature
 	{
 		Node*					m_n[4];			// Node pointers		
-		btScalar				m_rv;			// Rest volume
+		btScalar				m_restVolume;
 		btDbvtNode*				m_leaf;			// Leaf data
-		btVector3				m_c0[4];		// gradients
-		btScalar				m_c1;			// (4*kVST)/(im0+im1+im2+im3)
-		btScalar				m_c2;			// m_c1/sum(|g0..3|^2)
 	};
 	
-	struct	RContact
+	struct	RigidContact
 	{
-		sCti		m_cti;			// Contact infos
+		sCti					m_cti;			// Contact infos
 		Node*					m_node;			// Owner node
-		btMatrix3x3				m_c0;			// Impulse matrix
-		btVector3				m_c1;			// Relative anchor
-		btScalar				m_c2;			// ima*dt
-		btScalar				m_c3;			// Friction
-		btScalar				m_c4;			// Hardness
+		btMatrix3x3				m_impulseMatrix;
+		btVector3				m_relativeNodePosition;		///<Position of m_node relative to the btCollisionObject
+		btScalar				m_invMassDt;				///<inverse_mass * timeStep
+		btScalar				m_combinedFriction;
+		btScalar				m_hardness;
 	};
 	
-	struct	SContact
+	struct	SoftContact
 	{
 		Node*					m_node;			// Node
 		Face*					m_face;			// Face
@@ -188,14 +185,13 @@ public:
 		btVector3				m_local;		// Anchor position in body space
 		btRigidBody*			m_body;			// Body
 		btScalar				m_influence;
-		btMatrix3x3				m_c0;			// Impulse matrix
-		btVector3				m_c1;			// Relative anchor
-		btScalar				m_c2;			// ima*dt
+		btMatrix3x3				m_impulseMatrix;
+		btVector3				m_rotatedPosition;
+		btScalar				m_invMassDt;		///<inverse_mass * timeStep
 	};
 	
 	struct	Pose
 	{
-		bool					m_bvolume;		// Is valid
 		bool					m_bframe;		// Is frame
 		btScalar				m_volume;		// Rest volume
 		btAlignedObjectArray<btVector3>			m_pos;			// Reference positions
@@ -225,31 +221,7 @@ public:
 	struct	SolverState
 	{
 		btScalar				sdt;			// dt
-		btScalar				velmrg;			// velocity margin
-		btScalar				radmrg;			// radial margin
-		btScalar				updmrg;			// Update margin
 	};	
-	
-	/// RayFromToCaster takes a ray from, ray to (instead of direction!)
-	struct	RayFromToCaster : btDbvt::ICollide
-	{
-		btVector3			m_rayFrom;
-		btVector3			m_rayTo;
-		btVector3			m_rayNormalizedDirection;
-		btScalar			m_mint;
-		Face*				m_face;
-		int					m_tests;
-		RayFromToCaster(const btVector3& rayFrom,const btVector3& rayTo,btScalar mxt);
-		void Process(const btDbvtNode* leaf);
-
-		static inline btScalar	rayFromToTriangle(const btVector3& rayFrom,
-			const btVector3& rayTo,
-			const btVector3& rayNormalizedDirection,
-			const btVector3& a,
-			const btVector3& b,
-			const btVector3& c,
-			btScalar maxt=SIMD_INFINITY);
-	};
 
 	// Fields
 
@@ -262,8 +234,8 @@ public:
 	btAlignedObjectArray<Face>				m_faces;
 	btAlignedObjectArray<Tetra>				m_tetras;
 	btAlignedObjectArray<Anchor>			m_anchors;
-	btAlignedObjectArray<RContact>			m_rcontacts;	// Rigid contacts
-	btAlignedObjectArray<SContact>			m_scontacts;	// Soft contacts
+	btAlignedObjectArray<RigidContact>		m_rigidContacts;
+	btAlignedObjectArray<SoftContact>		m_softContacts;
 	btAlignedObjectArray<Material*>				m_materials;
 	btVector3				m_bounds[2];	// Spatial bounds	
 	bool					m_bUpdateRtCst;	// Update runtime constants
@@ -273,14 +245,12 @@ public:
 	btScalar        	m_restLengthScale;
 	
 	// Api
-	btSoftBody(	btSoftBodyWorldInfo* worldInfo,int node_count, const btVector3* x, const btScalar* m);
+	btSoftBody(	btSoftBodyWorldInfo* worldInfo, int numNodes, const btVector3* nodePositions, const btScalar* nodeMasses);
 	btSoftBody(	btSoftBodyWorldInfo* worldInfo);
 
 	virtual ~btSoftBody();
 	
 	void initDefaults();
-
-	btAlignedObjectArray<int> m_userIndexMapping;
 
 	btSoftBodyWorldInfo* getWorldInfo() { return m_worldInfo; }
 
@@ -293,7 +263,7 @@ public:
 	
 	Material* appendMaterial();
 	
-	void appendNode(const btVector3& x,btScalar m);
+	void appendNode(const btVector3& position, btScalar mass);
 	
 	void appendLink(int model=-1,Material* mat=0);
 	void appendLink(int node0, int node1, Material* mat=0, bool bcheckexist=false);
@@ -339,7 +309,7 @@ public:
 
 	///Ray casting using rayFrom and rayTo in worldspace, (not direction!)
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, sRayCast& results);
-	void predictMotion(btScalar dt);
+	void predictMotion(btScalar timeStep);
 	void defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap);
 	void defaultCollisionHandler(btSoftBody* psb);
 	
