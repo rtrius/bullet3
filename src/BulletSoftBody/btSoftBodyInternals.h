@@ -179,12 +179,7 @@ static inline T				Sign(const T& x)
 template <typename T>
 static inline bool			SameSign(const T& x,const T& y)
 { return((x*y)>0); }
-//
-static inline btScalar		ClusterMetric(const btVector3& x,const btVector3& y)
-{
-	const btVector3	d=x-y;
-	return(btFabs(d[0])+btFabs(d[1])+btFabs(d[2]));
-}
+
 //
 static inline btMatrix3x3	ScaleAlongAxis(const btVector3& a,btScalar s)
 {
@@ -496,16 +491,16 @@ struct btSoftColliders
 					static const btMatrix3x3	iwiStatic(0,0,0,0,0,0,0,0,0);
 					const btMatrix3x3&	iwi=m_rigidBody?m_rigidBody->getInvInertiaTensorWorld() : iwiStatic;
 					const btVector3		ra=n.m_x-wtr.getOrigin();
-					const btVector3		va=m_rigidBody ? m_rigidBody->getVelocityInLocalPoint(ra)*psb->m_sst.sdt : btVector3(0,0,0);
+					const btVector3		va=m_rigidBody ? m_rigidBody->getVelocityInLocalPoint(ra)*psb->m_timeStep : btVector3(0,0,0);
 					const btVector3		vb=n.m_x-n.m_q;	
 					const btVector3		vr=vb-va;
 					const btScalar		dn=btDot(vr,c.m_cti.m_normal);
 					const btVector3		fv=vr-c.m_cti.m_normal*dn;
 					const btScalar		fc=psb->m_cfg.m_dynamicFriction*m_colObj1Wrap->getCollisionObject()->getFriction();
 					c.m_node	=	&n;
-					c.m_impulseMatrix = ImpulseMatrix(psb->m_sst.sdt,ima,imb,iwi,ra);
+					c.m_impulseMatrix = ImpulseMatrix(psb->m_timeStep,ima,imb,iwi,ra);
 					c.m_relativeNodePosition = ra;
-					c.m_invMassDt = ima * psb->m_sst.sdt;
+					c.m_invMassDt = ima * psb->m_timeStep;
 			        c.m_combinedFriction =	fv.length2() < (dn*fc*dn*fc) ? 0 : 1 - fc;
 					c.m_hardness =	m_colObj1Wrap->getCollisionObject()->isStaticOrKinematicObject()
 									? psb->m_cfg.m_kinematicContactHardness : psb->m_cfg.m_rigidContactHardness;

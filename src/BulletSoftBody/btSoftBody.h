@@ -70,8 +70,6 @@ public:
 	// Enumerations
 	struct	eFeature { enum _ {
 		None,
-		Node,
-		Link,
 		Face,
 		Tetra
 	};};
@@ -135,13 +133,18 @@ public:
 	{
 		Node*					m_n[2];						// Node pointers
 		btScalar				m_restLength;				///<Constraint tries to keep nodes at this distance
+		
+		///@name Internal variables. Can be ignored by the user.
+		///@{
 		int						m_bbending:1;				// Bending link
 		btScalar				m_scaledCombinedInvMass;	///<(inverse_mass_0 + inverse_mass_1) * linearStiffness
 		btScalar				m_restLengthSquared;
 		btScalar				m_impulseScaling;			// |gradient|^2/c0
 		btVector3				m_gradient0to1;
+		///@}
 	};
 	
+	//Triangle; used for rendering, collision and various forces(aerodynamic, pressure)
 	struct	Face : Feature
 	{
 		Node*					m_n[3];			// Node pointers
@@ -150,6 +153,7 @@ public:
 		btDbvtNode*				m_leaf;			// Leaf data
 	};
 	
+	//	Not implemented
 	struct	Tetra : Feature
 	{
 		Node*					m_n[4];			// Node pointers		
@@ -190,44 +194,76 @@ public:
 		btScalar				m_invMassDt;		///<inverse_mass * timeStep
 	};
 	
-	struct	Pose
+	///Applies a force that tries to maintain constant volume for a closed triangle mesh
+	struct VolumeConservationForce
 	{
-		bool					m_bframe;		// Is frame
-		btScalar				m_volume;		// Rest volume
-		btAlignedObjectArray<btVector3>			m_pos;			// Reference positions
-		btAlignedObjectArray<btScalar>			m_wgh;			// Weights
-		btVector3				m_com;			// COM
-		btMatrix3x3				m_rot;			// Rotation
-		btMatrix3x3				m_scl;			// Scale
-		btMatrix3x3				m_aqq;			// Base scaling
+		btScalar m_forceMagnitude; 			///<[0, +inf]
+		btScalar m_restVolume;				///<0.0 == force is disabled; set using btSoftBody::getClosedTrimeshVolume() to enable
+		
+		VolumeConservationForce()
+		{
+			m_forceMagnitude = btScalar(0.0);
+			m_restVolume = btScalar(0.0);
+		}
 	};
+	
+	VolumeConservationForce m_volumeConservationForce;
+	
+	struct Pose
+	{
+		btScalar m_poseMatching;								///<[0, 1]; 0.0 == disabled; use setPose() to set this
+		btAlignedObjectArray<btVector3> m_referencePositions;	///<Pose constraint moves each node to these positions
+		btAlignedObjectArray<btScalar> m_weights;				///<Per-node weights; used for computing the center of mass
+		btVector3 m_centerOfMass;
+		btMatrix3x3 m_rotation;
+		
+		Pose()
+		{
+			m_poseMatching = btScalar(0.0);
+			m_centerOfMass = btVector3(0,0,0);
+			m_rotation.setIdentity();
+		}
+	};
+	
+	void setPose(btScalar poseMatching);		///<Enables pose matching constraint if (poseMatching != 0.0)
+	void updateAndApplyPose();
+	btVector3 evaluateCenterOfMass() const;
+	
+	Pose m_pose;
 	
 	struct	Config
 	{
 		btScalar m_damping;						///<[0, 1]; fraction of velocity removed per timestep(0.05 means that velocity is scaled by 0.95).
 		btScalar m_pressure;					///<[-inf, +inf]
-		btScalar m_volumeConservation; 			///<[0, +inf]
 		btScalar m_dynamicFriction;				///<[0, 1]
-		btScalar m_poseMatching;				///<[0, 1]
+		
 		btScalar m_rigidContactHardness;		///<[0, 1]; contact hardness for dynamic rigid bodies.
 		btScalar m_kinematicContactHardness;	///<[0, 1]; contact hardness for static and kinematic(inverse_mass == 0) rigid bodies.
 		btScalar m_softContactHardness;			///<[0, 1]
 		btScalar m_anchorHardness;				///<[0, 1]
-		btScalar				maxvolume;		// Maximum volume ratio for pose
+		
 		int m_velocityIterations;
 		int m_positionIterations;
+		
+		Config()
+		{
+			m_damping = btScalar(0.0);
+			m_pressure = btScalar(0.0);
+			m_dynamicFriction = btScalar(0.2);
+			
+			m_rigidContactHardness = btScalar(1.0);
+			m_kinematicContactHardness = btScalar(0.1);
+			m_softContactHardness = btScalar(1.0);
+			m_anchorHardness = btScalar(0.7);
+			
+			m_velocityIterations = 0;
+			m_positionIterations = 1;
+		}
 	};
-	
-	struct	SolverState
-	{
-		btScalar				sdt;			// dt
-	};	
 
 	// Fields
-
 	Config					m_cfg;			// Configuration
-	SolverState				m_sst;			// Solver state
-	Pose					m_pose;			// Pose
+	btScalar				m_timeStep;
 	btSoftBodyWorldInfo*	m_worldInfo;	// World info
 	btAlignedObjectArray<Node>				m_nodes;
 	btAlignedObjectArray<Link>				m_links;
@@ -296,9 +332,7 @@ public:
 	void scale(	const btVector3& scl);
 	btScalar getRestLengthScale();					//Get link resting lengths scale
 	void setRestLengthScale(btScalar restLength);	//Scale resting length of all springs
-	void setPose(bool bvolume, bool bframe);		//Set current state as pose	
-	void resetLinkRestLengths();					//Set current link lengths as resting lengths
-	btScalar getVolume() const;
+	btScalar getClosedTrimeshVolume() const;		///<Returns the volume, assuming that m_faces represents a closed triangle mesh
 	
 	int generateBendingConstraints(int distance, Material* mat=0);	//Generate bending constraints based on distance in the adjency graph
 	void randomizeConstraints();	//Randomize constraints to reduce solver bias	
@@ -348,13 +382,10 @@ public:
 
 	int rayTest(const btVector3& rayFrom,const btVector3& rayTo, btScalar& mint,eFeature::_& feature,int& index,bool bcountonly) const;
 	void initializeFaceTree();
-	btVector3 evaluateCom() const;
 	bool checkContact(const btCollisionObjectWrapper* colObjWrap,const btVector3& x,btScalar margin,btSoftBody::sCti& cti) const;
 	void updateNormals();
 	void updateBounds();
-	void updatePose();
 	void updateConstants();
-	void updateLinkConstants();
 	void updateArea(bool averageArea = true);
 	void applyForces();	
 	
@@ -366,13 +397,11 @@ public:
 		enum _ 
 		{
 			V_Point,			///Vertex normals are oriented toward velocity
-			V_TwoSided,			///Vertex normals are flipped to match velocity	
+			V_TwoSided,			///Vertex normals are flipped to match velocity
 			V_TwoSidedLiftDrag, ///Vertex normals are flipped to match velocity and lift and drag forces are applied
-			V_OneSided,			///Vertex normals are taken as it is	
 			F_TwoSided,			///Face normals are flipped to match velocity
 			F_TwoSidedLiftDrag,	///Face normals are flipped to match velocity and lift and drag forces are applied 
-			F_OneSided,			///Face normals are taken as it is		
-			END
+			F_OneSided			///Face normals are taken as it is
 		};
 	};
 	

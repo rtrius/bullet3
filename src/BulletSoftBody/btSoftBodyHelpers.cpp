@@ -494,22 +494,22 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb /* This can be repla
 void			btSoftBodyHelpers::DrawFrame(		btSoftBody* psb,
 											 btIDebugDraw* idraw)
 {
-	if(psb->m_pose.m_bframe)
+	if( psb->m_pose.m_poseMatching != btScalar(0.0) )
 	{
-		static const btScalar	ascl=10;
-		static const btScalar	nscl=(btScalar)0.1;
-		const btVector3			com=psb->m_pose.m_com;
-		const btMatrix3x3		trs=psb->m_pose.m_rot*psb->m_pose.m_scl;
-		const btVector3			Xaxis=(trs*btVector3(1,0,0)).normalized();
-		const btVector3			Yaxis=(trs*btVector3(0,1,0)).normalized();
-		const btVector3			Zaxis=(trs*btVector3(0,0,1)).normalized();
-		idraw->drawLine(com,com+Xaxis*ascl,btVector3(1,0,0));
-		idraw->drawLine(com,com+Yaxis*ascl,btVector3(0,1,0));
-		idraw->drawLine(com,com+Zaxis*ascl,btVector3(0,0,1));
-		for(int i=0;i<psb->m_pose.m_pos.size();++i)
+		static const btScalar	axisScaling = 10;
+		static const btScalar	nodeScaling = (btScalar)0.1;
+		const btVector3			centerOfMass = psb->m_pose.m_centerOfMass;
+		const btMatrix3x3		rotation = psb->m_pose.m_rotation;
+		const btVector3			Xaxis = ( rotation * btVector3(1,0,0) ).normalized();
+		const btVector3			Yaxis = ( rotation * btVector3(0,1,0) ).normalized();
+		const btVector3			Zaxis = ( rotation * btVector3(0,0,1) ).normalized();
+		idraw->drawLine( centerOfMass, centerOfMass + Xaxis * axisScaling, btVector3(1,0,0) );
+		idraw->drawLine( centerOfMass, centerOfMass + Yaxis * axisScaling, btVector3(0,1,0) );
+		idraw->drawLine( centerOfMass, centerOfMass + Zaxis * axisScaling, btVector3(0,0,1) );
+		for(int i=0;i<psb->m_pose.m_referencePositions.size();++i)
 		{
-			const btVector3	x=com+trs*psb->m_pose.m_pos[i];
-			drawVertex(idraw,x,nscl,btVector3(1,0,1));
+			const btVector3	x = centerOfMass + rotation * psb->m_pose.m_referencePositions[i];
+			drawVertex( idraw, x, nodeScaling, btVector3(1,0,1) );
 		}
 	}
 }

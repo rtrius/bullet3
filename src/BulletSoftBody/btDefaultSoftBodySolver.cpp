@@ -59,10 +59,10 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	{
 		btSoftBody::Anchor& a = softBody->m_anchors[i];
 		const btVector3	ra = a.m_body->getWorldTransform().getBasis() * a.m_local;
-		a.m_impulseMatrix = ImpulseMatrix(	softBody->m_sst.sdt, a.m_node->m_invMass, a.m_body->getInvMass(),
+		a.m_impulseMatrix = ImpulseMatrix(	softBody->m_timeStep, a.m_node->m_invMass, a.m_body->getInvMass(),
 									a.m_body->getInvInertiaTensorWorld(), ra);
 		a.m_rotatedPosition = ra;
-		a.m_invMassDt = softBody->m_sst.sdt * a.m_node->m_invMass;
+		a.m_invMassDt = softBody->m_timeStep * a.m_node->m_invMass;
 		a.m_body->activate();
 	}
 	
@@ -79,7 +79,7 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 		for(int i = 0; i < softBody->m_nodes.size();++i)
 		{
 			btSoftBody::Node& n = softBody->m_nodes[i];
-			n.m_x =	n.m_q + n.m_v * softBody->m_sst.sdt;
+			n.m_x =	n.m_q + n.m_v * softBody->m_timeStep;
 		}
 	}
 	
@@ -94,7 +94,7 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 			btDefaultSoftBodySolver::PSolve_SoftContacts(softBody,1,ti);
 			btDefaultSoftBodySolver::PSolve_Links(softBody,1,ti);
 		}
-		const btScalar	vc = (1 - softBody->m_cfg.m_damping) /  softBody->m_sst.sdt;
+		const btScalar	vc = (1 - softBody->m_cfg.m_damping) /  softBody->m_timeStep;
 		for(int i = 0; i < softBody->m_nodes.size(); ++i)
 		{
 			btSoftBody::Node& n = softBody->m_nodes[i];
@@ -144,7 +144,7 @@ void btDefaultSoftBodySolver::VSolve_Links(btSoftBody* psb,btScalar kst)
 void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti)
 {
 	const btScalar anchorHardness = psb->m_cfg.m_anchorHardness * kst;
-	const btScalar	dt=psb->m_sst.sdt;
+	const btScalar	dt=psb->m_timeStep;
 	for(int i=0,ni=psb->m_anchors.size();i<ni;++i)
 	{
 		const btSoftBody::Anchor& a = psb->m_anchors[i];
@@ -162,7 +162,7 @@ void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScal
 
 void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst, btScalar ti)
 {
-	const btScalar	dt = psb->m_sst.sdt;
+	const btScalar	dt = psb->m_timeStep;
 	const btScalar	mrg = psb->getCollisionShape()->getMargin();
 	for(int i=0,ni=psb->m_rigidContacts.size();i<ni;++i)
 	{

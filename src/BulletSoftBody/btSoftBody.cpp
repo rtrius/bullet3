@@ -60,29 +60,11 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo)
 void	btSoftBody::initDefaults()
 {
 	m_internalType		=	CO_SOFT_BODY;
-	m_cfg.m_damping = 0;
-	m_cfg.m_pressure = 0;
-	m_cfg.m_volumeConservation = 0;
-	m_cfg.m_dynamicFriction = (btScalar)0.2;
-	m_cfg.m_poseMatching = 0;
-	m_cfg.m_rigidContactHardness = (btScalar)1.0;
-	m_cfg.m_kinematicContactHardness = (btScalar)0.1;
-	m_cfg.m_softContactHardness = (btScalar)1.0;
-	m_cfg.m_anchorHardness = (btScalar)0.7;
-	m_cfg.maxvolume		=	(btScalar)1;
-	m_cfg.m_velocityIterations	=	0;
-	m_cfg.m_positionIterations	=	1;
-	m_pose.m_bframe		=	false;
-	m_pose.m_volume		=	0;
-	m_pose.m_com		=	btVector3(0,0,0);
-	m_pose.m_rot.setIdentity();
-	m_pose.m_scl.setIdentity();
 	m_bUpdateRtCst		=	true;
 	m_bounds[0]			=	btVector3(0,0,0);
 	m_bounds[1]			=	btVector3(0,0,0);
 	m_worldTransform.setIdentity();
 	
-	/* Collision shape	*/ 
 	///for now, create a collision shape internally
 	m_collisionShape = new btSoftBodyCollisionShape(this);
 	m_collisionShape->setMargin(0.25f);
@@ -410,7 +392,7 @@ void			btSoftBody::setTotalMass(btScalar mass,bool fromfaces)
 //
 void			btSoftBody::setTotalDensity(btScalar density)
 {
-	setTotalMass(getVolume()*density,true);
+	setTotalMass( getClosedTrimeshVolume() * density, true);
 }
 
 //
@@ -536,80 +518,130 @@ void btSoftBody::setRestLengthScale(btScalar restLengthScale)
 }
 
 //
-void			btSoftBody::setPose(bool bvolume,bool bframe)
+void btSoftBody::setPose(btScalar poseMatching)
 {
-	m_pose.m_bframe		=	bframe;
-	int i,ni;
+	m_pose.m_poseMatching = poseMatching;
 
-	/* Weights		*/ 
-	const btScalar	omass=getTotalMass();
-	const btScalar	kmass=omass*m_nodes.size()*1000;
-	btScalar		tmass=omass;
-	m_pose.m_wgh.resize(m_nodes.size());
-	for(i=0,ni=m_nodes.size();i<ni;++i)
+	//Set per-node weights
 	{
-		if(m_nodes[i].m_invMass <= 0) tmass+=kmass;
+		int numKinematicNodes = 0;
+		for(int i = 0; i < m_nodes.size(); ++i)
+			if(m_nodes[i].m_invMass <= 0) ++numKinematicNodes;
+		
+		btScalar dynamicMass = getTotalMass();
+		btScalar kinematicMass = dynamicMass * m_nodes.size() * btScalar(1000.0);
+		btScalar totalMass = dynamicMass + btScalar(numKinematicNodes) * kinematicMass;
+		
+		m_pose.m_weights.resize( m_nodes.size() );
+		for(int i = 0; i < m_nodes.size(); ++i)
+		{
+			Node& n = m_nodes[i];
+			m_pose.m_weights[i] = (n.m_invMass > 0) ? 1 / (m_nodes[i].m_invMass * totalMass) : kinematicMass / totalMass;
+		}
 	}
-	for( i=0,ni=m_nodes.size();i<ni;++i)
+	
+	//Initialize initial positions, center of mass, rotation
 	{
-		Node&	n=m_nodes[i];
-		m_pose.m_wgh[i]= (n.m_invMass > 0) ? 1 / (m_nodes[i].m_invMass * tmass) : kmass / tmass;
+		btVector3 centerOfMass = evaluateCenterOfMass();
+		
+		m_pose.m_referencePositions.resize( m_nodes.size() );
+		for(int i = 0; i < m_nodes.size(); ++i) m_pose.m_referencePositions[i] = m_nodes[i].m_x - centerOfMass;
+		
+		m_pose.m_centerOfMass = centerOfMass;
+		m_pose.m_rotation.setIdentity();
 	}
-	/* Pos		*/ 
-	const btVector3	com=evaluateCom();
-	m_pose.m_pos.resize(m_nodes.size());
-	for( i=0,ni=m_nodes.size();i<ni;++i)
-	{
-		m_pose.m_pos[i]=m_nodes[i].m_x-com;
-	}
-	m_pose.m_volume	=	bvolume?getVolume():0;
-	m_pose.m_com	=	com;
-	m_pose.m_rot.setIdentity();
-	m_pose.m_scl.setIdentity();
-	/* Aqq		*/ 
-	m_pose.m_aqq[0]	=
-		m_pose.m_aqq[1]	=
-		m_pose.m_aqq[2]	=	btVector3(0,0,0);
-	for( i=0,ni=m_nodes.size();i<ni;++i)
-	{
-		const btVector3&	q=m_pose.m_pos[i];
-		const btVector3		mq=m_pose.m_wgh[i]*q;
-		m_pose.m_aqq[0]+=mq.x()*q;
-		m_pose.m_aqq[1]+=mq.y()*q;
-		m_pose.m_aqq[2]+=mq.z()*q;
-	}
-	m_pose.m_aqq=m_pose.m_aqq.inverse();
 	
 	updateConstants();
 }
 
-void				btSoftBody::resetLinkRestLengths()
+//
+void btSoftBody::updateAndApplyPose()
 {
-	for(int i=0, ni=m_links.size();i<ni;++i)
+	if( m_pose.m_poseMatching != btScalar(0.0) )
 	{
-		Link& l =	m_links[i];
-		l.m_restLength = (l.m_n[0]->m_x - l.m_n[1]->m_x).length();
-		l.m_restLengthSquared = l.m_restLength * l.m_restLength;
+		//Update center of mass
+		btVector3 centerOfMass = evaluateCenterOfMass();
+		
+		//Update rotation
+		btMatrix3x3 rotation;
+		{
+			btMatrix3x3 Apq, scaling;
+			
+			Apq[0] = Apq[1] = Apq[2] = btVector3(0,0,0);
+			Apq[0].setX(SIMD_EPSILON);
+			Apq[1].setY(SIMD_EPSILON*2);
+			Apq[2].setZ(SIMD_EPSILON*3);
+			
+			for(int i = 0; i < m_nodes.size(); ++i)
+			{
+				const btVector3 a = m_pose.m_weights[i] * (m_nodes[i].m_x - centerOfMass);
+				const btVector3& b = m_pose.m_referencePositions[i];
+				Apq[0] += a.x() * b;
+				Apq[1] += a.y() * b;
+				Apq[2] += a.z() * b;
+			}
+			
+			const btPolarDecomposition polar;  
+			polar.decompose(Apq, rotation, scaling);
+		}
+		
+		//
+		m_pose.m_centerOfMass = centerOfMass;
+		m_pose.m_rotation = rotation;
+		
+		//Apply pose matching constraint
+		{
+			for(int i = 0; i < m_nodes.size(); ++i)
+			{
+				Node& n = m_nodes[i];
+				if(n.m_invMass > 0)
+				{
+					btVector3 x = rotation * m_pose.m_referencePositions[i] + centerOfMass;
+					n.m_x = Lerp(n.m_x, x, m_pose.m_poseMatching);
+				}
+			}
+		}
 	}
 }
 
 //
-btScalar		btSoftBody::getVolume() const
+btVector3 btSoftBody::evaluateCenterOfMass() const
 {
-	btScalar	vol=0;
-	if(m_nodes.size()>0)
+	btVector3 centerOfMass(0,0,0);
+	
+	if( m_pose.m_poseMatching != btScalar(0.0) )
 	{
-		int i,ni;
-
-		const btVector3	org=m_nodes[0].m_x;
-		for(i=0,ni=m_faces.size();i<ni;++i)
-		{
-			const Face&	f=m_faces[i];
-			vol+=btDot(f.m_n[0]->m_x-org,btCross(f.m_n[1]->m_x-org,f.m_n[2]->m_x-org));
-		}
-		vol/=(btScalar)6;
+		for(int i = 0; i < m_nodes.size(); ++i) centerOfMass += m_nodes[i].m_x * m_pose.m_weights[i];
 	}
-	return(vol);
+	
+	return centerOfMass;
+}
+
+//
+btScalar btSoftBody::getClosedTrimeshVolume() const
+{
+	btScalar volume(0.0);
+	
+	if(m_nodes.size() > 0)
+	{
+		//Could also use (0,0,0) for origin; here, we assume that m_nodes[0] is closer so that
+		//there will be less loss of floating point precision if the soft body is far from (0,0,0).
+		const btVector3& origin = m_nodes[0].m_x;	
+		for(int i = 0; i < m_faces.size(); ++i)
+		{
+			const Face&	f = m_faces[i];
+			
+			//Each triangle is combined with the origin to form a tetrahedron.
+			//By summing up the signed volume of all tetrahedra, we get the volume of the (closed) triangle mesh.
+			//Signed volume of tetrahedron is positive if the triangle's normal points away from the origin, negative otherwise.
+			btScalar signedTetrahedronVolume = btDot( f.m_n[0]->m_x - origin, btCross(f.m_n[1]->m_x - origin, f.m_n[2]->m_x - origin) );
+			
+			volume += signedTetrahedronVolume;
+		}
+		volume /= btScalar(6.0);
+	}
+	
+	return volume;
 }
 
 
@@ -1112,7 +1144,7 @@ void btSoftBody::predictMotion(btScalar timeStep)
 	}
 
 	// Prepare
-	m_sst.sdt = timeStep;
+	m_timeStep = timeStep;
 	btScalar velocityMargin	= timeStep * 3;
 	btScalar radialMargin = getCollisionShape()->getMargin();
 	btScalar updateMargin = radialMargin*(btScalar)0.25;
@@ -1171,22 +1203,10 @@ void btSoftBody::predictMotion(btScalar timeStep)
 			m_fdbvt.update(f.m_leaf, vol, v * velocityMargin, updateMargin);
 		}
 	}
+	
 	// Pose
-	updatePose();
-	// Match
-	if( m_pose.m_bframe && (m_cfg.m_poseMatching > 0) )
-	{
-		const btMatrix3x3	posetrs=m_pose.m_rot;
-		for(int i=0,ni=m_nodes.size();i<ni;++i)
-		{
-			Node&	n=m_nodes[i];
-			if(n.m_invMass > 0)
-			{
-				const btVector3	x=posetrs*m_pose.m_pos[i]+m_pose.m_com;
-				n.m_x = Lerp(n.m_x, x, m_cfg.m_poseMatching);
-			}
-		}
-	}
+	updateAndApplyPose();
+	
 	// Clear contacts
 	m_rigidContacts.resize(0);
 	m_softContacts.resize(0);
@@ -1428,19 +1448,7 @@ void			btSoftBody::initializeFaceTree()
 	}
 }
 
-//
-btVector3		btSoftBody::evaluateCom() const
-{
-	btVector3	com(0,0,0);
-	if(m_pose.m_bframe)
-	{
-		for(int i=0,ni=m_nodes.size();i<ni;++i)
-		{
-			com+=m_nodes[i].m_x*m_pose.m_wgh[i];
-		}
-	}
-	return(com);
-}
+
 
 //
 bool				btSoftBody::checkContact(	const btCollisionObjectWrapper* colObjWrap,
@@ -1537,45 +1545,6 @@ void					btSoftBody::updateBounds()
 
 
 //
-void					btSoftBody::updatePose()
-{
-	if(m_pose.m_bframe)
-	{
-		btSoftBody::Pose&	pose=m_pose;
-		const btVector3		com=evaluateCom();
-		/* Com			*/ 
-		pose.m_com	=	com;
-		/* Rotation		*/ 
-		btMatrix3x3		Apq;
-		const btScalar	eps=SIMD_EPSILON;
-		Apq[0]=Apq[1]=Apq[2]=btVector3(0,0,0);
-		Apq[0].setX(eps);Apq[1].setY(eps*2);Apq[2].setZ(eps*3);
-		for(int i=0,ni=m_nodes.size();i<ni;++i)
-		{
-			const btVector3		a=pose.m_wgh[i]*(m_nodes[i].m_x-com);
-			const btVector3&	b=pose.m_pos[i];
-			Apq[0]+=a.x()*b;
-			Apq[1]+=a.y()*b;
-			Apq[2]+=a.z()*b;
-		}
-		btMatrix3x3		r,s;
-		
-		const btPolarDecomposition polar;  
-		polar.decompose(Apq, r, s);
-		
-		pose.m_rot=r;
-		pose.m_scl=pose.m_aqq*r.transpose()*Apq;
-		if(m_cfg.maxvolume>1)
-		{
-			const btScalar	idet=Clamp<btScalar>(	1/pose.m_scl.determinant(),
-				1,m_cfg.maxvolume);
-			pose.m_scl=Mul(pose.m_scl,idet);
-		}
-
-	}
-}
-
-//
 void				btSoftBody::updateArea(bool averageArea)
 {
 	int i,ni;
@@ -1641,59 +1610,57 @@ void				btSoftBody::updateArea(bool averageArea)
 }
 
 
-void				btSoftBody::updateLinkConstants()
-{	
-	int i,ni;
-
-	/* Links		*/ 
-	for(i=0,ni=m_links.size();i<ni;++i)
+void btSoftBody::updateConstants()
+{
+	//Set current link lengths as resting lengths
+	for(int i = 0; i < m_links.size(); ++i)
 	{
-		Link&		l=m_links[i];
-		Material&	m=*l.m_material;
+		Link& l = m_links[i];
+		l.m_restLength = (l.m_n[0]->m_x - l.m_n[1]->m_x).length();
+		l.m_restLengthSquared = l.m_restLength * l.m_restLength;
+	}
+	
+	//Update link constants
+	for(int i = 0; i < m_links.size(); ++i)
+	{
+		Link& l= m_links[i];
+		Material& m = *l.m_material;
 		l.m_scaledCombinedInvMass = (l.m_n[0]->m_invMass + l.m_n[1]->m_invMass) / m.m_linearStiffness;
 	}
-}
-
-void				btSoftBody::updateConstants()
-{
-	resetLinkRestLengths();
-	updateLinkConstants();
+	
 	updateArea();
 }
 
 
 //
-void				btSoftBody::applyForces()
+void btSoftBody::applyForces()
 {
-
 	BT_PROFILE("SoftBody applyForces");
+	
 	const bool						as_pressure =	(m_cfg.m_pressure != 0);
-	const bool						as_volume =		(m_cfg.m_volumeConservation > 0);
+	const bool						as_volume =		(m_volumeConservationForce.m_forceMagnitude > 0);
 	const bool						use_volume =	as_pressure	|| as_volume;
-	btScalar						volume =		0;
-	btScalar						ivolumetp =		0;
-	btScalar						dvolumetv =		0;
 	
 	if(use_volume)
 	{
-		volume		=	getVolume();
-		ivolumetp	=	1 / btFabs(volume) * m_cfg.m_pressure;
-		dvolumetv	=	(m_pose.m_volume-volume) * m_cfg.m_volumeConservation;
-	}
-	
-	// Per vertex forces
-	for(int i = 0; i < m_nodes.size(); ++i)
-	{
-		btSoftBody::Node&	n=m_nodes[i];
-		if(n.m_invMass > 0)
+		btScalar volume = getClosedTrimeshVolume();
+		btScalar ivolumetp = 1 / btFabs(volume) * m_cfg.m_pressure;
+		btScalar dvolumetv = (m_volumeConservationForce.m_restVolume - volume) * m_volumeConservationForce.m_forceMagnitude;
+		
+		// Per vertex forces
+		for(int i = 0; i < m_nodes.size(); ++i)
 		{
-			if(as_pressure) n.m_f += n.m_normal * (n.m_area * ivolumetp);
-			
-			if(as_volume) n.m_f += n.m_normal * (n.m_area * dvolumetv);
+			btSoftBody::Node& n = m_nodes[i];
+			if(n.m_invMass > 0)
+			{
+				if(as_pressure) n.m_f += n.m_normal * (n.m_area * ivolumetp);
+				
+				if(as_volume) n.m_f += n.m_normal * (n.m_area * dvolumetv);
+			}
 		}
 	}
 
-	addAeroForces(m_aeroForce, m_sst.sdt, m_nodes, m_faces);
+	addAeroForces(m_aeroForce, m_timeStep, m_nodes, m_faces);
 }
 
 //
@@ -1823,7 +1790,7 @@ void btSoftBody::addAeroForceToNode(const AeroForce& aeroForce, btScalar timeSte
 					n.m_f += fDrag;
 					n.m_f += fLift;
 				}
-				else if (aeroForce.m_model == btSoftBody::eAeroModel::V_Point || aeroForce.m_model == btSoftBody::eAeroModel::V_OneSided || aeroForce.m_model == btSoftBody::eAeroModel::V_TwoSided)
+				else if (aeroForce.m_model == btSoftBody::eAeroModel::V_Point || aeroForce.m_model == btSoftBody::eAeroModel::V_TwoSided)
 				{
 					if (btSoftBody::eAeroModel::V_TwoSided)
 						nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);

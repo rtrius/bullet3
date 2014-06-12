@@ -698,9 +698,9 @@ static void	Init_Volume(SoftDemo* pdemo)
 		btVector3(1,1,1)*3,
 		512);
 	psb->m_materials[0]->m_linearStiffness = 0.45;
-	psb->m_cfg.m_volumeConservation = 20;
+	psb->m_volumeConservationForce.m_forceMagnitude = 20;
+	psb->m_volumeConservationForce.m_restVolume = psb->getClosedTrimeshVolume();
 	psb->setTotalMass(50,true);
-	psb->setPose(true,false);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
 	Ctor_BigPlate(pdemo);
@@ -828,12 +828,11 @@ static void	Init_BunnyMatch(SoftDemo* pdemo)
 		&gIndicesBunny[0][0],
 		BUNNY_NUM_TRIANGLES);
 	psb->m_cfg.m_dynamicFriction = 0.5;
-	psb->m_cfg.m_poseMatching =	0.05;
 	psb->m_cfg.m_positionIterations = 5;
 	psb->randomizeConstraints();
 	psb->scale(btVector3(6,6,6));
 	psb->setTotalMass(100,true);
-	psb->setPose(false,true);
+	psb->setPose(0.05);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);	
 
 }
@@ -871,14 +870,13 @@ static void	Init_TorusMatch(SoftDemo* pdemo)
 		&gIndices[0][0],
 		NUM_TRIANGLES);
 	psb->m_materials[0]->m_linearStiffness = 0.1;
-	psb->m_cfg.m_poseMatching =	0.05;
 	psb->randomizeConstraints();
 	btMatrix3x3	m;
 	m.setEulerZYX(SIMD_PI/2,0,0);
 	psb->transform(btTransform(m,btVector3(0,4,0)));
 	psb->scale(btVector3(2,2,2));
 	psb->setTotalMass(50,true);
-	psb->setPose(false,true);
+	psb->setPose(0.05);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 }
 
@@ -1227,9 +1225,9 @@ static void	Init_ClusterRobot(SoftDemo* pdemo)
 		{
 			btSoftBody*	psb=btSoftBodyHelpers::CreateEllipsoid(pdemo->m_softBodyWorldInfo,pos,btVector3(1,1,1)*3,512);
 			psb->m_materials[0]->m_linearStiffness	=	0.45;
-			psb->m_cfg.m_volumeConservation				=	20;
+			psb->m_volumeConservationForce.m_forceMagnitude = 20;
+			psb->m_volumeConservationForce.m_restVolume = psb->getClosedTrimeshVolume();
 			psb->setTotalMass(50,true);
-			psb->setPose(true,false);
 			psb->generateClusters(1);
 			pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 			return(psb);
