@@ -662,7 +662,7 @@ static void	Init_Friction(SoftDemo* pdemo)
 		const btVector3	p(-ni*ts/2+i*ts,-10+boxSize,40);
 		btSoftBody*		psb=Ctor_SoftBox(pdemo,p,btVector3(boxSize,boxSize,boxSize));
 		psb->m_cfg.m_dynamicFriction	=	0.1 * ((i+1)/(btScalar)ni);
-		psb->addVelocity(btVector3(0,0,-10));
+		psb->addVelocityAllNodes(btVector3(0,0,-10));
 	}
 }
 
@@ -678,7 +678,7 @@ static void	Init_Pressure(SoftDemo* pdemo)
 	psb->m_materials[0]->m_linearStiffness	=	0.1;
 	psb->m_cfg.m_dynamicFriction				=	1;
 	psb->m_cfg.m_damping				=	0.001; // fun factor...
-	psb->m_cfg.m_pressure				=	2500;
+	psb->m_closedTrimeshForce.m_pressure = 2500;
 	psb->setTotalMass(30,true);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
@@ -698,8 +698,8 @@ static void	Init_Volume(SoftDemo* pdemo)
 		btVector3(1,1,1)*3,
 		512);
 	psb->m_materials[0]->m_linearStiffness = 0.45;
-	psb->m_volumeConservationForce.m_forceMagnitude = 20;
-	psb->m_volumeConservationForce.m_restVolume = psb->getClosedTrimeshVolume();
+	psb->m_closedTrimeshForce.m_volumeConservation = 20;
+	psb->m_closedTrimeshForce.m_restVolume = psb->getClosedTrimeshVolume();
 	psb->setTotalMass(50,true);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
@@ -1225,8 +1225,8 @@ static void	Init_ClusterRobot(SoftDemo* pdemo)
 		{
 			btSoftBody*	psb=btSoftBodyHelpers::CreateEllipsoid(pdemo->m_softBodyWorldInfo,pos,btVector3(1,1,1)*3,512);
 			psb->m_materials[0]->m_linearStiffness	=	0.45;
-			psb->m_volumeConservationForce.m_forceMagnitude = 20;
-			psb->m_volumeConservationForce.m_restVolume = psb->getClosedTrimeshVolume();
+			psb->m_closedTrimeshForce.m_volumeConservation = 20;
+			psb->m_closedTrimeshForce.m_restVolume = psb->getClosedTrimeshVolume();
 			psb->setTotalMass(50,true);
 			psb->generateClusters(1);
 			pdemo->getSoftDynamicsWorld()->addSoftBody(psb);

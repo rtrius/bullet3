@@ -43,7 +43,7 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo, int numNodes, const btVec
 		n.m_q		=	n.m_x;
 		n.m_invMass		= nodeMasses ? *nodeMasses++ : 1;
 		n.m_invMass		= (n.m_invMass > 0) ? 1 / n.m_invMass : 0;
-		n.m_leaf	=	m_ndbvt.insert(btDbvtVolume::FromCR(n.m_x,margin),&n);
+		n.m_leaf	=	m_nodeBvh.insert(btDbvtVolume::FromCR(n.m_x,margin),&n);
 		n.m_material=	pm;
 	}
 	updateBounds();	
@@ -61,8 +61,8 @@ void	btSoftBody::initDefaults()
 {
 	m_internalType		=	CO_SOFT_BODY;
 	m_bUpdateRtCst		=	true;
-	m_bounds[0]			=	btVector3(0,0,0);
-	m_bounds[1]			=	btVector3(0,0,0);
+	m_aabbMin = btVector3(0,0,0);
+	m_aabbMax = btVector3(0,0,0);
 	m_worldTransform.setIdentity();
 	
 	///for now, create a collision shape internally
@@ -155,7 +155,7 @@ void btSoftBody::appendNode(const btVector3& position, btScalar mass)
 	n.m_q			=	n.m_x;
 	n.m_invMass 	= (mass > 0) ? 1 / mass : 0;
 	n.m_material	=	m_materials[0];
-	n.m_leaf		=	m_ndbvt.insert(btDbvtVolume::FromCR(n.m_x,margin),&n);
+	n.m_leaf		=	m_nodeBvh.insert(btDbvtVolume::FromCR(n.m_x,margin),&n);
 }
 
 //
@@ -285,9 +285,9 @@ void			btSoftBody::appendAnchor(int node,btRigidBody* body, const btVector3& loc
 }
 
 //
-void			btSoftBody::addForce(const btVector3& force)
+void btSoftBody::addForceAllNodes(const btVector3& force)
 {
-	for(int i=0,ni=m_nodes.size();i<ni;++i) addForce(force,i);
+	for(int i = 0; i < m_nodes.size(); ++i)  addForce(force,i);
 }
 
 //
@@ -299,33 +299,26 @@ void			btSoftBody::addForce(const btVector3& force,int node)
 
 
 //
-void			btSoftBody::addVelocity(const btVector3& velocity)
+void btSoftBody::addVelocityAllNodes(const btVector3& velocity)
 {
-	for(int i=0,ni=m_nodes.size();i<ni;++i) addVelocity(velocity,i);
+	for(int i = 0; i < m_nodes.size(); ++i) addVelocity(velocity,i);
 }
 
-/* Set velocity for the entire body										*/ 
-void				btSoftBody::setVelocity(	const btVector3& velocity)
+void btSoftBody::setVelocityAllNodes(const btVector3& velocity)
 {
-	for(int i=0,ni=m_nodes.size();i<ni;++i) 
+	for(int i = 0; i < m_nodes.size(); ++i) 
 	{
-		Node&	n=m_nodes[i];
-		if(n.m_invMass > 0)
-		{
-			n.m_v	=	velocity;
-		}
+		Node& n = m_nodes[i];
+		if(n.m_invMass > 0) n.m_v = velocity;
 	}
 }
 
 
 //
-void			btSoftBody::addVelocity(const btVector3& velocity,int node)
+void btSoftBody::addVelocity(const btVector3& velocity, int node)
 {
-	Node&	n=m_nodes[node];
-	if(n.m_invMass > 0)
-	{
-		n.m_v	+=	velocity;
-	}
+	Node& n = m_nodes[node];
+	if(n.m_invMass > 0) n.m_v += velocity;
 }
 
 //
@@ -451,7 +444,7 @@ void			btSoftBody::transform(const btTransform& trs)
 		n.m_normal = trs.getBasis() * n.m_normal;
 		vol = btDbvtVolume::FromCR(n.m_x,margin);
 		
-		m_ndbvt.update(n.m_leaf,vol);
+		m_nodeBvh.update(n.m_leaf,vol);
 	}
 	updateNormals();
 	updateBounds();
@@ -489,7 +482,7 @@ void			btSoftBody::scale(const btVector3& scl)
 		n.m_x*=scl;
 		n.m_q*=scl;
 		vol = btDbvtVolume::FromCR(n.m_x,margin);
-		m_ndbvt.update(n.m_leaf,vol);
+		m_nodeBvh.update(n.m_leaf, vol);
 	}
 	updateNormals();
 	updateBounds();
@@ -1039,7 +1032,7 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 				int		j=todelete[i];
 				int&	a=map[j];
 				int&	b=map[--nnodes];
-				m_ndbvt.remove(m_nodes[a].m_leaf);m_nodes[a].m_leaf=0;
+				m_nodeBvh.remove(m_nodes[a].m_leaf);m_nodes[a].m_leaf=0;
 				btSwap(m_nodes[a],m_nodes[b]);
 				j=a;a=b;b=j;			
 			}
@@ -1104,8 +1097,8 @@ bool			btSoftBody::cutLink(int node0,int node1,btScalar position)
 	}
 	if(!done)
 	{
-		m_ndbvt.remove(pn[0]->m_leaf);
-		m_ndbvt.remove(pn[1]->m_leaf);
+		m_nodeBvh.remove(pn[0]->m_leaf);
+		m_nodeBvh.remove(pn[1]->m_leaf);
 		m_nodes.pop_back();
 		m_nodes.pop_back();
 	}
@@ -1113,33 +1106,26 @@ bool			btSoftBody::cutLink(int node0,int node1,btScalar position)
 }
 
 //
-bool			btSoftBody::rayTest(const btVector3& rayFrom,
-									const btVector3& rayTo,
-									sRayCast& results)
+bool btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, sRayCast& results)
 {
-	if(m_faces.size()&&m_fdbvt.empty()) 
-		initializeFaceTree();
+	if( m_faces.size() && m_faceBvh.empty() ) initializeFaceTree();
 
 	results.body	=	this;
 	results.fraction = 1.f;
 	results.feature	=	eFeature::None;
 	results.index	=	-1;
 
-	return(rayTest(rayFrom,rayTo,results.fraction,results.feature,results.index,false)!=0);
+	return (rayTest(rayFrom, rayTo, results.fraction, results.feature, results.index, false) != 0);
 }
 
 //
 void btSoftBody::predictMotion(btScalar timeStep)
 {
-
-	int i,ni;
-
-	// Update
 	if(m_bUpdateRtCst)
 	{
 		m_bUpdateRtCst=false;
 		updateConstants();
-		m_fdbvt.clear();
+		m_faceBvh.clear();
 		initializeFaceTree();
 	}
 
@@ -1149,10 +1135,10 @@ void btSoftBody::predictMotion(btScalar timeStep)
 	btScalar radialMargin = getCollisionShape()->getMargin();
 	btScalar updateMargin = radialMargin*(btScalar)0.25;
 	// Forces
-	addVelocity(m_worldInfo->m_gravity * timeStep);
+	addVelocityAllNodes(m_worldInfo->m_gravity * timeStep);
 	applyForces();
 	// Integrate
-	for(i=0,ni=m_nodes.size();i<ni;++i)
+	for(int i = 0; i < m_nodes.size(); ++i)
 	{
 		Node&	n=m_nodes[i];
 		n.m_q	=	n.m_x;
@@ -1160,7 +1146,7 @@ void btSoftBody::predictMotion(btScalar timeStep)
 		{
 			btScalar maxDisplacement = m_worldInfo->m_maxDisplacement;
 			btScalar clampDeltaV = maxDisplacement / timeStep;
-			for (int c=0;c<3;c++)
+			for (int c = 0; c < 3; c++)
 			{
 				if (deltaV[c]>clampDeltaV)
 				{
@@ -1184,23 +1170,21 @@ void btSoftBody::predictMotion(btScalar timeStep)
 	updateBounds();	
 	// Nodes
 	ATTRIBUTE_ALIGNED16(btDbvtVolume)	vol;
-	for(i=0,ni=m_nodes.size();i<ni;++i)
+	for(int i = 0; i < m_nodes.size(); ++i)
 	{
 		Node&	n=m_nodes[i];
 		vol = btDbvtVolume::FromCR(n.m_x, radialMargin);
-		m_ndbvt.update(	n.m_leaf, vol, n.m_v * velocityMargin, updateMargin);
+		m_nodeBvh.update(n.m_leaf, vol, n.m_v * velocityMargin, updateMargin);
 	}
 	// Faces
-	if(!m_fdbvt.empty())
+	if( !m_faceBvh.empty() )
 	{
-		for(int i=0;i<m_faces.size();++i)
+		for(int i = 0; i < m_faces.size(); ++i)
 		{
-			Face&			f=m_faces[i];
-			const btVector3	v=(	f.m_n[0]->m_v+
-				f.m_n[1]->m_v+
-				f.m_n[2]->m_v)/3;
+			Face& f = m_faces[i];
+			const btVector3	v = (f.m_n[0]->m_v + f.m_n[1]->m_v + f.m_n[2]->m_v) / 3;
 			vol = VolumeOf(f, radialMargin);
-			m_fdbvt.update(f.m_leaf, vol, v * velocityMargin, updateMargin);
+			m_faceBvh.update(f.m_leaf, vol, v * velocityMargin, updateMargin);
 		}
 	}
 	
@@ -1211,8 +1195,8 @@ void btSoftBody::predictMotion(btScalar timeStep)
 	m_rigidContacts.resize(0);
 	m_softContacts.resize(0);
 	// Optimize dbvt's
-	m_ndbvt.optimizeIncremental(1);
-	m_fdbvt.optimizeIncremental(1);
+	m_nodeBvh.optimizeIncremental(1);
+	m_faceBvh.optimizeIncremental(1);
 }
 
 
@@ -1366,8 +1350,8 @@ int					btSoftBody::rayTest(const btVector3& rayFrom,const btVector3& rayTo,
 	btVector3 dir = rayTo-rayFrom;
 	
 
-	if(bcountonly||m_fdbvt.empty())
-	{/* Full search	*/ 
+	if( bcountonly || m_faceBvh.empty() )
+	{
 		
 		for(int i=0,ni=m_faces.size();i<ni;++i)
 		{
@@ -1390,11 +1374,11 @@ int					btSoftBody::rayTest(const btVector3& rayFrom,const btVector3& rayTo,
 			}
 		}
 	}
-	else
-	{/* Use dbvt	*/ 
+	else	//Use dbvt
+	{
 		RayFromToCaster	collider(rayFrom,rayTo,mint);
 
-		btDbvt::rayTest(m_fdbvt.m_root,rayFrom,rayTo,collider);
+		btDbvt::rayTest(m_faceBvh.m_root, rayFrom, rayTo, collider);
 		if(collider.m_face)
 		{
 			mint=collider.m_mint;
@@ -1438,13 +1422,13 @@ int					btSoftBody::rayTest(const btVector3& rayFrom,const btVector3& rayTo,
 }
 
 //
-void			btSoftBody::initializeFaceTree()
+void btSoftBody::initializeFaceTree()
 {
-	m_fdbvt.clear();
-	for(int i=0;i<m_faces.size();++i)
+	m_faceBvh.clear();
+	for(int i = 0; i < m_faces.size(); ++i)
 	{
-		Face&	f=m_faces[i];
-		f.m_leaf=m_fdbvt.insert(VolumeOf(f,0),&f);
+		Face& f = m_faces[i];
+		f.m_leaf = m_faceBvh.insert( VolumeOf(f,0), &f );
 	}
 }
 
@@ -1456,27 +1440,22 @@ bool				btSoftBody::checkContact(	const btCollisionObjectWrapper* colObjWrap,
 											 btScalar margin,
 											 btSoftBody::sCti& cti) const
 {
-	btVector3 nrm;
+	btVector3 normal;
 	const btCollisionShape *shp = colObjWrap->getCollisionShape();
 //	const btRigidBody *tmpRigid = btRigidBody::upcast(colObjWrap->getCollisionObject());
 	//const btTransform &wtr = tmpRigid ? tmpRigid->getWorldTransform() : colObjWrap->getWorldTransform();
 	const btTransform &wtr = colObjWrap->getWorldTransform();
 	//todo: check which transform is needed here
 
-	btScalar dst = 
-		m_worldInfo->m_sparsesdf.Evaluate(	
-			wtr.invXform(x),
-			shp,
-			nrm,
-			margin);
-	if(dst<0)
+	btScalar dst = m_worldInfo->m_sparsesdf.Evaluate(wtr.invXform(x), shp, normal, margin);
+	if(dst < 0)
 	{
 		cti.m_colObj = colObjWrap->getCollisionObject();
-		cti.m_normal = wtr.getBasis()*nrm;
+		cti.m_normal = wtr.getBasis() * normal;
 		cti.m_offset = -btDot( cti.m_normal, x - cti.m_normal * dst );
-		return(true);
+		return true;
 	}
-	return(false);
+	return false;
 }
 
 //
@@ -1503,44 +1482,24 @@ void btSoftBody::updateNormals()
 }
 
 //
-void					btSoftBody::updateBounds()
+void btSoftBody::updateBounds()
 {
-	/*if( m_acceleratedSoftBody )
+	if(m_nodeBvh.m_root)
 	{
-		// If we have an accelerated softbody we need to obtain the bounds correctly
-		// For now (slightly hackily) just have a very large AABB
-		// TODO: Write get bounds kernel
-		// If that is updating in place, atomic collisions might be low (when the cloth isn't perfectly aligned to an axis) and we could
-		// probably do a test and exchange reasonably efficiently.
-
-		m_bounds[0] = btVector3(-1000, -1000, -1000);
-		m_bounds[1] = btVector3(1000, 1000, 1000);
-
-	} else {*/
-		if(m_ndbvt.m_root)
-		{
-			const btVector3&	mins=m_ndbvt.m_root->volume.Mins();
-			const btVector3&	maxs=m_ndbvt.m_root->volume.Maxs();
-			const btScalar		csm=getCollisionShape()->getMargin();
-			const btVector3		mrg=btVector3(	csm,
-				csm,
-				csm)*1; // ??? to investigate...
-			m_bounds[0]=mins-mrg;
-			m_bounds[1]=maxs+mrg;
-			if(0!=getBroadphaseHandle())
-			{					
-				m_worldInfo->m_broadphase->setAabb(	getBroadphaseHandle(),
-					m_bounds[0],
-					m_bounds[1],
-					m_worldInfo->m_dispatcher);
-			}
-		}
-		else
-		{
-			m_bounds[0]=
-				m_bounds[1]=btVector3(0,0,0);
-		}		
-	//}
+		const btVector3& mins = m_nodeBvh.m_root->volume.Mins();
+		const btVector3& maxs = m_nodeBvh.m_root->volume.Maxs();
+		btScalar margin = getCollisionShape()->getMargin();
+		btVector3 margin3 = btVector3(margin, margin, margin);
+		
+		m_aabbMin = mins - margin3;
+		m_aabbMax = maxs + margin3;
+		if( 0 != getBroadphaseHandle() )
+			m_worldInfo->m_broadphase->setAabb(	getBroadphaseHandle(), m_aabbMin, m_aabbMax, m_worldInfo->m_dispatcher);
+	}
+	else
+	{
+		m_aabbMin = m_aabbMax = btVector3(0,0,0);
+	}
 }
 
 
@@ -1637,28 +1596,7 @@ void btSoftBody::applyForces()
 {
 	BT_PROFILE("SoftBody applyForces");
 	
-	const bool						as_pressure =	(m_cfg.m_pressure != 0);
-	const bool						as_volume =		(m_volumeConservationForce.m_forceMagnitude > 0);
-	const bool						use_volume =	as_pressure	|| as_volume;
-	
-	if(use_volume)
-	{
-		btScalar volume = getClosedTrimeshVolume();
-		btScalar ivolumetp = 1 / btFabs(volume) * m_cfg.m_pressure;
-		btScalar dvolumetv = (m_volumeConservationForce.m_restVolume - volume) * m_volumeConservationForce.m_forceMagnitude;
-		
-		// Per vertex forces
-		for(int i = 0; i < m_nodes.size(); ++i)
-		{
-			btSoftBody::Node& n = m_nodes[i];
-			if(n.m_invMass > 0)
-			{
-				if(as_pressure) n.m_f += n.m_normal * (n.m_area * ivolumetp);
-				
-				if(as_volume) n.m_f += n.m_normal * (n.m_area * dvolumetv);
-			}
-		}
-	}
+	m_closedTrimeshForce.applyForcesToNodes( getClosedTrimeshVolume(), m_nodes );
 
 	addAeroForces(m_aeroForce, m_timeStep, m_nodes, m_faces);
 }
@@ -1685,7 +1623,7 @@ void btSoftBody::defaultCollisionHandler(const btCollisionObjectWrapper* pcoWrap
 
 	docollide.dynmargin	= basemargin + timemargin;
 	docollide.stamargin	= basemargin;
-	m_ndbvt.collideTV(m_ndbvt.m_root,volume,docollide);
+	m_nodeBvh.collideTV(m_nodeBvh.m_root, volume, docollide);
 }
 
 //
@@ -1702,12 +1640,12 @@ void btSoftBody::defaultCollisionHandler(btSoftBody* psb)
 		// psb0 nodes vs psb1 faces
 		docollide.psb[0] = this;
 		docollide.psb[1] = psb;
-		docollide.psb[0]->m_ndbvt.collideTT(docollide.psb[0]->m_ndbvt.m_root, docollide.psb[1]->m_fdbvt.m_root, docollide);
+		docollide.psb[0]->m_nodeBvh.collideTT(docollide.psb[0]->m_nodeBvh.m_root, docollide.psb[1]->m_faceBvh.m_root, docollide);
 		
 		// psb1 nodes vs psb0 faces
 		docollide.psb[0] = psb;
 		docollide.psb[1] = this;
-		docollide.psb[0]->m_ndbvt.collideTT(docollide.psb[0]->m_ndbvt.m_root, docollide.psb[1]->m_fdbvt.m_root, docollide);
+		docollide.psb[0]->m_nodeBvh.collideTT(docollide.psb[0]->m_nodeBvh.m_root, docollide.psb[1]->m_faceBvh.m_root, docollide);
 	}
 }
 

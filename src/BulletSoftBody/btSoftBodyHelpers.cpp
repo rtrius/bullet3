@@ -317,7 +317,7 @@ void			btSoftBodyHelpers::DrawNodeTree(	btSoftBody* psb,
 												int mindepth,
 												int maxdepth)
 {
-	drawTree(idraw,psb->m_ndbvt.m_root,0,btVector3(1,0,1),btVector3(1,1,1),mindepth,maxdepth);
+	drawTree(idraw, psb->m_nodeBvh.m_root, 0, btVector3(1,0,1), btVector3(1,1,1), mindepth, maxdepth);
 }
 
 //
@@ -326,7 +326,7 @@ void			btSoftBodyHelpers::DrawFaceTree(	btSoftBody* psb,
 												int mindepth,
 												int maxdepth)
 {
-	drawTree(idraw,psb->m_fdbvt.m_root,0,btVector3(0,1,0),btVector3(1,0,0),mindepth,maxdepth);
+	drawTree(idraw,psb->m_faceBvh.m_root,0,btVector3(0,1,0),btVector3(1,0,0),mindepth,maxdepth);
 }
 
 //The btSoftBody object from the BulletSDK includes an array of Nodes and Links. These links appear

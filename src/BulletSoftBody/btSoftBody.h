@@ -193,21 +193,52 @@ public:
 		btVector3				m_rotatedPosition;
 		btScalar				m_invMassDt;		///<inverse_mass * timeStep
 	};
-	
-	///Applies a force that tries to maintain constant volume for a closed triangle mesh
-	struct VolumeConservationForce
-	{
-		btScalar m_forceMagnitude; 			///<[0, +inf]
-		btScalar m_restVolume;				///<0.0 == force is disabled; set using btSoftBody::getClosedTrimeshVolume() to enable
 		
-		VolumeConservationForce()
+	///Applies forces to btSoftBody; requires that the soft body is a single closed triangle mesh.
+	///The volume calculation will be incorrect if multiple closed triangle meshes are in a single soft body,
+	///of if the mesh is open.
+	struct ClosedTrimeshForce
+	{
+		///@name Pressure force; a force that either shrinks or expands the mesh
+		///@{
+		btScalar m_pressure;				///<[-inf, +inf]; greater than 0 expands, less than 0 shrinks, and 0 == disabled.
+		///@}
+		
+		///@name Volume conservation force; tries to maintain a constant volume
+		///@{
+		btScalar m_volumeConservation; 		///<[0, +inf]; force magnitude
+		btScalar m_restVolume;				///<0.0 == force is disabled; set using btSoftBody::getClosedTrimeshVolume() to enable
+		///@}
+		
+		ClosedTrimeshForce()
 		{
-			m_forceMagnitude = btScalar(0.0);
+			m_pressure = btScalar(0.0);
+		
+			m_volumeConservation = btScalar(0.0);
 			m_restVolume = btScalar(0.0);
+		}
+		
+		///@param closedTrimeshVolume Current volume of the soft body; use btSoftBody::getClosedTrimeshVolume() to obtain.
+		void applyForcesToNodes(btScalar closedTrimeshVolume, btAlignedObjectArray<btSoftBody::Node>& nodes) const
+		{
+			bool applyVolumeForce = m_pressure != btScalar(0.0) || m_volumeConservation > btScalar(0.0);
+			if(applyVolumeForce)
+			{
+				btScalar pressureForce = ( btScalar(1.0) / btFabs(closedTrimeshVolume) ) * m_pressure;
+				btScalar volumeForce = (m_restVolume - closedTrimeshVolume) * m_volumeConservation;
+				
+				btScalar closedTrimeshForce = pressureForce + volumeForce;
+				
+				for(int i = 0; i < nodes.size(); ++i)
+				{
+					btSoftBody::Node& n = nodes[i];
+					if(n.m_invMass > 0) n.m_f += n.m_normal * (n.m_area * closedTrimeshForce);
+				}
+			}
 		}
 	};
 	
-	VolumeConservationForce m_volumeConservationForce;
+	ClosedTrimeshForce m_closedTrimeshForce;
 	
 	struct Pose
 	{
@@ -234,12 +265,11 @@ public:
 	struct	Config
 	{
 		btScalar m_damping;						///<[0, 1]; fraction of velocity removed per timestep(0.05 means that velocity is scaled by 0.95).
-		btScalar m_pressure;					///<[-inf, +inf]
 		btScalar m_dynamicFriction;				///<[0, 1]
 		
 		btScalar m_rigidContactHardness;		///<[0, 1]; contact hardness for dynamic rigid bodies.
 		btScalar m_kinematicContactHardness;	///<[0, 1]; contact hardness for static and kinematic(inverse_mass == 0) rigid bodies.
-		btScalar m_softContactHardness;			///<[0, 1]
+		btScalar m_softContactHardness;			///<[0, 1]; hardness(ERP) determines how quickly penetration is resolved.
 		btScalar m_anchorHardness;				///<[0, 1]
 		
 		int m_velocityIterations;
@@ -248,7 +278,6 @@ public:
 		Config()
 		{
 			m_damping = btScalar(0.0);
-			m_pressure = btScalar(0.0);
 			m_dynamicFriction = btScalar(0.2);
 			
 			m_rigidContactHardness = btScalar(1.0);
@@ -273,10 +302,13 @@ public:
 	btAlignedObjectArray<RigidContact>		m_rigidContacts;
 	btAlignedObjectArray<SoftContact>		m_softContacts;
 	btAlignedObjectArray<Material*>				m_materials;
-	btVector3				m_bounds[2];	// Spatial bounds	
+	
+	btVector3 m_aabbMin;
+	btVector3 m_aabbMax;
+	
 	bool					m_bUpdateRtCst;	// Update runtime constants
-	btDbvt					m_ndbvt;		// Nodes tree
-	btDbvt					m_fdbvt;		// Faces tree
+	btDbvt					m_nodeBvh;		// Nodes tree
+	btDbvt					m_faceBvh;		// Faces tree
 
 	btScalar        	m_restLengthScale;
 	
@@ -304,21 +336,23 @@ public:
 	void appendLink(int model=-1,Material* mat=0);
 	void appendLink(int node0, int node1, Material* mat=0, bool bcheckexist=false);
 	void appendLink(Node* node0, Node* node1, Material* mat=0, bool bcheckexist=false);
+	
 	void appendFace(int model=-1,Material* mat=0);
 	void appendFace(int node0, int node1, int node2, Material* mat=0);
+	
 	void appendTetra(int model, Material* mat);
 	void appendTetra(int node0, int node1, int node2, int node3, Material* mat=0);
 
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 	void appendAnchor(int node,btRigidBody* body, const btVector3& localPivot,bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 
+	void addForceAllNodes(const btVector3& force);
+	void addVelocityAllNodes(const btVector3& velocity);
+	void setVelocityAllNodes(const btVector3& velocity);
 	
-	void addForce(const btVector3& force);									//Add force (or gravity) to the entire body
-	void addForce(const btVector3& force, int node);						//Add force (or gravity) to a node of the body
-	
-	void addVelocity(const btVector3& velocity);	//Add velocity to the entire body	
-	void setVelocity(const btVector3& velocity);	//Set velocity for the entire body
+	void addForce(const btVector3& force, int node);		//Add force to a node of the body
 	void addVelocity(const btVector3& velocity, int node);	//Add velocity to a node of the body
+	
 	void setMass(int node, btScalar mass);
 	btScalar getMass(int node) const;
 	btScalar getTotalMass() const;
@@ -326,10 +360,12 @@ public:
 	void setTotalDensity(btScalar density);
 	void setVolumeMass(btScalar mass);			//Set volume mass (using tetrahedrons)
 	void setVolumeDensity(btScalar density);	//Set volume density (using tetrahedrons)
+	
 	void transform(const btTransform& trs);
 	void translate(const btVector3& trs);
 	void rotate(const btQuaternion& rot);
 	void scale(	const btVector3& scl);
+	
 	btScalar getRestLengthScale();					//Get link resting lengths scale
 	void setRestLengthScale(btScalar restLength);	//Scale resting length of all springs
 	btScalar getClosedTrimeshVolume() const;		///<Returns the volume, assuming that m_faces represents a closed triangle mesh
@@ -372,8 +408,8 @@ public:
 	// ::btCollisionObject
 	virtual void getAabb(btVector3& aabbMin,btVector3& aabbMax) const
 	{
-		aabbMin = m_bounds[0];
-		aabbMax = m_bounds[1];
+		aabbMin = m_aabbMin;
+		aabbMax = m_aabbMax;
 	}
 	
 	// Private

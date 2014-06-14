@@ -72,8 +72,8 @@ public:
 	virtual void getAabb(const btTransform& t,btVector3& aabbMin,btVector3& aabbMax) const
 	{
 		/* t is usually identity, except when colliding against btCompoundShape. See Issue 512 */
-		const btVector3	mins=m_body->m_bounds[0];
-		const btVector3	maxs=m_body->m_bounds[1];
+		const btVector3	mins=m_body->m_aabbMin;
+		const btVector3	maxs=m_body->m_aabbMax;
 		const btVector3	crns[]={t*btVector3(mins.x(),mins.y(),mins.z()),
 			t*btVector3(maxs.x(),mins.y(),mins.z()),
 			t*btVector3(maxs.x(),maxs.y(),mins.z()),
@@ -125,20 +125,9 @@ static inline void			ZeroInitialize(T& value)
 }
 //
 template <typename T>
-static inline bool			CompLess(const T& a,const T& b)
-{ return(a<b); }
-//
-template <typename T>
-static inline bool			CompGreater(const T& a,const T& b)
-{ return(a>b); }
-//
-template <typename T>
 static inline T				Lerp(const T& a,const T& b,btScalar t)
 { return(a+(b-a)*t); }
-//
-template <typename T>
-static inline T				InvLerp(const T& a,const T& b,btScalar t)
-{ return((b+a*t-b*t)/(a*b)); }
+
 //
 static inline btMatrix3x3	Lerp(	const btMatrix3x3& a,
 								 const btMatrix3x3& b,
@@ -150,51 +139,12 @@ static inline btMatrix3x3	Lerp(	const btMatrix3x3& a,
 	r[2]=Lerp(a[2],b[2],t);
 	return(r);
 }
-//
-static inline btVector3		Clamp(const btVector3& v,btScalar maxlength)
-{
-	const btScalar sql=v.length2();
-	if(sql>(maxlength*maxlength))
-		return((v*maxlength)/btSqrt(sql));
-	else
-		return(v);
-}
-//
-template <typename T>
-static inline T				Clamp(const T& x,const T& l,const T& h)
-{ return(x<l?l:x>h?h:x); }
-//
-template <typename T>
-static inline T				Sq(const T& x)
-{ return(x*x); }
-//
-template <typename T>
-static inline T				Cube(const T& x)
-{ return(x*x*x); }
-//
-template <typename T>
-static inline T				Sign(const T& x)
-{ return((T)(x<0?-1:+1)); }
+
 //
 template <typename T>
 static inline bool			SameSign(const T& x,const T& y)
 { return((x*y)>0); }
 
-//
-static inline btMatrix3x3	ScaleAlongAxis(const btVector3& a,btScalar s)
-{
-	const btScalar	xx=a.x()*a.x();
-	const btScalar	yy=a.y()*a.y();
-	const btScalar	zz=a.z()*a.z();
-	const btScalar	xy=a.x()*a.y();
-	const btScalar	yz=a.y()*a.z();
-	const btScalar	zx=a.z()*a.x();
-	btMatrix3x3		m;
-	m[0]=btVector3(1-xx+xx*s,xy*s-xy,zx*s-zx);
-	m[1]=btVector3(xy*s-xy,1-yy+yy*s,yz*s-yz);
-	m[2]=btVector3(zx*s-zx,yz*s-yz,1-zz+zz*s);
-	return(m);
-}
 //
 static inline btMatrix3x3	Cross(const btVector3& v)
 {
@@ -237,13 +187,7 @@ static inline btMatrix3x3	Mul(const btMatrix3x3& a,
 	for(int i=0;i<3;++i) r[i]=a[i]*b;
 	return(r);
 }
-//
-static inline void			Orthogonalize(btMatrix3x3& m)
-{
-	m[2]=btCross(m[0],m[1]).normalized();
-	m[1]=btCross(m[2],m[0]).normalized();
-	m[0]=btCross(m[1],m[2]).normalized();
-}
+
 //
 static inline btMatrix3x3	MassMatrix(btScalar im,const btMatrix3x3& iwi,const btVector3& r)
 {
@@ -269,13 +213,6 @@ static inline btMatrix3x3	ImpulseMatrix(	btScalar ima,const btMatrix3x3& iia,con
 }
 
 //
-static inline btMatrix3x3	AngularImpulseMatrix(	const btMatrix3x3& iia,
-												 const btMatrix3x3& iib)
-{
-	return(Add(iia,iib).inverse());
-}
-
-//
 static inline btVector3		ProjectOnAxis(	const btVector3& v,
 										  const btVector3& a)
 {
@@ -298,7 +235,7 @@ static inline void			ProjectOrigin(	const btVector3& a,
 	const btScalar	m2=d.length2();
 	if(m2>SIMD_EPSILON)
 	{	
-		const btScalar	t=Clamp<btScalar>(-btDot(a,d)/m2,0,1);
+		const btScalar	t = btMax( btScalar(0.0), btMin(-btDot(a,d)/m2, btScalar(1.0)) );
 		const btVector3	p=a+d*t;
 		const btScalar	l2=p.length2();
 		if(l2<sqd)
