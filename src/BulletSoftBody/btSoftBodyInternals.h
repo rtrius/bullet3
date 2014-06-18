@@ -401,9 +401,7 @@ static inline int		MatchEdge(	const btSoftBody::Node* a,
 //
 struct btSoftColliders
 {
-	//
-	// CollideSDF_RS
-	//
+	///Detects collision between rigid body and soft body using SDF(Signed Distance Field)
 	struct	CollideSDF_RS : btDbvt::ICollide
 	{
 		void		Process(const btDbvtNode* leaf)
@@ -417,7 +415,7 @@ struct btSoftColliders
 			btSoftBody::RigidContact c;
 
 			if(	(!n.m_battach)&&
-				psb->checkContact(m_colObj1Wrap,n.m_x,m,c.m_cti))
+				psb->checkContact(m_colObj1Wrap,n.m_x,m,c))
 			{
 				const btScalar	ima = n.m_invMass;
 				const btScalar	imb= m_rigidBody? m_rigidBody->getInvMass() : 0.f;
@@ -431,8 +429,8 @@ struct btSoftColliders
 					const btVector3		va=m_rigidBody ? m_rigidBody->getVelocityInLocalPoint(ra)*psb->m_timeStep : btVector3(0,0,0);
 					const btVector3		vb=n.m_x-n.m_q;	
 					const btVector3		vr=vb-va;
-					const btScalar		dn=btDot(vr,c.m_cti.m_normal);
-					const btVector3		fv=vr-c.m_cti.m_normal*dn;
+					const btScalar		dn=btDot(vr,c.m_normal);
+					const btVector3		fv=vr-c.m_normal*dn;
 					const btScalar		fc=psb->m_cfg.m_dynamicFriction*m_colObj1Wrap->getCollisionObject()->getFriction();
 					c.m_node	=	&n;
 					c.m_impulseMatrix = ImpulseMatrix(psb->m_timeStep,ima,imb,iwi,ra);
@@ -453,9 +451,8 @@ struct btSoftColliders
 		btScalar		dynmargin;
 		btScalar		stamargin;
 	};
-	//
-	// CollideVF_SS
-	//
+	
+	///Detects collision between 2 soft bodies by testing vertices(nodes) against triangles(faces)
 	struct	CollideVF_SS : btDbvt::ICollide
 	{
 		void		Process(const btDbvtNode* lnode,

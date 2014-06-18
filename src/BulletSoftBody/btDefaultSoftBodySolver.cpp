@@ -167,20 +167,19 @@ void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst
 	for(int i=0,ni=psb->m_rigidContacts.size();i<ni;++i)
 	{
 		const btSoftBody::RigidContact& c = psb->m_rigidContacts[i];
-		const btSoftBody::sCti&			cti = c.m_cti;	
-		if (cti.m_colObj->hasContactResponse()) 
+		if (c.m_colObj->hasContactResponse()) 
 		{
-			btRigidBody* tmpRigid = (btRigidBody*)btRigidBody::upcast(cti.m_colObj);
+			btRigidBody* tmpRigid = (btRigidBody*)btRigidBody::upcast(c.m_colObj);
 			const btVector3		va = tmpRigid ? tmpRigid->getVelocityInLocalPoint(c.m_relativeNodePosition) * dt : btVector3(0,0,0);
 			const btVector3		vb = c.m_node->m_x-c.m_node->m_q;	
 			const btVector3		vr = vb-va;
-			const btScalar		dn = btDot(vr, cti.m_normal);		
+			const btScalar		dn = btDot(vr, c.m_normal);		
 			if(dn<=SIMD_EPSILON)
 			{
-				const btScalar		dp = btMin( (btDot(c.m_node->m_x, cti.m_normal) + cti.m_offset), mrg );
-				const btVector3		fv = vr - (cti.m_normal * dn);
+				const btScalar		dp = btMin( (btDot(c.m_node->m_x, c.m_normal) + c.m_offset), mrg );
+				const btVector3		fv = vr - (c.m_normal * dn);
 				// c0 is the impulse matrix, c3 is 1 - the friction coefficient or 0, c4 is the contact hardness coefficient
-				const btVector3		impulse = c.m_impulseMatrix * ( (vr - (fv * c.m_combinedFriction) + (cti.m_normal * (dp * c.m_hardness))) * kst );
+				const btVector3		impulse = c.m_impulseMatrix * ( (vr - (fv * c.m_combinedFriction) + (c.m_normal * (dp * c.m_hardness))) * kst );
 				c.m_node->m_x -= impulse * c.m_invMassDt;
 				if (tmpRigid)
 					tmpRigid->applyImpulse(impulse,c.m_relativeNodePosition);

@@ -211,13 +211,13 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			for(i=0;i<psb->m_rigidContacts.size();++i)
 			{		
 				const btSoftBody::RigidContact&	c = psb->m_rigidContacts[i];
-				const btVector3				o=	c.m_node->m_x-c.m_cti.m_normal*
-					(btDot(c.m_node->m_x,c.m_cti.m_normal)+c.m_cti.m_offset);
-				const btVector3				x=btCross(c.m_cti.m_normal,axis[c.m_cti.m_normal.minAxis()]).normalized();
-				const btVector3				y=btCross(x,c.m_cti.m_normal).normalized();
+				const btVector3				o=	c.m_node->m_x-c.m_normal*
+					(btDot(c.m_node->m_x,c.m_normal)+c.m_offset);
+				const btVector3				x=btCross(c.m_normal,axis[c.m_normal.minAxis()]).normalized();
+				const btVector3				y=btCross(x,c.m_normal).normalized();
 				idraw->drawLine(o-x*nscl,o+x*nscl,ccolor);
 				idraw->drawLine(o-y*nscl,o+y*nscl,ccolor);
-				idraw->drawLine(o,o+c.m_cti.m_normal*nscl*3,btVector3(1,1,0));
+				idraw->drawLine(o,o+c.m_normal*nscl*3,btVector3(1,1,0));
 			}
 		}
 		/* Faces	*/ 

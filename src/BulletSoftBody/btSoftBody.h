@@ -64,17 +64,14 @@ class	btSoftBody : public btCollisionObject
 public:
 	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
 
-	// The solver object that handles this soft body
 	btSoftBodySolver *m_softBodySolver;
 
-	// Enumerations
 	struct	eFeature { enum _ {
 		None,
 		Face,
 		Tetra
 	};};
 	
-	// API Types
 	struct sRayCast
 	{
 		btSoftBody*	body;		/// soft body
@@ -87,16 +84,6 @@ public:
 	{
 		virtual btScalar	Eval(const btVector3& x)=0;
 	};
-
-	// Internal types
-
-	/// sCti is Softbody contact info
-	struct	sCti
-	{
-		const btCollisionObject*	m_colObj;		// Rigid body
-		btVector3		m_normal;	// Outward normal
-		btScalar		m_offset;	// Offset from origin
-	};	
 	
 	struct	Element
 	{
@@ -163,7 +150,9 @@ public:
 	
 	struct	RigidContact
 	{
-		sCti					m_cti;			// Contact infos
+		const btCollisionObject*	m_colObj;		// Rigid body
+		btVector3		m_normal;	// Outward normal
+		btScalar		m_offset;	// Offset from origin
 		Node*					m_node;			// Owner node
 		btMatrix3x3				m_impulseMatrix;
 		btVector3				m_relativeNodePosition;		///<Position of m_node relative to the btCollisionObject
@@ -418,7 +407,7 @@ public:
 
 	int rayTest(const btVector3& rayFrom,const btVector3& rayTo, btScalar& mint,eFeature::_& feature,int& index,bool bcountonly) const;
 	void initializeFaceTree();
-	bool checkContact(const btCollisionObjectWrapper* colObjWrap,const btVector3& x,btScalar margin,btSoftBody::sCti& cti) const;
+	bool checkContact(const btCollisionObjectWrapper* colObjWrap,const btVector3& worldSpaceNodePosition,btScalar margin,btSoftBody::RigidContact& contact) const;
 	void updateNormals();
 	void updateBounds();
 	void updateConstants();

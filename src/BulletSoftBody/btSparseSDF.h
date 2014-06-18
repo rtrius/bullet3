@@ -40,6 +40,10 @@ unsigned int HsiehHash(const void* pdata)
 	return(hash);
 }
 
+///@brief Signed Distance Field(SDF) for collision detection between points and convex shapes.
+///@remarks A signed distance field is a scalar field that associates each point in space with a distance.
+///btSparseSdf can represent multiple convex btCollisionShape(s). It is ideal for cases where
+///there are many closely spaced vertices colliding with each btCollisionShape.
 template <const int CELLSIZE>
 struct	btSparseSdf
 {
@@ -52,44 +56,47 @@ struct	btSparseSdf
 		int					i;
 		btScalar			f;
 	};
+	
+	///Each cell is a distance sample associated with a single point in space and btCollisionShape
 	struct	Cell
 	{
-		btScalar			d[CELLSIZE+1][CELLSIZE+1][CELLSIZE+1];
+		btScalar			d[CELLSIZE+1][CELLSIZE+1][CELLSIZE+1];		//Distance
 		int					c[3];
-		int					puid;
+		int					puid;				//Tracks when the Cell was created; used for GarbageCollect()
 		unsigned			hash;
 		const btCollisionShape*	pclient;
-		Cell*				next;
+		Cell*				next;				//Singly linked list
 	};
 	//
 	// Fields
 	//
 
-	btAlignedObjectArray<Cell*>		cells;	
-	btScalar						voxelsz;
+	btAlignedObjectArray<Cell*>		cells;			///<Hash table, each element of this array contains a singly linked list
+	btScalar						voxelsz;		///<Size of each cell
 	int								puid;
 	int								ncells;
 	int								m_clampCells;
 	int								nprobes;
-	int								nqueries;	
+	int								nqueries;
 
 	//
 	// Methods
 	//
 
-	//
-	void					Initialize(int hashsize=2383, int clampCells = 256*1024)
+	///@param hashsize Number of buckets in the hash table.
+	///@param clampCells To avoid crashing due to running out of memory, this clamps the maximum number of cells allocated.
+	///If this limit is reached, the SDF is reset (at the cost of some performance during the reset).
+	void Initialize(int hashsize = 2383, int clampCells = 256*1024)
 	{
-		//avoid a crash due to running out of memory, so clamp the maximum number of cells allocated
-		//if this limit is reached, the SDF is reset (at the cost of some performance during the reset)
 		m_clampCells = clampCells;
 		cells.resize(hashsize,0);
 		Reset();
 	}
-	//
-	void					Reset()
+	
+	///Clear all distance samples from the signed distance field
+	void Reset()
 	{
-		for(int i=0,ni=cells.size();i<ni;++i)
+		for(int i = 0; i < cells.size(); ++i)
 		{
 			Cell*	pc=cells[i];
 			cells[i]=0;
@@ -106,8 +113,11 @@ struct	btSparseSdf
 		nprobes		=1;
 		nqueries	=1;
 	}
-	//
-	void					GarbageCollect(int lifetime=256)
+	
+	///This function may be called every frame to prevent the SDF from consuming too much memory.
+	///@param lifetime Number of frames(or the number of times GarbageCollect() is called) to wait
+	///before removing cells.
+	void GarbageCollect(int lifetime = 256)
 	{
 		const int life=puid-lifetime;
 		for(int i=0;i<cells.size();++i)
@@ -120,10 +130,15 @@ struct	btSparseSdf
 				Cell*	pn=pc->next;
 				if(pc->puid<life)
 				{
-					if(pp) pp->next=pn; else root=pn;
-					delete pc;pc=pp;--ncells;
+					if(pp) pp->next = pn; 
+					else root = pn;
+					
+					delete pc;
+					pc = pp;
+					--ncells;
 				}
-				pp=pc;pc=pn;
+				pp = pc;
+				pc = pn;
 			}
 		}
 		//printf("GC[%d]: %d cells, PpQ: %f\r\n",puid,ncells,nprobes/(btScalar)nqueries);
@@ -132,8 +147,10 @@ struct	btSparseSdf
 		++puid;	///@todo: Reset puid's when int range limit is reached	*/ 
 		/* else setup a priority list...						*/ 
 	}
-	//
-	int						RemoveReferences(btCollisionShape* pcs)
+	
+	///Remove all entries in the SDF associated with shape
+	///@return Number of cells in the SDF associated with shape
+	int RemoveReferences(btCollisionShape* shape)
 	{
 		int	refcount=0;
 		for(int i=0;i<cells.size();++i)
@@ -144,23 +161,27 @@ struct	btSparseSdf
 			while(pc)
 			{
 				Cell*	pn=pc->next;
-				if(pc->pclient==pcs)
+				if(pc->pclient == shape)
 				{
-					if(pp) pp->next=pn; else root=pn;
-					delete pc;pc=pp;++refcount;
+					if(pp) pp->next = pn; 
+					else root = pn;
+					
+					delete pc;
+					pc = pp;
+					++refcount;
 				}
-				pp=pc;pc=pn;
+				pp = pc;
+				pc = pn;
 			}
 		}
 		return(refcount);
 	}
-	//
-	btScalar				Evaluate(	const btVector3& x,
-		const btCollisionShape* shape,
-		btVector3& normal,
-		btScalar margin)
+	
+	///@brief Performs collision detection between a point and convex btCollisionShape.
+	///@param x position of a vertex in the local space of the shape
+	btScalar Evaluate(const btVector3& x, const btCollisionShape* shape, btVector3& normal, btScalar margin)
 	{
-		/* Lookup cell			*/ 
+		//Compute hash function of the point, x, to find the bucket in the hash table
 		const btVector3	scx=x/voxelsz;
 		const IntFrac	ix=Decompose(scx.x());
 		const IntFrac	iy=Decompose(scx.y());
@@ -169,81 +190,77 @@ struct	btSparseSdf
 		Cell*&			root=cells[static_cast<int>(h%cells.size())];
 		Cell*			c=root;
 		++nqueries;
+		
+		//Perform a linear search through the linked list of a single bucket in the hash table
 		while(c)
 		{
 			++nprobes;
-			if(	(c->hash==h)	&&
-				(c->c[0]==ix.b)	&&
-				(c->c[1]==iy.b)	&&
-				(c->c[2]==iz.b)	&&
-				(c->pclient==shape))
-			{ break; }
-			else
-			{ c=c->next; }
+			
+			bool foundCachedDistance = (c->hash == h) && (c->c[0] == ix.b) && (c->c[1] == iy.b) && (c->c[2] == iz.b) && (c->pclient == shape);
+			
+			if(foundCachedDistance) break; 
+			else c = c->next; 
 		}
+		
+		//No cached distance found in linear search; compute point-convex distance with e.g. GJK
 		if(!c)
 		{
-			++nprobes;		
+			++nprobes;
 			++ncells;
-			int sz = sizeof(Cell);
+			
 			if (ncells>m_clampCells)
 			{
 				static int numResets=0;
 				numResets++;
-//				printf("numResets=%d\n",numResets);
 				Reset();
 			}
 
-			c=new Cell();
-			c->next=root;root=c;
+			c = new Cell();
+			c->next = root;
+			root = c;
 			c->pclient=shape;
 			c->hash=h;
-			c->c[0]=ix.b;c->c[1]=iy.b;c->c[2]=iz.b;
+			c->c[0]=ix.b; 
+			c->c[1]=iy.b; 
+			c->c[2]=iz.b;
 			BuildCell(*c);
 		}
+		
 		c->puid=puid;
-		/* Extract infos		*/ 
+		// Extract infos
 		const int		o[]={	ix.i,iy.i,iz.i};
+		
+		//8 points of a cube
 		const btScalar	d[]={	c->d[o[0]+0][o[1]+0][o[2]+0],
-			c->d[o[0]+1][o[1]+0][o[2]+0],
-			c->d[o[0]+1][o[1]+1][o[2]+0],
-			c->d[o[0]+0][o[1]+1][o[2]+0],
-			c->d[o[0]+0][o[1]+0][o[2]+1],
-			c->d[o[0]+1][o[1]+0][o[2]+1],
-			c->d[o[0]+1][o[1]+1][o[2]+1],
-			c->d[o[0]+0][o[1]+1][o[2]+1]};
-		/* Normal	*/ 
+								c->d[o[0]+1][o[1]+0][o[2]+0],
+								c->d[o[0]+1][o[1]+1][o[2]+0],
+								c->d[o[0]+0][o[1]+1][o[2]+0],
+								c->d[o[0]+0][o[1]+0][o[2]+1],
+								c->d[o[0]+1][o[1]+0][o[2]+1],
+								c->d[o[0]+1][o[1]+1][o[2]+1],
+								c->d[o[0]+0][o[1]+1][o[2]+1]	};
+			
+		// Normal
 #if 1
-		const btScalar	gx[]={	d[1]-d[0],d[2]-d[3],
-			d[5]-d[4],d[6]-d[7]};
-		const btScalar	gy[]={	d[3]-d[0],d[2]-d[1],
-			d[7]-d[4],d[6]-d[5]};
-		const btScalar	gz[]={	d[4]-d[0],d[5]-d[1],
-			d[7]-d[3],d[6]-d[2]};
-		normal.setX(Lerp(	Lerp(gx[0],gx[1],iy.f),
-			Lerp(gx[2],gx[3],iy.f),iz.f));
-		normal.setY(Lerp(	Lerp(gy[0],gy[1],ix.f),
-			Lerp(gy[2],gy[3],ix.f),iz.f));
-		normal.setZ(Lerp(	Lerp(gz[0],gz[1],ix.f),
-			Lerp(gz[2],gz[3],ix.f),iy.f));
-		normal		=	normal.normalized();
+		btScalar gx[] = { d[1]-d[0], d[2]-d[3], d[5]-d[4], d[6]-d[7] };
+		btScalar gy[] = { d[3]-d[0], d[2]-d[1], d[7]-d[4], d[6]-d[5] };
+		btScalar gz[] = { d[4]-d[0], d[5]-d[1], d[7]-d[3], d[6]-d[2] };
+		normal.setX( Lerp(Lerp(gx[0],gx[1],iy.f), Lerp(gx[2],gx[3],iy.f),iz.f) );		//Bilinear interpolation
+		normal.setY( Lerp(Lerp(gy[0],gy[1],ix.f), Lerp(gy[2],gy[3],ix.f),iz.f) );
+		normal.setZ( Lerp(Lerp(gz[0],gz[1],ix.f), Lerp(gz[2],gz[3],ix.f),iy.f) );
+		normal = normal.normalized();
 #else
-		normal		=	btVector3(d[1]-d[0],d[3]-d[0],d[4]-d[0]).normalized();
+		normal = btVector3(d[1]-d[0], d[3]-d[0], d[4]-d[0]).normalized();
 #endif
-		/* Distance	*/ 
-		const btScalar	d0=Lerp(Lerp(d[0],d[1],ix.f),
-			Lerp(d[3],d[2],ix.f),iy.f);
-		const btScalar	d1=Lerp(Lerp(d[4],d[5],ix.f),
-			Lerp(d[7],d[6],ix.f),iy.f);
-		return(Lerp(d0,d1,iz.f)-margin);
+		// Distance 
+		btScalar d0 = Lerp( Lerp(d[0],d[1],ix.f), Lerp(d[3],d[2],ix.f),iy.f );
+		btScalar d1 = Lerp( Lerp(d[4],d[5],ix.f), Lerp(d[7],d[6],ix.f),iy.f );
+		return Lerp(d0, d1, iz.f) - margin;
 	}
-	//
-	void					BuildCell(Cell& c)
+	
+	void BuildCell(Cell& c)
 	{
-		const btVector3	org=btVector3(	(btScalar)c.c[0],
-			(btScalar)c.c[1],
-			(btScalar)c.c[2])	*
-			CELLSIZE*voxelsz;
+		const btVector3	org = btVector3( (btScalar)c.c[0], (btScalar)c.c[1], (btScalar)c.c[2] ) * CELLSIZE*voxelsz;
 		for(int k=0;k<=CELLSIZE;++k)
 		{
 			const btScalar	z=voxelsz*k+org.z();
@@ -253,22 +270,21 @@ struct	btSparseSdf
 				for(int i=0;i<=CELLSIZE;++i)
 				{
 					const btScalar	x=voxelsz*i+org.x();
-					c.d[i][j][k]=DistanceToShape(	btVector3(x,y,z),
-						c.pclient);
+					c.d[i][j][k] = DistanceToShape( btVector3(x,y,z), c.pclient );
 				}
 			}
 		}
 	}
+	
 	//
-	static inline btScalar	DistanceToShape(const btVector3& x,
-		const btCollisionShape* shape)
+	static inline btScalar	DistanceToShape(const btVector3& x, const btCollisionShape* shape)
 	{
 		btTransform	unit;
 		unit.setIdentity();
-		if(shape->isConvex())
+		if( shape->isConvex() )
 		{
-			btGjkEpaSolver2::sResults	res;
-			const btConvexShape*				csh=static_cast<const btConvexShape*>(shape);
+			btGjkEpaSolver2::sResults res;
+			const btConvexShape* csh = static_cast<const btConvexShape*>(shape);
 			return(btGjkEpaSolver2::SignedDistance(x,0,csh,unit,res));
 		}
 		return(0);

@@ -1435,24 +1435,21 @@ void btSoftBody::initializeFaceTree()
 
 
 //
-bool				btSoftBody::checkContact(	const btCollisionObjectWrapper* colObjWrap,
-											 const btVector3& x,
-											 btScalar margin,
-											 btSoftBody::sCti& cti) const
+bool btSoftBody::checkContact(const btCollisionObjectWrapper* colObjWrap,
+							const btVector3& worldSpaceNodePosition,
+							btScalar margin,
+							btSoftBody::RigidContact& contact) const
 {
 	btVector3 normal;
 	const btCollisionShape *shp = colObjWrap->getCollisionShape();
-//	const btRigidBody *tmpRigid = btRigidBody::upcast(colObjWrap->getCollisionObject());
-	//const btTransform &wtr = tmpRigid ? tmpRigid->getWorldTransform() : colObjWrap->getWorldTransform();
 	const btTransform &wtr = colObjWrap->getWorldTransform();
-	//todo: check which transform is needed here
 
-	btScalar dst = m_worldInfo->m_sparsesdf.Evaluate(wtr.invXform(x), shp, normal, margin);
+	btScalar dst = m_worldInfo->m_sparsesdf.Evaluate(wtr.invXform(worldSpaceNodePosition), shp, normal, margin);
 	if(dst < 0)
 	{
-		cti.m_colObj = colObjWrap->getCollisionObject();
-		cti.m_normal = wtr.getBasis() * normal;
-		cti.m_offset = -btDot( cti.m_normal, x - cti.m_normal * dst );
+		contact.m_colObj = colObjWrap->getCollisionObject();
+		contact.m_normal = wtr.getBasis() * normal;
+		contact.m_offset = -btDot( contact.m_normal, worldSpaceNodePosition - contact.m_normal * dst );
 		return true;
 	}
 	return false;
