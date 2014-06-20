@@ -42,7 +42,7 @@ btSoftRigidDynamicsWorld::btSoftRigidDynamicsWorld(
 		m_ownsSolver = true;
 	}
 
-	m_drawFlags			=	fDrawFlags::Std;
+	m_drawFlags			=	fDrawFlags::Default;
 	m_drawNodeTree		=	true;
 	m_drawFaceTree		=	false;
 	m_sbi.m_broadphase = pairCache;
@@ -285,24 +285,11 @@ void	btSoftRigidDynamicsWorld::rayTestSingle(const btTransform& rayFromTrans,con
 					shapeInfo.m_triangleIndex = softResult.index;
 					// get the normal
 					btVector3 rayDir = rayToTrans.getOrigin() - rayFromTrans.getOrigin();
-					btVector3 normal=-rayDir;
-					normal.normalize();
-
-					if (softResult.feature == btSoftBody::eFeature::Face)
-					{
-						normal = softBody->m_faces[softResult.index].m_normal;
-						if (normal.dot(rayDir) > 0) {
-							// normal always point toward origin of the ray
-							normal = -normal;
-						}
-					}
+					btVector3 normal = softBody->m_faces[softResult.index].m_normal;
+					if (normal.dot(rayDir) > 0) normal = -normal;	// normal always point toward origin of the ray
 	
-					btCollisionWorld::LocalRayResult rayResult
-						(collisionObject,
-						 &shapeInfo,
-						 normal,
-						 softResult.fraction);
-					bool	normalInWorldSpace = true;
+					btCollisionWorld::LocalRayResult rayResult(collisionObject, &shapeInfo, normal, softResult.fraction);
+					bool normalInWorldSpace = true;
 					resultCallback.addSingleResult(rayResult,normalInWorldSpace);
 				}
 			}

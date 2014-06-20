@@ -1842,38 +1842,20 @@ void	SoftDemo::mouseFunc(int button, int state, int x, int y)
 						m_lastmousepos[0]	=	x;
 						m_lastmousepos[1]	=	y;
 						m_node				=	0;
-						switch(m_results.feature)
+						
 						{
-						case btSoftBody::eFeature::Tetra:
+							btSoftBody::Face& f = m_results.body->m_faces[m_results.index];
+							m_node = f.m_n[0];
+							for(int i = 1; i < 3; ++i)
 							{
-								btSoftBody::Tetra&	tet=m_results.body->m_tetras[m_results.index];
-								m_node=tet.m_n[0];
-								for(int i=1;i<4;++i)
+								if(	(m_node->m_x - m_impact).length2() > (f.m_n[i]->m_x - m_impact).length2() )
 								{
-									if(	(m_node->m_x-m_impact).length2()>
-										(tet.m_n[i]->m_x-m_impact).length2())
-									{
-										m_node=tet.m_n[i];
-									}
-								}
-								break;
-							}
-						case	btSoftBody::eFeature::Face:
-							{
-								btSoftBody::Face&	f=m_results.body->m_faces[m_results.index];
-								m_node=f.m_n[0];
-								for(int i=1;i<3;++i)
-								{
-									if(	(m_node->m_x-m_impact).length2()>
-										(f.m_n[i]->m_x-m_impact).length2())
-									{
-										m_node=f.m_n[i];
-									}
+									m_node = f.m_n[i];
 								}
 							}
-							break;
+							
 						}
-						if(m_node) m_goal=m_node->m_x;
+						if(m_node) m_goal = m_node->m_x;
 						return;
 					}
 				}

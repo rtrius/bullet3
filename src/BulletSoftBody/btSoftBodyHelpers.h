@@ -18,16 +18,10 @@ subject to the following restrictions:
 
 #include "btSoftBody.h"
 
-//
-// Helpers
-//
-
-/* fDrawFlags															*/ 
 struct	fDrawFlags { enum _ {
 	Nodes		=	0x0001,
 	Links		=	0x0002,
 	Faces		=	0x0004,
-	Tetras		=	0x0008,
 	Normals		=	0x0010,
 	Contacts	=	0x0020,
 	Anchors		=	0x0040,
@@ -36,9 +30,9 @@ struct	fDrawFlags { enum _ {
 	FaceTree	=	0x0400,
 	ClusterTree	=	0x0800,
 	Joints		=	0x1000,
-	/* presets	*/ 
-	Std			=	Links+Faces+Tetras+Anchors+Joints,
-	StdTetra	=	Std-Faces+Tetras
+	
+	// presets
+	Default = Links + Faces + Anchors + Joints
 };};
 
 struct	btSoftBodyHelpers
@@ -46,7 +40,7 @@ struct	btSoftBodyHelpers
 	/* Draw body															*/ 
 	static void				Draw(		btSoftBody* psb,
 		btIDebugDraw* idraw,
-		int drawflags=fDrawFlags::Std);
+		int drawflags = fDrawFlags::Default);
 	/* Draw body infos														*/ 
 	static	void			DrawInfos(	btSoftBody* psb,
 		btIDebugDraw* idraw,
@@ -111,26 +105,6 @@ struct	btSoftBodyHelpers
 		int nvertices,
 		bool randomizeConstraints = true);
 
-
-	/* Export TetGen compatible .smesh file									*/ 
-//	static void				ExportAsSMeshFile(	btSoftBody* psb,
-//												const char* filename);	
-	/* Create from TetGen .ele, .face, .node files							*/ 
-//	static btSoftBody*		CreateFromTetGenFile(	btSoftBodyWorldInfo& worldInfo,
-//													const char* ele,
-//													const char* face,
-//													const char* node,
-//													bool bfacelinks,
-//													bool btetralinks,
-//													bool bfacesfromtetras);
-	/* Create from TetGen .ele, .face, .node data							*/ 
-	static btSoftBody*		CreateFromTetGenData(	btSoftBodyWorldInfo& worldInfo,
-													const char* ele,
-													const char* face,
-													const char* node,
-													bool bfacelinks,
-													bool btetralinks,
-													bool bfacesfromtetras);
 
 	/// Sort the list of links to move link calculations that are dependent upon earlier
 	/// ones as far as possible away from the calculation of those values

@@ -65,19 +65,12 @@ public:
 	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
 
 	btSoftBodySolver *m_softBodySolver;
-
-	struct	eFeature { enum _ {
-		None,
-		Face,
-		Tetra
-	};};
 	
 	struct sRayCast
 	{
-		btSoftBody*	body;		/// soft body
-		eFeature::_	feature;	/// feature type
-		int			index;		/// feature index
-		btScalar	fraction;		/// time of impact fraction (rayorg+(rayto-rayfrom)*fraction)
+		btSoftBody*	body;
+		int			index;		///<Triangle index
+		btScalar	fraction;	///<Time of impact fraction (rayorg+(rayto-rayfrom)*fraction); 1.f == no hit
 	};
 
 	struct	ImplicitFn
@@ -137,14 +130,6 @@ public:
 		Node*					m_n[3];			// Node pointers
 		btVector3				m_normal;		// Normal
 		btScalar				m_area;
-		btDbvtNode*				m_leaf;			// Leaf data
-	};
-	
-	//	Not implemented
-	struct	Tetra : Feature
-	{
-		Node*					m_n[4];			// Node pointers		
-		btScalar				m_restVolume;
 		btDbvtNode*				m_leaf;			// Leaf data
 	};
 	
@@ -249,9 +234,9 @@ public:
 	void updateAndApplyPose();
 	btVector3 evaluateCenterOfMass() const;
 	
-	Pose m_pose;
+	Pose m_pose;		///<Pose matching constraint; can be used to ensure that the soft body maintains a certain shape
 	
-	struct	Config
+	struct Config
 	{
 		btScalar m_damping;						///<[0, 1]; fraction of velocity removed per timestep(0.05 means that velocity is scaled by 0.95).
 		btScalar m_dynamicFriction;				///<[0, 1]
@@ -286,7 +271,6 @@ public:
 	btAlignedObjectArray<Node>				m_nodes;
 	btAlignedObjectArray<Link>				m_links;
 	btAlignedObjectArray<Face>				m_faces;
-	btAlignedObjectArray<Tetra>				m_tetras;
 	btAlignedObjectArray<Anchor>			m_anchors;
 	btAlignedObjectArray<RigidContact>		m_rigidContacts;
 	btAlignedObjectArray<SoftContact>		m_softContacts;
@@ -328,9 +312,6 @@ public:
 	
 	void appendFace(int model=-1,Material* mat=0);
 	void appendFace(int node0, int node1, int node2, Material* mat=0);
-	
-	void appendTetra(int model, Material* mat);
-	void appendTetra(int node0, int node1, int node2, int node3, Material* mat=0);
 
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 	void appendAnchor(int node,btRigidBody* body, const btVector3& localPivot,bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
@@ -347,13 +328,11 @@ public:
 	btScalar getTotalMass() const;
 	void setTotalMass(btScalar mass, bool fromfaces=false);	//Set total mass (weighted by previous masses)
 	void setTotalDensity(btScalar density);
-	void setVolumeMass(btScalar mass);			//Set volume mass (using tetrahedrons)
-	void setVolumeDensity(btScalar density);	//Set volume density (using tetrahedrons)
 	
 	void transform(const btTransform& trs);
 	void translate(const btVector3& trs);
 	void rotate(const btQuaternion& rot);
-	void scale(	const btVector3& scl);
+	void scale(const btVector3& scl);
 	
 	btScalar getRestLengthScale();					//Get link resting lengths scale
 	void setRestLengthScale(btScalar restLength);	//Scale resting length of all springs
@@ -405,7 +384,7 @@ public:
 	void pointersToIndices();
 	void indicesToPointers(const int* map=0);
 
-	int rayTest(const btVector3& rayFrom,const btVector3& rayTo, btScalar& mint,eFeature::_& feature,int& index,bool bcountonly) const;
+	int rayTest(const btVector3& rayFrom,const btVector3& rayTo, btScalar& mint,int& index,bool bcountonly) const;
 	void initializeFaceTree();
 	bool checkContact(const btCollisionObjectWrapper* colObjWrap,const btVector3& worldSpaceNodePosition,btScalar margin,btSoftBody::RigidContact& contact) const;
 	void updateNormals();

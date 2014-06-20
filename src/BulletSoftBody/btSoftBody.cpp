@@ -229,34 +229,6 @@ void			btSoftBody::appendFace(int node0,int node1,int node2,Material* mat)
 }
 
 //
-void			btSoftBody::appendTetra(int model,Material* mat)
-{
-Tetra	t;
-if(model>=0)
-	t=m_tetras[model];
-	else
-	{ ZeroInitialize(t);t.m_material=mat?mat:m_materials[0]; }
-m_tetras.push_back(t);
-}
-
-//
-void			btSoftBody::appendTetra(int node0,
-										int node1,
-										int node2,
-										int node3,
-										Material* mat)
-{
-	appendTetra(-1,mat);
-	Tetra&	t=m_tetras[m_tetras.size()-1];
-	t.m_n[0]	=	&m_nodes[node0];
-	t.m_n[1]	=	&m_nodes[node1];
-	t.m_n[2]	=	&m_nodes[node2];
-	t.m_n[3]	=	&m_nodes[node3];
-	t.m_restVolume = VolumeOf(t.m_n[0]->m_x, t.m_n[1]->m_x, t.m_n[2]->m_x, t.m_n[3]->m_x);
-	m_bUpdateRtCst=true;
-}
-
-//
 
 void			btSoftBody::appendAnchor(int node,btRigidBody* body, bool disableCollisionBetweenLinkedBodies,btScalar influence)
 {
@@ -386,48 +358,6 @@ void			btSoftBody::setTotalMass(btScalar mass,bool fromfaces)
 void			btSoftBody::setTotalDensity(btScalar density)
 {
 	setTotalMass( getClosedTrimeshVolume() * density, true);
-}
-
-//
-void			btSoftBody::setVolumeMass(btScalar mass)
-{
-	btAlignedObjectArray<btScalar>	ranks;
-	ranks.resize(m_nodes.size(),0);
-	int i;
-
-	for(i=0;i<m_nodes.size();++i)
-	{
-		m_nodes[i].m_invMass = 0;
-	}
-	for(i=0;i<m_tetras.size();++i)
-	{
-		const Tetra& t=m_tetras[i];
-		for(int j=0;j<4;++j)
-		{
-			t.m_n[j]->m_invMass += btFabs(t.m_restVolume);
-			ranks[int(t.m_n[j]-&m_nodes[0])]+=1;
-		}
-	}
-	for( i=0;i<m_nodes.size();++i)
-	{
-		if(m_nodes[i].m_invMass > 0)
-		{
-			m_nodes[i].m_invMass = ranks[i] / m_nodes[i].m_invMass;
-		}
-	}
-	setTotalMass(mass,false);
-}
-
-//
-void			btSoftBody::setVolumeDensity(btScalar density)
-{
-	btScalar volume = 0;
-	for(int i = 0; i < m_tetras.size(); ++i)
-	{
-		const Tetra& t = m_tetras[i];
-		for(int j = 0; j < 4; ++j) volume += btFabs(t.m_restVolume); 
-	}
-	setVolumeMass(volume * density/6);
 }
 
 //
@@ -1112,10 +1042,9 @@ bool btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, sRayC
 
 	results.body	=	this;
 	results.fraction = 1.f;
-	results.feature	=	eFeature::None;
 	results.index	=	-1;
 
-	return (rayTest(rayFrom, rayTo, results.fraction, results.feature, results.index, false) != 0);
+	return (rayTest(rayFrom, rayTo, results.fraction, results.index, false) != 0);
 }
 
 //
@@ -1344,7 +1273,7 @@ void				btSoftBody::indicesToPointers(const int* map)
 
 //
 int					btSoftBody::rayTest(const btVector3& rayFrom,const btVector3& rayTo,
-										btScalar& mint,eFeature::_& feature,int& index,bool bcountonly) const
+										btScalar& mint,int& index,bool bcountonly) const
 {
 	int	cnt=0;
 	btVector3 dir = rayTo-rayFrom;
@@ -1367,7 +1296,6 @@ int					btSoftBody::rayTest(const btVector3& rayFrom,const btVector3& rayTo,
 				++cnt;
 				if(!bcountonly)
 				{
-					feature=btSoftBody::eFeature::Face;
 					index=i;
 					mint=t;
 				}
@@ -1382,42 +1310,11 @@ int					btSoftBody::rayTest(const btVector3& rayFrom,const btVector3& rayTo,
 		if(collider.m_face)
 		{
 			mint=collider.m_mint;
-			feature=btSoftBody::eFeature::Face;
 			index=(int)(collider.m_face-&m_faces[0]);
 			cnt=1;
 		}
 	}
 
-	for (int i=0;i<m_tetras.size();i++)
-	{
-		const btSoftBody::Tetra& tet = m_tetras[i];
-		int tetfaces[4][3] = {{0,1,2},{0,1,3},{1,2,3},{0,2,3}};
-		for (int f=0;f<4;f++)
-		{
-
-			int index0=tetfaces[f][0];
-			int index1=tetfaces[f][1];
-			int index2=tetfaces[f][2];
-			btVector3 v0=tet.m_n[index0]->m_x;
-			btVector3 v1=tet.m_n[index1]->m_x;
-			btVector3 v2=tet.m_n[index2]->m_x;
-
-
-		const btScalar			t=RayFromToCaster::rayFromToTriangle(	rayFrom,rayTo,dir,
-			v0,v1,v2,
-				mint);
-		if(t>0)
-			{
-				++cnt;
-				if(!bcountonly)
-				{
-					feature=btSoftBody::eFeature::Tetra;
-					index=i;
-					mint=t;
-				}
-			}
-		}
-	}
 	return(cnt);
 }
 
