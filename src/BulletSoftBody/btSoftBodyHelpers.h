@@ -37,36 +37,36 @@ struct	fDrawFlags { enum _ {
 
 struct	btSoftBodyHelpers
 {
-	/* Draw body															*/ 
+	// Draw body															 
 	static void				Draw(		btSoftBody* psb,
 		btIDebugDraw* idraw,
 		int drawflags = fDrawFlags::Default);
-	/* Draw body infos														*/ 
+	// Draw body infos														 
 	static	void			DrawInfos(	btSoftBody* psb,
 		btIDebugDraw* idraw,
 		bool masses,
 		bool areas,
 		bool stress);
-	/* Draw node tree														*/ 
+	// Draw node tree														 
 	static void				DrawNodeTree(	btSoftBody* psb,
 		btIDebugDraw* idraw,
 		int mindepth=0,
 		int maxdepth=-1);
-	/* Draw face tree														*/ 
+	// Draw face tree														 
 	static void				DrawFaceTree(	btSoftBody* psb,
 		btIDebugDraw* idraw,
 		int mindepth=0,
 		int maxdepth=-1);
-	/* Draw rigid frame														*/ 
+	// Draw rigid frame														 
 	static	void			DrawFrame(		btSoftBody* psb,
 		btIDebugDraw* idraw);
-	/* Create a rope														*/ 
+	// Create a rope														 
 	static	btSoftBody*		CreateRope( btSoftBodyWorldInfo& worldInfo,
 		const btVector3& from,
 		const btVector3& to,
 		int res,
 		int fixeds);
-	/* Create a patch														*/ 
+	// Create a patch														 
 	static	btSoftBody*		CreatePatch(btSoftBodyWorldInfo& worldInfo,
 		const btVector3& corner00,
 		const btVector3& corner10,
@@ -76,7 +76,7 @@ struct	btSoftBodyHelpers
 		int resy,
 		int fixeds,
 		bool gendiags);
-	/* Create a patch with UV Texture Coordinates	*/ 
+	// Create a patch with UV Texture Coordinates	 
 	static	btSoftBody*		CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 		const btVector3& corner00,
 		const btVector3& corner10,
@@ -88,18 +88,18 @@ struct	btSoftBodyHelpers
 		bool gendiags,
 		float* tex_coords=0);
 	static	float	CalculateUV(int resx,int resy,int ix,int iy,int id);
-	/* Create an ellipsoid													*/ 
+	// Create an ellipsoid													 
 	static	btSoftBody*		CreateEllipsoid(btSoftBodyWorldInfo& worldInfo,
 		const btVector3& center,
 		const btVector3& radius,
 		int res);	
-	/* Create from trimesh													*/ 
+	// Create from trimesh													 
 	static	btSoftBody*		CreateFromTriMesh(	btSoftBodyWorldInfo& worldInfo,
 		const btScalar*	vertices,
 		const int* triangles,
 		int ntriangles,
 		bool randomizeConstraints = true);
-	/* Create from convex-hull												*/ 
+	// Create from convex-hull												 
 	static	btSoftBody*		CreateFromConvexHull(	btSoftBodyWorldInfo& worldInfo,
 		const btVector3* vertices,
 		int nvertices,

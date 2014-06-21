@@ -163,7 +163,7 @@ struct	ImplicitSphere : btSoftBody::ImplicitFn
 	btScalar	sqradius;
 	ImplicitSphere() {}
 	ImplicitSphere(const btVector3& c,btScalar r) : center(c),sqradius(r*r) {}
-	btScalar	Eval(const btVector3& x)
+	btScalar signedDistance(const btVector3& x)
 	{
 		return((x-center).length2()-sqradius);
 	}
@@ -1346,7 +1346,7 @@ static void	Init_TetraCube(SoftDemo* pdemo)
 //CLUSTER_REFACTOR
 
 
-	/* Init		*/ 
+	// Init		 
 	void (*demofncs[])(SoftDemo*)=
 	{
 		Init_Cloth,
@@ -1393,7 +1393,7 @@ void	SoftDemo::clientResetScene()
 	m_cameraTargetPosition.setValue(0,0,0);
 
 	DemoApplication::clientResetScene();
-	/* Clean up	*/ 
+	// Clean up	 
 	for(int i=m_dynamicsWorld->getNumCollisionObjects()-1;i>=0;i--)
 	{
 		btCollisionObject*	obj=m_dynamicsWorld->getCollisionObjectArray()[i];
@@ -1602,7 +1602,7 @@ void	SoftDemo::renderme()
 		}
 	}
 
-	/* Bodies		*/ 
+	// Bodies		 
 	btVector3	ps(0,0,0);
 	int			nps=0;
 
@@ -1619,13 +1619,13 @@ void	SoftDemo::renderme()
 	ps/=nps;
 	if(m_autocam)
 		m_cameraTargetPosition+=(ps-m_cameraTargetPosition)*0.05;
-	/* Anm			*/ 
+	// Anm			 
 	if(!isIdle())
 		m_animtime=m_clock.getTimeMilliseconds()/1000.f;
-	/* Ray cast		*/ 
+	// Ray cast		 
 	if(m_raycast)
 	{		
-		/* Prepare rays	*/ 
+		// Prepare rays	 
 		const int		res=64;
 		const btScalar	fres=res-1;
 		const btScalar	size=8;
@@ -1650,7 +1650,7 @@ void	SoftDemo::renderme()
 				origins[idx]=trs*btVector3(-size+size*2*x/fres,dist,-size+size*2*y/fres);
 			}
 		}
-		/* Cast rays	*/ 		
+		// Cast rays	 		
 		{
 			m_clock.reset();
 			if (sbs.size())
@@ -1677,7 +1677,7 @@ void	SoftDemo::renderme()
 				printf("%d ms (%d rays/s)\r\n",int(ms),int(rayperseconds));
 			}
 		}
-		/* Draw rays	*/ 
+		// Draw rays	 
 		const btVector3	c[]={	origins[0],
 			origins[res-1],
 			origins[res*(res-1)],

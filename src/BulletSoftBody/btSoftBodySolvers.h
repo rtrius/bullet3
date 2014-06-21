@@ -29,16 +29,16 @@ public:
 	btSoftBodySolver() {}
 	virtual ~btSoftBodySolver() {}
 
-	/** Optimize soft bodies in this solver. */
+	// Optimize soft bodies in this solver.
 	virtual void optimize( btAlignedObjectArray< btSoftBody * > &softBodies , bool forceUpdate=false) = 0;
 
-	/** Predict motion of soft bodies into next timestep */
+	// Predict motion of soft bodies into next timestep
 	virtual void predictMotion( float solverdt ) = 0;
 
-	/** Solve constraints for a set of soft bodies */
+	// Solve constraints for a set of soft bodies
 	virtual void solveConstraints( float solverdt ) = 0;
 
-	/** Perform necessary per-step updates of soft bodies such as recomputing normals and bounding boxes */
+	// Perform necessary per-step updates of soft bodies such as recomputing normals and bounding boxes
 	virtual void updateSoftBodies() = 0;
 
 };

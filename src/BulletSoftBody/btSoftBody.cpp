@@ -582,7 +582,7 @@ int				btSoftBody::generateBendingConstraints(int distance,Material* mat)
 
 	if(distance>1)
 	{
-		/* Build graph	*/ 
+		// Build graph	 
 		const int		n=m_nodes.size();
 		const unsigned	inf=(~(unsigned)0)>>1;
 		unsigned*		adj=new unsigned[n*n];
@@ -619,7 +619,7 @@ int				btSoftBody::generateBendingConstraints(int distance,Material* mat)
 			btAlignedObjectArray<NodeLinks> nodeLinks;
 
 
-			/* Build node links */
+			// Build node links 
 			nodeLinks.resize(m_nodes.size());
 
 			for( i=0;i<m_links.size();++i)
@@ -675,7 +675,7 @@ int				btSoftBody::generateBendingConstraints(int distance,Material* mat)
 		}
 
 
-		/* Build links	*/ 
+		// Build links	 
 		int	nlinks=0;
 		for(j=0;j<n;++j)
 		{
@@ -718,29 +718,32 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 {
 	const Node*			nbase = &m_nodes[0];
 	int					ncount = m_nodes.size();
-	btSymMatrix<int>	edges(ncount,-2);
+	btSymMatrix<int>	edges(ncount,-2);			//Symmetric matrix of size (ncount x ncount), initialized with all values = -2
 	int					newnodes=0;
 	int i,j,k,ni;
 
-	/* Filter out		*/ 
+	//Remove all bending links that intersect the shape defined by ifn
 	for(i=0;i<m_links.size();++i)
 	{
 		Link&	l=m_links[i];
 		if(l.m_bbending)
 		{
-			if(!SameSign(ifn->Eval(l.m_n[0]->m_x),ifn->Eval(l.m_n[1]->m_x)))
+			if(!SameSign(ifn->signedDistance(l.m_n[0]->m_x),ifn->signedDistance(l.m_n[1]->m_x)))
 			{
 				btSwap(m_links[i],m_links[m_links.size()-1]);
 				m_links.pop_back();--i;
 			}
 		}	
 	}
-	/* Fill edges		*/ 
+	
+	//If 2 nodes share a link, set their entries in the matrix to -1
 	for(i=0;i<m_links.size();++i)
 	{
 		Link&	l=m_links[i];
 		edges(int(l.m_n[0]-nbase),int(l.m_n[1]-nbase))=-1;
 	}
+	
+	//If 3 nodes share a face, set their entries in the matrix to -1
 	for(i=0;i<m_faces.size();++i)
 	{	
 		Face&	f=m_faces[i];
@@ -748,21 +751,23 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 		edges(int(f.m_n[1]-nbase),int(f.m_n[2]-nbase))=-1;
 		edges(int(f.m_n[2]-nbase),int(f.m_n[0]-nbase))=-1;
 	}
-	/* Intersect		*/ 
+	
+	//Intersect
+	//If 2 nodes a and b share a link or face, and the line from a to b intersects the implicit shape,
+	//create a new node at the point of intersection.
 	for(i=0;i<ncount;++i)
 	{
 		for(j=i+1;j<ncount;++j)
 		{
-			if(edges(i,j)==-1)
+			if(edges(i,j)==-1)		//If nodes i and j share a link or node
 			{
 				Node&			a=m_nodes[i];
 				Node&			b=m_nodes[j];
 				const btScalar	t=ImplicitSolve(ifn,a.m_x,b.m_x,accurary);
+				
 				if(t>0)
 				{
-					const btVector3	x=Lerp(a.m_x,b.m_x,t);
-					const btVector3	v=Lerp(a.m_v,b.m_v,t);
-					btScalar		m=0;
+					btScalar mass=0;
 					if(a.m_invMass > 0)
 					{
 						if(b.m_invMass > 0)
@@ -773,12 +778,12 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 							const btScalar	f=(ma+mb)/(ma+mb+mc);
 							a.m_invMass = 1 / (ma * f);
 							b.m_invMass = 1 / (mb * f);
-							m=mc*f;
+							mass=mc*f;
 						}
 						else
 						{
 							a.m_invMass /= 0.5f;
-							m = 1 / a.m_invMass;
+							mass = 1 / a.m_invMass;
 						}
 					}
 					else
@@ -786,30 +791,37 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 						if(b.m_invMass > 0)
 						{
 							b.m_invMass /= 0.5f;
-							m = 1 / b.m_invMass;
+							mass = 1 / b.m_invMass;
 						}
-						else
-							m=0;
+						else mass = 0;
 					}
-					appendNode(x,m);
-					edges(i,j)=m_nodes.size()-1;
-					m_nodes[edges(i,j)].m_v=v;
+					
+					btVector3 position = Lerp(a.m_x,b.m_x,t);
+					btVector3 velocity = Lerp(a.m_v,b.m_v,t);
+					
+					appendNode(position, mass);
+					
+					int newNodeIndex = m_nodes.size() - 1;
+					edges(i,j) = newNodeIndex;
+					m_nodes[newNodeIndex].m_v = velocity;
+					
 					++newnodes;
 				}
 			}
 		}
 	}
-	nbase=&m_nodes[0];
-	/* Refine links		*/ 
+	nbase=&m_nodes[0];		//If nodes were added, it is possible that m_nodes is resized, changing the address of m_nodes[0]
+	
+	//Refine links - split each link that intersects the implicit shape
 	for(i=0,ni=m_links.size();i<ni;++i)
 	{
 		Link&		feat=m_links[i];
 		const int	idx[]={	int(feat.m_n[0]-nbase),
 			int(feat.m_n[1]-nbase)};
-		if((idx[0]<ncount)&&(idx[1]<ncount))
+		if((idx[0]<ncount)&&(idx[1]<ncount))		//If both nodes are not newly created in the intersect stage above
 		{
 			const int ni=edges(idx[0],idx[1]);
-			if(ni>0)
+			if(ni>0)		//If a new node was created between these nodes
 			{
 				appendLink(i);
 				Link*		pft[]={	&m_links[i],
@@ -821,7 +833,8 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 			}
 		}
 	}
-	/* Refine faces		*/ 
+	
+	//Refine faces
 	for(i=0;i<m_faces.size();++i)
 	{
 		const Face&	feat=m_faces[i];
@@ -851,7 +864,7 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 			}
 		}
 	}
-	/* Cut				*/ 
+	// Cut				 
 	if(cut)
 	{	
 		btAlignedObjectArray<int>	cnodes;
@@ -859,11 +872,11 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 		int							i;
 		ncount=m_nodes.size();
 		cnodes.resize(ncount,0);
-		/* Nodes		*/ 
+		// Nodes		 
 		for(i=0;i<ncount;++i)
 		{
 			const btVector3	x=m_nodes[i].m_x;
-			if((i>=pcount)||(btFabs(ifn->Eval(x))<accurary))
+			if((i>=pcount)||(btFabs(ifn->signedDistance(x))<accurary))
 			{
 				const btVector3	v=m_nodes[i].m_v;
 				btScalar		m=getMass(i);
@@ -878,7 +891,7 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 			}
 		}
 		nbase=&m_nodes[0];
-		/* Links		*/ 
+		// Links		 
 		for(i=0,ni=m_links.size();i<ni;++i)
 		{
 			const int		id[]={	int(m_links[i].m_n[0]-nbase),
@@ -891,8 +904,8 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 			}
 			else
 			{
-				if((	(ifn->Eval(m_nodes[id[0]].m_x)<accurary)&&
-					(ifn->Eval(m_nodes[id[1]].m_x)<accurary)))
+				if((	(ifn->signedDistance(m_nodes[id[0]].m_x)<accurary)&&
+					(ifn->signedDistance(m_nodes[id[1]].m_x)<accurary)))
 					todetach=i;
 			}
 			if(todetach)
@@ -905,13 +918,13 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 				}			
 			}
 		}
-		/* Faces		*/ 
+		// Faces		 
 		for(i=0,ni=m_faces.size();i<ni;++i)
 		{
 			Node**			n=	m_faces[i].m_n;
-			if(	(ifn->Eval(n[0]->m_x)<accurary)&&
-				(ifn->Eval(n[1]->m_x)<accurary)&&
-				(ifn->Eval(n[2]->m_x)<accurary))
+			if(	(ifn->signedDistance(n[0]->m_x)<accurary)&&
+				(ifn->signedDistance(n[1]->m_x)<accurary)&&
+				(ifn->signedDistance(n[2]->m_x)<accurary))
 			{
 				for(int j=0;j<3;++j)
 				{
@@ -920,7 +933,7 @@ void			btSoftBody::refine(ImplicitFn* ifn,btScalar accurary,bool cut)
 				}
 			}
 		}
-		/* Clean orphans	*/ 
+		// Clean orphans	 
 		int							nnodes=m_nodes.size();
 		btAlignedObjectArray<int>	ranks;
 		btAlignedObjectArray<int>	todelete;
@@ -1402,14 +1415,14 @@ void				btSoftBody::updateArea(bool averageArea)
 {
 	int i,ni;
 
-	/* Face area		*/ 
+	// Face area		 
 	for(i=0,ni=m_faces.size();i<ni;++i)
 	{
 		Face&		f=m_faces[i];
 		f.m_area = AreaOf(f.m_n[0]->m_x, f.m_n[1]->m_x, f.m_n[2]->m_x);
 	}
 	
-	/* Node area		*/ 
+	// Node area		 
 
 	if (averageArea)
 	{
@@ -1716,7 +1729,7 @@ void btSoftBody::addAeroForceToFace(const AeroForce& aeroForce, btScalar timeSte
 					nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
 
 				const btScalar	dvn=btDot(rel_v,nrm);
-				/* Compute forces	*/ 
+				// Compute forces	 
 				if(dvn>0)
 				{
 					btVector3		force(0,0,0);

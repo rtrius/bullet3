@@ -145,7 +145,7 @@ struct	btSparseSdf
 		nqueries=1;
 		nprobes=1;
 		++puid;	///@todo: Reset puid's when int range limit is reached	*/ 
-		/* else setup a priority list...						*/ 
+		// else setup a priority list...						 
 	}
 	
 	///Remove all entries in the SDF associated with shape
@@ -292,8 +292,8 @@ struct	btSparseSdf
 	//
 	static inline IntFrac	Decompose(btScalar x)
 	{
-		/* That one need a lot of improvements...	*/
-		/* Remove test, faster floor...				*/ 
+		// That one need a lot of improvements...	
+		// Remove test, faster floor...				 
 		IntFrac			r;
 		x/=CELLSIZE;
 		const int		o=x<0?(int)(-x+1):0;

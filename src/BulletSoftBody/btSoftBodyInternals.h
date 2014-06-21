@@ -71,7 +71,7 @@ public:
 	///getAabb returns the axis aligned bounding box in the coordinate frame of the given transform t.
 	virtual void getAabb(const btTransform& t,btVector3& aabbMin,btVector3& aabbMax) const
 	{
-		/* t is usually identity, except when colliding against btCompoundShape. See Issue 512 */
+		// t is usually identity, except when colliding against btCompoundShape. See Issue 512 
 		const btVector3	mins=m_body->m_aabbMin;
 		const btVector3	maxs=m_body->m_aabbMax;
 		const btVector3	crns[]={t*btVector3(mins.x(),mins.y(),mins.z()),
@@ -91,7 +91,7 @@ public:
 	}
 
 
-	virtual void	setLocalScaling(const btVector3& /*scaling*/)
+	virtual void	setLocalScaling(const btVector3&)
 	{		
 		///na
 	}
@@ -100,7 +100,7 @@ public:
 		static const btVector3 dummy(1,1,1);
 		return dummy;
 	}
-	virtual void	calculateLocalInertia(btScalar /*mass*/,btVector3& /*inertia*/) const
+	virtual void	calculateLocalInertia(btScalar, btVector3&) const
 	{
 		///not yet
 		btAssert(0);
@@ -301,15 +301,16 @@ static inline btVector3		BaryCoord(	const btVector3& a,
 	return(btVector3(w[1]*isum,w[2]*isum,w[0]*isum));
 }
 
-//
-static btScalar				ImplicitSolve(	btSoftBody::ImplicitFn* fn,
+///Calculates the fraction, in range [0, 1], at which the line segment a-b intersects shape; 
+///returns -1 if both vertices are on the same side of the shape. 
+static btScalar				ImplicitSolve(	btSoftBody::ImplicitFn* shape,
 										  const btVector3& a,
 										  const btVector3& b,
 										  const btScalar accuracy,
 										  const int maxiterations=256)
 {
 	btScalar	span[2]={0,1};
-	btScalar	values[2]={fn->Eval(a),fn->Eval(b)};
+	btScalar	values[2]={shape->signedDistance(a),shape->signedDistance(b)};
 	if(values[0]>values[1])
 	{
 		btSwap(span[0],span[1]);
@@ -320,7 +321,7 @@ static btScalar				ImplicitSolve(	btSoftBody::ImplicitFn* fn,
 	for(int i=0;i<maxiterations;++i)
 	{
 		const btScalar	t=Lerp(span[0],span[1],values[0]/(values[0]-values[1]));
-		const btScalar	v=fn->Eval(Lerp(a,b,t));
+		const btScalar	v=shape->signedDistance(Lerp(a,b,t));
 		if((t<=0)||(t>=1))		break;
 		if(btFabs(v)<accuracy)	return(t);
 		if(v<0)
@@ -329,16 +330,6 @@ static btScalar				ImplicitSolve(	btSoftBody::ImplicitFn* fn,
 		{ span[1]=t;values[1]=v; }
 	}
 	return(-1);
-}
-
-//
-static inline btVector3		NormalizeAny(const btVector3& v)
-{
-	const btScalar l=v.length();
-	if(l>SIMD_EPSILON)
-		return(v/l);
-	else
-		return(btVector3(0,0,0));
 }
 
 //
@@ -351,12 +342,6 @@ static inline btDbvtVolume	VolumeOf(	const btSoftBody::Face& f,
 	btDbvtVolume		vol=btDbvtVolume::FromPoints(pts,3);
 	vol.Expand(btVector3(margin,margin,margin));
 	return(vol);
-}
-
-//
-static inline btVector3			CenterOf(	const btSoftBody::Face& f)
-{
-	return((f.m_n[0]->m_x+f.m_n[1]->m_x+f.m_n[2]->m_x)/3);
 }
 
 //

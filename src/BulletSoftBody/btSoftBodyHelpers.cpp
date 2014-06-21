@@ -168,7 +168,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 	int i,j,nj;
 
 	{
-		/* Nodes	*/ 
+		// Nodes	 
 		if(0!=(drawflags&fDrawFlags::Nodes))
 		{
 			for(i=0;i<psb->m_nodes.size();++i)
@@ -180,7 +180,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 				idraw->drawLine(n.m_x-btVector3(0,0,scl),n.m_x+btVector3(0,0,scl),btVector3(0,0,1));
 			}
 		}
-		/* Links	*/ 
+		// Links	 
 		if(0!=(drawflags&fDrawFlags::Links))
 		{
 			for(i=0;i<psb->m_links.size();++i)
@@ -190,7 +190,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 				idraw->drawLine(l.m_n[0]->m_x,l.m_n[1]->m_x,lcolor);
 			}
 		}
-		/* Normals	*/ 
+		// Normals	 
 		if(0!=(drawflags&fDrawFlags::Normals))
 		{
 			for(i=0;i<psb->m_nodes.size();++i)
@@ -202,7 +202,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 				idraw->drawLine(n.m_x,n.m_x-d,ncolor*0.5);
 			}
 		}
-		/* Contacts	*/ 
+		// Contacts	 
 		if(0!=(drawflags&fDrawFlags::Contacts))
 		{
 			static const btVector3		axis[]={btVector3(1,0,0),
@@ -220,7 +220,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 				idraw->drawLine(o,o+c.m_normal*nscl*3,btVector3(1,1,0));
 			}
 		}
-		/* Faces	*/ 
+		// Faces	 
 		if(0!=(drawflags&fDrawFlags::Faces))
 		{
 			const btScalar	scl=(btScalar)0.8;
@@ -239,7 +239,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			}	
 		}
 	}
-	/* Anchors	*/ 
+	// Anchors	 
 	if(0!=(drawflags&fDrawFlags::Anchors))
 	{
 		for(i=0;i<psb->m_anchors.size();++i)
@@ -261,9 +261,9 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		}
 	}
 	
-	/* Node tree	*/ 
+	// Node tree	 
 	if(0!=(drawflags&fDrawFlags::NodeTree))		DrawNodeTree(psb,idraw);
-	/* Face tree	*/ 
+	// Face tree	 
 	if(0!=(drawflags&fDrawFlags::FaceTree))		DrawFaceTree(psb,idraw);
 }
 
@@ -272,7 +272,7 @@ void			btSoftBodyHelpers::DrawInfos(		btSoftBody* psb,
 											 btIDebugDraw* idraw,
 											 bool masses,
 											 bool areas,
-											 bool /*stress*/)
+											 bool)
 {
 	for(int i=0;i<psb->m_nodes.size();++i)
 	{
@@ -363,7 +363,7 @@ typedef LinkDeps_t *LinkDepsPtr_t;
 #define REOP_NODE_COMPLETE	-2	// Must be less than REOP_NOT_DEPENDENT
 
 
-void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb /* This can be replaced by a btSoftBody pointer */)
+void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 {
 	int i, nLinks=psb->m_links.size(), nNodes=psb->m_nodes.size();
 	btSoftBody::Link *lr;
@@ -502,7 +502,7 @@ btSoftBody*		btSoftBodyHelpers::CreateRope(	btSoftBodyWorldInfo& worldInfo, cons
 											  int res,
 											  int fixeds)
 {
-	/* Create nodes	*/ 
+	// Create nodes	 
 	const int		r=res+2;
 	btVector3*		x=new btVector3[r];
 	btScalar*		m=new btScalar[r];
@@ -519,12 +519,12 @@ btSoftBody*		btSoftBodyHelpers::CreateRope(	btSoftBodyWorldInfo& worldInfo, cons
 	if(fixeds&2) psb->setMass(r-1,0);
 	delete[] x;
 	delete[] m;
-	/* Create links	*/ 
+	// Create links	 
 	for(i=1;i<r;++i)
 	{
 		psb->appendLink(i-1,i);
 	}
-	/* Finished		*/ 
+	// Finished		 
 	return(psb);
 }
 
@@ -539,7 +539,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 											   bool gendiags)
 {
 #define IDX(_x_,_y_)	((_y_)*rx+(_x_))
-	/* Create nodes	*/ 
+	// Create nodes	 
 	if((resx<2)||(resy<2)) return(0);
 	const int	rx=resx;
 	const int	ry=resy;
@@ -567,7 +567,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 	if(fixeds&8)	psb->setMass(IDX(rx-1,ry-1),0);
 	delete[] x;
 	delete[] m;
-	/* Create links	and faces */ 
+	// Create links	and faces  
 	for(iy=0;iy<ry;++iy)
 	{
 		for(int ix=0;ix<rx;++ix)
@@ -600,7 +600,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 			}
 		}
 	}
-	/* Finished		*/ 
+	// Finished		 
 #undef IDX
 	return(psb);
 }
@@ -686,7 +686,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 	*/
 
 #define IDX(_x_,_y_)	((_y_)*rx+(_x_))
-	/* Create nodes		*/ 
+	// Create nodes		 
 	if((resx<2)||(resy<2)) return(0);
 	const int	rx=resx;
 	const int	ry=resy;
@@ -723,7 +723,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 
 
 	int z = 0;
-	/* Create links	and faces	*/ 
+	// Create links	and faces	 
 	for(iy=0;iy<ry;++iy)
 	{
 		for(int ix=0;ix<rx;++ix)
@@ -763,7 +763,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 			}
 		}
 	}
-	/* Finished	*/ 
+	// Finished	 
 #undef IDX
 	return(psb);
 }
@@ -896,7 +896,7 @@ btSoftBody*		btSoftBodyHelpers::CreateFromConvexHull(btSoftBodyWorldInfo& worldI
 {
 	HullDesc		hdsc(QF_TRIANGLES,nvertices,vertices);
 	HullResult		hres;
-	HullLibrary		hlib;/*??*/ 
+	HullLibrary		hlib;//?? 
 	hdsc.mMaxVertices=nvertices;
 	hlib.CreateConvexHull(hdsc,hres);
 	btSoftBody*		psb=new btSoftBody(&worldInfo,(int)hres.mNumOutputVertices,

@@ -75,7 +75,7 @@ public:
 
 	struct	ImplicitFn
 	{
-		virtual btScalar	Eval(const btVector3& x)=0;
+		virtual btScalar signedDistance(const btVector3& x) = 0;		///<Returns negative if penetrating
 	};
 	
 	struct	Element
