@@ -1843,14 +1843,20 @@ void	SoftDemo::mouseFunc(int button, int state, int x, int y)
 						m_lastmousepos[1]	=	y;
 						m_node				=	0;
 						
+						btSoftBody* hitSoftBody = m_results.body;
+						btAlignedObjectArray<btSoftBody::Node>& nodes = hitSoftBody->m_nodes;
+						
 						{
-							btSoftBody::Face& f = m_results.body->m_faces[m_results.index];
-							m_node = f.m_n[0];
+							btSoftBody::Face& face = hitSoftBody->m_faces[m_results.index];
+							m_node = &hitSoftBody->m_nodes[ face.m_indicies[0] ];
 							for(int i = 1; i < 3; ++i)
 							{
-								if(	(m_node->m_x - m_impact).length2() > (f.m_n[i]->m_x - m_impact).length2() )
+								btScalar nodeToImpactSqDistance = (m_node->m_x - m_impact).length2();
+								btScalar nextToImpactSqDistance = (nodes[ face.m_indicies[i] ].m_x - m_impact).length2();
+							
+								if(nodeToImpactSqDistance > nextToImpactSqDistance)
 								{
-									m_node = f.m_n[i];
+									m_node = &nodes[ face.m_indicies[i] ];
 								}
 							}
 							

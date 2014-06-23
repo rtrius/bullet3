@@ -50,7 +50,7 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	for(int i = 0; i < softBody->m_links.size();++i)
 	{
 		btSoftBody::Link& l = softBody->m_links[i];
-		l.m_gradient0to1 = l.m_n[1]->m_q - l.m_n[0]->m_q;
+		l.m_gradient0to1 = softBody->m_nodes[ l.m_linkIndicies[1] ].m_q - softBody->m_nodes[ l.m_linkIndicies[0] ].m_q;
 		l.m_impulseScaling = 1 / (l.m_gradient0to1.length2() * l.m_scaledCombinedInvMass);
 	}
 	
@@ -58,11 +58,13 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	for(int i = 0; i < softBody->m_anchors.size(); ++i)
 	{
 		btSoftBody::Anchor& a = softBody->m_anchors[i];
+		btSoftBody::Node& node = softBody->m_nodes[a.m_nodeIndex];
+		
 		const btVector3	ra = a.m_body->getWorldTransform().getBasis() * a.m_local;
-		a.m_impulseMatrix = ImpulseMatrix(	softBody->m_timeStep, a.m_node->m_invMass, a.m_body->getInvMass(),
+		a.m_impulseMatrix = ImpulseMatrix(	softBody->m_timeStep, node.m_invMass, a.m_body->getInvMass(),
 									a.m_body->getInvInertiaTensorWorld(), ra);
 		a.m_rotatedPosition = ra;
-		a.m_invMassDt = softBody->m_timeStep * a.m_node->m_invMass;
+		a.m_invMassDt = softBody->m_timeStep * node.m_invMass;
 		a.m_body->activate();
 	}
 	
@@ -134,10 +136,13 @@ void btDefaultSoftBodySolver::VSolve_Links(btSoftBody* psb,btScalar kst)
 	for(int i=0,ni=psb->m_links.size();i<ni;++i)
 	{			
 		btSoftBody::Link& l = psb->m_links[i];
-		btSoftBody::Node** n = l.m_n;
-		const btScalar j = -btDot(l.m_gradient0to1, n[0]->m_v - n[1]->m_v) * l.m_impulseScaling * kst;
-		n[0]->m_v += l.m_gradient0to1 * (j * n[0]->m_invMass);
-		n[1]->m_v -= l.m_gradient0to1 * (j * n[1]->m_invMass);
+		
+		btSoftBody::Node& node0 = psb->m_nodes[ l.m_linkIndicies[0] ];
+		btSoftBody::Node& node1 = psb->m_nodes[ l.m_linkIndicies[1] ];
+		
+		const btScalar j = -btDot(l.m_gradient0to1, node0.m_v - node1.m_v) * l.m_impulseScaling * kst;
+		node0.m_v += l.m_gradient0to1 * (j * node0.m_invMass);
+		node1.m_v -= l.m_gradient0to1 * (j * node1.m_invMass);
 	}
 }
 
@@ -149,7 +154,7 @@ void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScal
 	{
 		const btSoftBody::Anchor& a = psb->m_anchors[i];
 		const btTransform& t = a.m_body->getWorldTransform();
-		btSoftBody::Node& n = *a.m_node;
+		btSoftBody::Node& n = psb->m_nodes[a.m_nodeIndex];
 		const btVector3 wa = t*a.m_local;
 		const btVector3 va = a.m_body->getVelocityInLocalPoint(a.m_rotatedPosition)*dt;
 		const btVector3 vb = n.m_x-n.m_q;
@@ -169,18 +174,20 @@ void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst
 		const btSoftBody::RigidContact& c = psb->m_rigidContacts[i];
 		if (c.m_colObj->hasContactResponse()) 
 		{
+			btSoftBody::Node& node = psb->m_nodes[c.m_nodeIndex];
+		
 			btRigidBody* tmpRigid = (btRigidBody*)btRigidBody::upcast(c.m_colObj);
 			const btVector3		va = tmpRigid ? tmpRigid->getVelocityInLocalPoint(c.m_relativeNodePosition) * dt : btVector3(0,0,0);
-			const btVector3		vb = c.m_node->m_x-c.m_node->m_q;	
+			const btVector3		vb = node.m_x - node.m_q;	
 			const btVector3		vr = vb-va;
 			const btScalar		dn = btDot(vr, c.m_normal);		
 			if(dn<=SIMD_EPSILON)
 			{
-				const btScalar		dp = btMin( (btDot(c.m_node->m_x, c.m_normal) + c.m_offset), mrg );
+				const btScalar		dp = btMin( (btDot(node.m_x, c.m_normal) + c.m_offset), mrg );
 				const btVector3		fv = vr - (c.m_normal * dn);
 				// c0 is the impulse matrix, c3 is 1 - the friction coefficient or 0, c4 is the contact hardness coefficient
 				const btVector3		impulse = c.m_impulseMatrix * ( (vr - (fv * c.m_combinedFriction) + (c.m_normal * (dp * c.m_hardness))) * kst );
-				c.m_node->m_x -= impulse * c.m_invMassDt;
+				node.m_x -= impulse * c.m_invMassDt;
 				if (tmpRigid)
 					tmpRigid->applyImpulse(impulse,c.m_relativeNodePosition);
 			}
@@ -190,20 +197,20 @@ void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst
 
 void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btScalar ti)
 {
+
 	for(int i=0,ni=psb->m_softContacts.size();i<ni;++i)
 	{
 		const btSoftBody::SoftContact& c = psb->m_softContacts[i];
-		const btVector3&	nr=c.m_normal;
-		btSoftBody::Node&				n=*c.m_node;
-		btSoftBody::Face&				f=*c.m_face;
-		const btVector3		p=BaryEval(	f.m_n[0]->m_x,
-			f.m_n[1]->m_x,
-			f.m_n[2]->m_x,
-			c.m_weights);
-		const btVector3		q=BaryEval(	f.m_n[0]->m_q,
-			f.m_n[1]->m_q,
-			f.m_n[2]->m_q,
-			c.m_weights);											
+		const btVector3& nr = c.m_normal;
+		btSoftBody::Node& n = psb->m_nodes[c.m_nodeIndex];
+		
+		btAlignedObjectArray<btSoftBody::Node>& faceNodes = c.m_faceSoftBody->m_nodes;
+		btSoftBody::Node& faceNode0 = faceNodes[ c.m_face->m_indicies[0] ];
+		btSoftBody::Node& faceNode1 = faceNodes[ c.m_face->m_indicies[1] ];
+		btSoftBody::Node& faceNode2 = faceNodes[ c.m_face->m_indicies[2] ];
+	
+		btVector3 p = BaryEval(faceNode0.m_x, faceNode1.m_x, faceNode2.m_x, c.m_weights);
+		btVector3 q = BaryEval(faceNode0.m_q, faceNode1.m_q, faceNode2.m_q, c.m_weights);											
 		const btVector3		vr=(n.m_x-n.m_q)-(p-q);
 		btVector3			corr(0,0,0);
 		btScalar dot = btDot(vr,nr);
@@ -214,9 +221,9 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 		}
 		corr			-=	ProjectOnPlane(vr,nr)*c.m_friction;
 		n.m_x			+=	corr*c.m_cfm[0];
-		f.m_n[0]->m_x	-=	corr*(c.m_cfm[1]*c.m_weights.x());
-		f.m_n[1]->m_x	-=	corr*(c.m_cfm[1]*c.m_weights.y());
-		f.m_n[2]->m_x	-=	corr*(c.m_cfm[1]*c.m_weights.z());
+		faceNode0.m_x	-=	corr*(c.m_cfm[1]*c.m_weights.x());
+		faceNode1.m_x	-=	corr*(c.m_cfm[1]*c.m_weights.y());
+		faceNode2.m_x	-=	corr*(c.m_cfm[1]*c.m_weights.z());
 	}
 }
 
@@ -227,8 +234,8 @@ void btDefaultSoftBodySolver::PSolve_Links(btSoftBody* psb,btScalar kst,btScalar
 		btSoftBody::Link&	l=psb->m_links[i];
 		if(l.m_scaledCombinedInvMass > 0)
 		{
-			btSoftBody::Node&			a=*l.m_n[0];
-			btSoftBody::Node&			b=*l.m_n[1];
+			btSoftBody::Node& a = psb->m_nodes[ l.m_linkIndicies[0] ];
+			btSoftBody::Node& b = psb->m_nodes[ l.m_linkIndicies[1] ];
 			const btVector3	del=b.m_x-a.m_x;
 			const btScalar	len=del.length2();
 			if (l.m_restLengthSquared+len > SIMD_EPSILON)

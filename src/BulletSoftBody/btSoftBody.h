@@ -111,8 +111,8 @@ public:
 	
 	struct	Link : Feature
 	{
-		Node*					m_n[2];						// Node pointers
-		btScalar				m_restLength;				///<Constraint tries to keep nodes at this distance
+		int						m_linkIndicies[2];		///<Indicies of m_nodes[]
+		btScalar				m_restLength;			///<Constraint tries to keep nodes at this distance
 		
 		///@name Internal variables. Can be ignored by the user.
 		///@{
@@ -127,18 +127,19 @@ public:
 	//Triangle; used for rendering, collision and various forces(aerodynamic, pressure)
 	struct	Face : Feature
 	{
-		Node*					m_n[3];			// Node pointers
+		int				m_indicies[3];		///<Indicies of m_nodes[]
 		btVector3				m_normal;		// Normal
 		btScalar				m_area;
 		btDbvtNode*				m_leaf;			// Leaf data
 	};
 	
-	struct	RigidContact
+	///Contact between a rigid body and node
+	struct RigidContact
 	{
 		const btCollisionObject*	m_colObj;		// Rigid body
 		btVector3		m_normal;	// Outward normal
 		btScalar		m_offset;	// Offset from origin
-		Node*					m_node;			// Owner node
+		int						m_nodeIndex;
 		btMatrix3x3				m_impulseMatrix;
 		btVector3				m_relativeNodePosition;		///<Position of m_node relative to the btCollisionObject
 		btScalar				m_invMassDt;				///<inverse_mass * timeStep
@@ -148,7 +149,9 @@ public:
 	
 	struct	SoftContact
 	{
-		Node*					m_node;			// Node
+		btSoftBody* m_nodeSoftBody;
+		btSoftBody* m_faceSoftBody;
+		int						m_nodeIndex;	///<Index to m_nodes[] of m_nodeSoftBody
 		Face*					m_face;			// Face
 		btVector3				m_weights;		// Weigths
 		btVector3				m_normal;		// Normal
@@ -159,7 +162,7 @@ public:
 	
 	struct	Anchor
 	{
-		Node*					m_node;			// Node pointer
+		int						m_nodeIndex;
 		btVector3				m_local;		// Anchor position in body space
 		btRigidBody*			m_body;			// Body
 		btScalar				m_influence;
@@ -299,8 +302,6 @@ public:
 	virtual void setCollisionShape(btCollisionShape* collisionShape) {}
 
 	bool checkLink(int node0, int node1) const;
-	bool checkLink(const Node* node0, const Node* node1) const;
-	bool checkFace(int node0, int node1, int node2) const;	///<Check for existing face
 	
 	Material* appendMaterial();
 	
@@ -308,7 +309,6 @@ public:
 	
 	void appendLink(int model=-1,Material* mat=0);
 	void appendLink(int node0, int node1, Material* mat=0, bool bcheckexist=false);
-	void appendLink(Node* node0, Node* node1, Material* mat=0, bool bcheckexist=false);
 	
 	void appendFace(int model=-1,Material* mat=0);
 	void appendFace(int node0, int node1, int node2, Material* mat=0);
@@ -341,10 +341,8 @@ public:
 	int generateBendingConstraints(int distance, Material* mat=0);	//Generate bending constraints based on distance in the adjency graph
 	void randomizeConstraints();	//Randomize constraints to reduce solver bias	
 	
-	void refine(ImplicitFn* ifn,btScalar accurary,bool cut);
-	bool cutLink(int node0,int node1,btScalar position);
-	bool cutLink(const Node* node0,const Node* node1,btScalar position);
-
+	void refine(ImplicitFn* shape, btScalar accuracy, bool cut);
+	
 	///Ray casting using rayFrom and rayTo in worldspace, (not direction!)
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, sRayCast& results);
 	void predictMotion(btScalar timeStep);
@@ -381,10 +379,8 @@ public:
 	}
 	
 	// Private
-	void pointersToIndices();
-	void indicesToPointers(const int* map=0);
 
-	int rayTest(const btVector3& rayFrom,const btVector3& rayTo, btScalar& mint,int& index,bool bcountonly) const;
+	int rayTest(const btVector3& rayFrom,const btVector3& rayTo, btScalar& hitFraction, int& faceIndex, bool bcountonly) const;
 	void initializeFaceTree();
 	bool checkContact(const btCollisionObjectWrapper* colObjWrap,const btVector3& worldSpaceNodePosition,btScalar margin,btSoftBody::RigidContact& contact) const;
 	void updateNormals();
@@ -430,7 +426,7 @@ public:
 	};
 	static void addAeroForces(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces);
 	static void addAeroForceToNode(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, int nodeIndex);	//Add aero force to a node of the body
-	static void addAeroForceToFace(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Face>& faces, int faceIndex);	//Add aero force to a face of the body
+	static void addAeroForceToFace(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces, int faceIndex);	//Add aero force to a face of the body
 
 	AeroForce m_aeroForce;
 	

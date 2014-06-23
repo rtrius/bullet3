@@ -332,53 +332,11 @@ static btScalar				ImplicitSolve(	btSoftBody::ImplicitFn* shape,
 	return(-1);
 }
 
-//
-static inline btDbvtVolume	VolumeOf(	const btSoftBody::Face& f,
-									 btScalar margin)
+///Returns the area of a parallelogram defined by (x1 - x0) and (x2 - x0);
+///if x0, x1, and x2 form a triangle, then the result should be halved.
+static inline btScalar AreaOfParallelogram(const btVector3& x0,  const btVector3& x1, const btVector3& x2)
 {
-	const btVector3*	pts[]={	&f.m_n[0]->m_x,
-		&f.m_n[1]->m_x,
-		&f.m_n[2]->m_x};
-	btDbvtVolume		vol=btDbvtVolume::FromPoints(pts,3);
-	vol.Expand(btVector3(margin,margin,margin));
-	return(vol);
-}
-
-//
-static inline btScalar			AreaOf(		const btVector3& x0,
-									   const btVector3& x1,
-									   const btVector3& x2)
-{
-	const btVector3	a=x1-x0;
-	const btVector3	b=x2-x0;
-	const btVector3	cr=btCross(a,b);
-	const btScalar	area=cr.length();
-	return(area);
-}
-
-//
-static inline btScalar		VolumeOf(	const btVector3& x0,
-									 const btVector3& x1,
-									 const btVector3& x2,
-									 const btVector3& x3)
-{
-	const btVector3	a=x1-x0;
-	const btVector3	b=x2-x0;
-	const btVector3	c=x3-x0;
-	return(btDot(a,btCross(b,c)));
-}
-
-
-
-//
-static inline int		MatchEdge(	const btSoftBody::Node* a,
-								  const btSoftBody::Node* b,
-								  const btSoftBody::Node* ma,
-								  const btSoftBody::Node* mb)
-{
-	if((a==ma)&&(b==mb)) return(0);
-	if((a==mb)&&(b==ma)) return(1);
-	return(-1);
+	return btCross(x1 - x0, x2 - x0).length();
 }
 
 //
@@ -389,13 +347,15 @@ struct btSoftColliders
 	///Detects collision between rigid body and soft body using SDF(Signed Distance Field)
 	struct	CollideSDF_RS : btDbvt::ICollide
 	{
-		void		Process(const btDbvtNode* leaf)
+		void Process(const btDbvtNode* leaf)
 		{
-			btSoftBody::Node*	node=(btSoftBody::Node*)leaf->data;
-			DoNode(*node);
+			int nodeIndex = reinterpret_cast<int>(leaf->data);
+			DoNode(nodeIndex);
 		}
-		void		DoNode(btSoftBody::Node& n) const
+		void DoNode(int nodeIndex) const
 		{
+			 btSoftBody::Node& n = psb->m_nodes[nodeIndex];
+		
 			const btScalar			m = n.m_invMass > 0 ? dynmargin : stamargin;
 			btSoftBody::RigidContact c;
 
@@ -417,7 +377,7 @@ struct btSoftColliders
 					const btScalar		dn=btDot(vr,c.m_normal);
 					const btVector3		fv=vr-c.m_normal*dn;
 					const btScalar		fc=psb->m_cfg.m_dynamicFriction*m_colObj1Wrap->getCollisionObject()->getFriction();
-					c.m_node	=	&n;
+					c.m_nodeIndex	=	nodeIndex;
 					c.m_impulseMatrix = ImpulseMatrix(psb->m_timeStep,ima,imb,iwi,ra);
 					c.m_relativeNodePosition = ra;
 					c.m_invMassDt = ima * psb->m_timeStep;
@@ -438,28 +398,30 @@ struct btSoftColliders
 	};
 	
 	///Detects collision between 2 soft bodies by testing vertices(nodes) against triangles(faces)
-	struct	CollideVF_SS : btDbvt::ICollide
+	struct SoftSoftVertexFaceCollider : btDbvt::ICollide
 	{
-		void		Process(const btDbvtNode* lnode,
-			const btDbvtNode* lface)
+		void Process(const btDbvtNode* lnode, const btDbvtNode* lface)
 		{
-			btSoftBody::Node*	node=(btSoftBody::Node*)lnode->data;
+			int nodeIndex = reinterpret_cast<int>(lnode->data);
+			btSoftBody::Node& node = m_nodeSoftBody->m_nodes[nodeIndex];
+			
 			btSoftBody::Face*	face=(btSoftBody::Face*)lface->data;
-			btVector3			o=node->m_x;
+			btVector3			o = node.m_x;
 			btVector3			p;
 			btScalar			d=SIMD_INFINITY;
-			ProjectOrigin(	face->m_n[0]->m_x-o,
-				face->m_n[1]->m_x-o,
-				face->m_n[2]->m_x-o,
-				p,d);
-			const btScalar	m=mrg+(o-node->m_q).length()*2;
+			
+			const btSoftBody::Node&	faceNode0 = m_faceSoftBody->m_nodes[ face->m_indicies[0] ];
+			const btSoftBody::Node&	faceNode1 = m_faceSoftBody->m_nodes[ face->m_indicies[1] ];
+			const btSoftBody::Node&	faceNode2 = m_faceSoftBody->m_nodes[ face->m_indicies[2] ];
+			
+			ProjectOrigin(faceNode0.m_x - o, faceNode1.m_x - o, faceNode2.m_x - o, p, d);
+			const btScalar	m = mrg + (o - node.m_q).length() * 2;
 			if(d<(m*m))
 			{
-				const btSoftBody::Node*	n[]={face->m_n[0],face->m_n[1],face->m_n[2]};
-				const btVector3			w=BaryCoord(n[0]->m_x,n[1]->m_x,n[2]->m_x,p+o);
-				const btScalar			ma=node->m_invMass;
-				btScalar				mb=BaryEval(n[0]->m_invMass, n[1]->m_invMass, n[2]->m_invMass, w);
-				if(	(n[0]->m_invMass <= 0) || (n[1]->m_invMass <= 0)|| (n[2]->m_invMass <= 0) )
+				btVector3 w = BaryCoord(faceNode0.m_x, faceNode1.m_x, faceNode2.m_x, p + o);
+				btScalar ma = node.m_invMass;
+				btScalar mb = BaryEval(faceNode0.m_invMass, faceNode1.m_invMass, faceNode2.m_invMass, w);
+				if(	(faceNode0.m_invMass <= 0) || (faceNode1.m_invMass <= 0)|| (faceNode2.m_invMass <= 0) )
 				{
 					mb=0;
 				}
@@ -467,19 +429,22 @@ struct btSoftColliders
 				if(ms>0)
 				{
 					btSoftBody::SoftContact	c;
+					c.m_nodeSoftBody = m_nodeSoftBody;
+					c.m_faceSoftBody = m_faceSoftBody;
 					c.m_normal		=	p/-btSqrt(d);
 					c.m_margin		=	m;
-					c.m_node		=	node;
+					c.m_nodeIndex	=	nodeIndex;
 					c.m_face		=	face;
 					c.m_weights		=	w;
-					c.m_friction	=	btMax(psb[0]->m_cfg.m_dynamicFriction,psb[1]->m_cfg.m_dynamicFriction);
-					c.m_cfm[0]		=	ma / ms * psb[0]->m_cfg.m_softContactHardness;
-					c.m_cfm[1]		=	mb / ms * psb[1]->m_cfg.m_softContactHardness;
-					psb[0]->m_softContacts.push_back(c);
+					c.m_friction	=	btMax(m_nodeSoftBody->m_cfg.m_dynamicFriction, m_faceSoftBody->m_cfg.m_dynamicFriction);
+					c.m_cfm[0]		=	ma / ms * m_nodeSoftBody->m_cfg.m_softContactHardness;
+					c.m_cfm[1]		=	mb / ms * m_faceSoftBody->m_cfg.m_softContactHardness;
+					m_nodeSoftBody->m_softContacts.push_back(c);
 				}
 			}	
 		}
-		btSoftBody*		psb[2];
+		btSoftBody* m_nodeSoftBody;
+		btSoftBody* m_faceSoftBody;
 		btScalar		mrg;
 	};
 };

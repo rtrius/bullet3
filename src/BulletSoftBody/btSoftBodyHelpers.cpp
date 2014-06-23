@@ -187,7 +187,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			{
 				const btSoftBody::Link&	l=psb->m_links[i];
 				if(!l.m_material->m_debugDraw) continue;
-				idraw->drawLine(l.m_n[0]->m_x,l.m_n[1]->m_x,lcolor);
+				idraw->drawLine( psb->m_nodes[ l.m_linkIndicies[0] ].m_x, psb->m_nodes[ l.m_linkIndicies[1] ].m_x, lcolor);
 			}
 		}
 		// Normals	 
@@ -211,10 +211,11 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 			for(i=0;i<psb->m_rigidContacts.size();++i)
 			{		
 				const btSoftBody::RigidContact&	c = psb->m_rigidContacts[i];
-				const btVector3				o=	c.m_node->m_x-c.m_normal*
-					(btDot(c.m_node->m_x,c.m_normal)+c.m_offset);
-				const btVector3				x=btCross(c.m_normal,axis[c.m_normal.minAxis()]).normalized();
-				const btVector3				y=btCross(x,c.m_normal).normalized();
+				const btVector3& nodePosition = psb->m_nodes[c.m_nodeIndex].m_x;
+				
+				btVector3 o = nodePosition - c.m_normal * ( btDot(nodePosition, c.m_normal) + c.m_offset );
+				btVector3 x = btCross(c.m_normal,axis[c.m_normal.minAxis()]).normalized();
+				btVector3 y = btCross(x,c.m_normal).normalized();
 				idraw->drawLine(o-x*nscl,o+x*nscl,ccolor);
 				idraw->drawLine(o-y*nscl,o+y*nscl,ccolor);
 				idraw->drawLine(o,o+c.m_normal*nscl*3,btVector3(1,1,0));
@@ -223,19 +224,19 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		// Faces	 
 		if(0!=(drawflags&fDrawFlags::Faces))
 		{
+			const btAlignedObjectArray<btSoftBody::Node>& nodes = psb->m_nodes;
+		
 			const btScalar	scl=(btScalar)0.8;
 			const btScalar	alp=(btScalar)1;
 			const btVector3	col(0,(btScalar)0.7,0);
 			for(i=0;i<psb->m_faces.size();++i)
 			{
-				const btSoftBody::Face&	f=psb->m_faces[i];
-				if(!f.m_material->m_debugDraw) continue;
-				const btVector3			x[]={f.m_n[0]->m_x,f.m_n[1]->m_x,f.m_n[2]->m_x};
-				const btVector3			c=(x[0]+x[1]+x[2])/3;
-				idraw->drawTriangle((x[0]-c)*scl+c,
-					(x[1]-c)*scl+c,
-					(x[2]-c)*scl+c,
-					col,alp);
+				const btSoftBody::Face&	face = psb->m_faces[i];
+				if(!face.m_material->m_debugDraw) continue;
+				
+				const btVector3 x[] = { nodes[ face.m_indicies[0] ].m_x, nodes[ face.m_indicies[1] ].m_x, nodes[ face.m_indicies[2] ].m_x };
+				const btVector3 c = (x[0] + x[1] + x[2]) / 3;
+				idraw->drawTriangle((x[0]-c)*scl+c, (x[1]-c)*scl+c, (x[2]-c)*scl+c, col,alp);
 			}	
 		}
 	}
@@ -244,11 +245,13 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 	{
 		for(i=0;i<psb->m_anchors.size();++i)
 		{
-			const btSoftBody::Anchor&	a=psb->m_anchors[i];
-			const btVector3				q=a.m_body->getWorldTransform()*a.m_local;
-			drawVertex(idraw,a.m_node->m_x,0.25,btVector3(1,0,0));
-			drawVertex(idraw,q,0.25,btVector3(0,1,0));
-			idraw->drawLine(a.m_node->m_x,q,btVector3(1,1,1));
+			const btSoftBody::Anchor& a = psb->m_anchors[i];
+			const btSoftBody::Node& node = psb->m_nodes[a.m_nodeIndex];
+			
+			const btVector3 q = a.m_body->getWorldTransform() * a.m_local;
+			drawVertex( idraw, node.m_x, 0.25, btVector3(1,0,0) );
+			drawVertex( idraw, q, 0.25, btVector3(0,1,0) );
+			idraw->drawLine( node.m_x, q, btVector3(1,1,1) );
 		}
 		for(i=0;i<psb->m_nodes.size();++i)
 		{
@@ -399,8 +402,8 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 	
 		// Note which prior link calculations we are dependent upon & build up dependence lists
 		lr = &(psb->m_links[i]);
-		ar = (lr->m_n[0] - node0)/(node1 - node0);
-		br = (lr->m_n[1] - node0)/(node1 - node0);
+		ar = ( (&psb->m_nodes[ lr->m_linkIndicies[0] ]) - node0 ) / (node1 - node0);
+		br = ( (&psb->m_nodes[ lr->m_linkIndicies[1] ]) - node0 ) / (node1 - node0);
 		if (nodeWrittenAt[ar] > REOP_NOT_DEPENDENT) {
 			linkDepA[i] = nodeWrittenAt[ar];
 			linkDep = &linkDepFreeList[linkDepFrees++];
