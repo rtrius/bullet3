@@ -127,13 +127,13 @@ void pickingPreTickCallback (btDynamicsWorld *world, btScalar timeStep)
 				softDemo->m_goal=rayFrom+rayDir*hit;
 			}				
 		}		
-		btVector3				delta=softDemo->m_goal-softDemo->m_node->m_x;
+		btVector3				delta=softDemo->m_goal-softDemo->m_node->m_position;
 		static const btScalar	maxdrag=10;
 		if(delta.length2()>(maxdrag*maxdrag))
 		{
 			delta=delta.normalized()*maxdrag;
 		}
-		softDemo->m_node->m_v+=delta/timeStep;
+		softDemo->m_node->m_velocity += delta/timeStep;
 	}
 
 }
@@ -1539,7 +1539,7 @@ void SoftDemo::clientMoveAndDisplay()
 
 		if(m_drag)
 		{
-			m_node->m_v*=0;
+			m_node->m_velocity *= 0;
 		}
 
 		m_softBodyWorldInfo.m_sparsesdf.GarbageCollect();
@@ -1613,7 +1613,7 @@ void	SoftDemo::renderme()
 		nps+=psb->m_nodes.size();
 		for(int i=0;i<psb->m_nodes.size();++i)
 		{
-			ps+=psb->m_nodes[i].m_x;
+			ps+=psb->m_nodes[i].m_position;
 		}		
 	}
 	ps/=nps;
@@ -1851,8 +1851,8 @@ void	SoftDemo::mouseFunc(int button, int state, int x, int y)
 							m_node = &hitSoftBody->m_nodes[ face.m_indicies[0] ];
 							for(int i = 1; i < 3; ++i)
 							{
-								btScalar nodeToImpactSqDistance = (m_node->m_x - m_impact).length2();
-								btScalar nextToImpactSqDistance = (nodes[ face.m_indicies[i] ].m_x - m_impact).length2();
+								btScalar nodeToImpactSqDistance = (m_node->m_position - m_impact).length2();
+								btScalar nextToImpactSqDistance = (nodes[ face.m_indicies[i] ].m_position - m_impact).length2();
 							
 								if(nodeToImpactSqDistance > nextToImpactSqDistance)
 								{
@@ -1861,7 +1861,7 @@ void	SoftDemo::mouseFunc(int button, int state, int x, int y)
 							}
 							
 						}
-						if(m_node) m_goal = m_node->m_x;
+						if(m_node) m_goal = m_node->m_position;
 						return;
 					}
 				}

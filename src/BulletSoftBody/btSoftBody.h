@@ -98,15 +98,15 @@ public:
 	
 	struct	Node : Feature
 	{
-		btVector3				m_x;			// Position
-		btVector3				m_q;			// Previous step position
-		btVector3				m_v;			// Velocity
-		btVector3				m_f;			// Force accumulator
-		btVector3				m_normal;
-		btScalar				m_invMass;		///<1 / mass
-		btScalar				m_area;			// Area
-		btDbvtNode*				m_leaf;			// Leaf data
-		int						m_battach:1;	///<If nonzero this node is attached to a btSoftBody::Anchor
+		btVector3 m_position;			// Position
+		btVector3 m_prevPosition;		///<Previous step position; if m_position is overwritten this should be overwritten with the same value.
+		btVector3 m_velocity;			///<Rate at which position changes.
+		btVector3 m_accumulatedForce;	///<Applied, then set to 0 every frame; if(m_invMass == 0.0) this is set to 0 before forces are applied.
+		btVector3 m_normal;				///<Averaged normal over all btSoftBody::Face(s) this node is assigned to.
+		btScalar m_invMass;				///<1.0 / mass
+		btScalar m_area;				///<For each btSoftBody::Face that a node is a part of, it receives 1/3 of the area of the face.
+		btDbvtNode* m_leaf;				// Leaf data
+		int m_battach:1;				///<If nonzero this node is attached to a btSoftBody::Anchor
 	};
 	
 	struct	Link : Feature
@@ -209,7 +209,7 @@ public:
 				for(int i = 0; i < nodes.size(); ++i)
 				{
 					btSoftBody::Node& n = nodes[i];
-					if(n.m_invMass > 0) n.m_f += n.m_normal * (n.m_area * closedTrimeshForce);
+					if(n.m_invMass > 0) n.m_accumulatedForce += n.m_normal * (n.m_area * closedTrimeshForce);
 				}
 			}
 		}

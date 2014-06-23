@@ -360,7 +360,7 @@ struct btSoftColliders
 			btSoftBody::RigidContact c;
 
 			if(	(!n.m_battach)&&
-				psb->checkContact(m_colObj1Wrap,n.m_x,m,c))
+				psb->checkContact(m_colObj1Wrap,n.m_position,m,c))
 			{
 				const btScalar	ima = n.m_invMass;
 				const btScalar	imb= m_rigidBody? m_rigidBody->getInvMass() : 0.f;
@@ -370,9 +370,9 @@ struct btSoftColliders
 					const btTransform&	wtr=m_rigidBody?m_rigidBody->getWorldTransform() : m_colObj1Wrap->getCollisionObject()->getWorldTransform();
 					static const btMatrix3x3	iwiStatic(0,0,0,0,0,0,0,0,0);
 					const btMatrix3x3&	iwi=m_rigidBody?m_rigidBody->getInvInertiaTensorWorld() : iwiStatic;
-					const btVector3		ra=n.m_x-wtr.getOrigin();
+					const btVector3		ra=n.m_position-wtr.getOrigin();
 					const btVector3		va=m_rigidBody ? m_rigidBody->getVelocityInLocalPoint(ra)*psb->m_timeStep : btVector3(0,0,0);
-					const btVector3		vb=n.m_x-n.m_q;	
+					const btVector3		vb = n.m_position - n.m_prevPosition;	
 					const btVector3		vr=vb-va;
 					const btScalar		dn=btDot(vr,c.m_normal);
 					const btVector3		fv=vr-c.m_normal*dn;
@@ -406,7 +406,7 @@ struct btSoftColliders
 			btSoftBody::Node& node = m_nodeSoftBody->m_nodes[nodeIndex];
 			
 			btSoftBody::Face*	face=(btSoftBody::Face*)lface->data;
-			btVector3			o = node.m_x;
+			btVector3			o = node.m_position;
 			btVector3			p;
 			btScalar			d=SIMD_INFINITY;
 			
@@ -414,11 +414,11 @@ struct btSoftColliders
 			const btSoftBody::Node&	faceNode1 = m_faceSoftBody->m_nodes[ face->m_indicies[1] ];
 			const btSoftBody::Node&	faceNode2 = m_faceSoftBody->m_nodes[ face->m_indicies[2] ];
 			
-			ProjectOrigin(faceNode0.m_x - o, faceNode1.m_x - o, faceNode2.m_x - o, p, d);
-			const btScalar	m = mrg + (o - node.m_q).length() * 2;
+			ProjectOrigin(faceNode0.m_position - o, faceNode1.m_position - o, faceNode2.m_position - o, p, d);
+			const btScalar	m = mrg + (o - node.m_prevPosition).length() * 2;
 			if(d<(m*m))
 			{
-				btVector3 w = BaryCoord(faceNode0.m_x, faceNode1.m_x, faceNode2.m_x, p + o);
+				btVector3 w = BaryCoord(faceNode0.m_position, faceNode1.m_position, faceNode2.m_position, p + o);
 				btScalar ma = node.m_invMass;
 				btScalar mb = BaryEval(faceNode0.m_invMass, faceNode1.m_invMass, faceNode2.m_invMass, w);
 				if(	(faceNode0.m_invMass <= 0) || (faceNode1.m_invMass <= 0)|| (faceNode2.m_invMass <= 0) )
