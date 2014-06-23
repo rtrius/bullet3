@@ -106,7 +106,7 @@ public:
 		btScalar				m_invMass;		///<1 / mass
 		btScalar				m_area;			// Area
 		btDbvtNode*				m_leaf;			// Leaf data
-		int						m_battach:1;	// Attached
+		int						m_battach:1;	///<If nonzero this node is attached to a btSoftBody::Anchor
 	};
 	
 	struct	Link : Feature
@@ -386,7 +386,7 @@ public:
 	void updateNormals();
 	void updateBounds();
 	void updateConstants();
-	void updateArea(bool averageArea = true);
+	void updateArea();
 	void applyForces();	
 	
 	/************************************************************************************

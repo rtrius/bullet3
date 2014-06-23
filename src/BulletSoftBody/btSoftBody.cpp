@@ -186,7 +186,7 @@ void			btSoftBody::appendFace(int node0,int node1,int node2,Material* mat)
 	f.m_indicies[1] = node1;
 	f.m_indicies[2] = node2;
 	
-	f.m_area = AreaOfParallelogram(m_nodes[node0].m_x, m_nodes[node1].m_x, m_nodes[node2].m_x);
+	f.m_area = AreaOfParallelogram(m_nodes[node0].m_x, m_nodes[node1].m_x, m_nodes[node2].m_x) * btScalar(0.5f);
 	m_bUpdateRtCst=true;
 }
 
@@ -1248,46 +1248,22 @@ void btSoftBody::updateBounds()
 }
 
 
-//
-void				btSoftBody::updateArea(bool averageArea)
+void btSoftBody::updateArea()
 {
 	// Face area
 	for(int i = 0; i < m_faces.size(); ++i)
 	{
 		Face& f = m_faces[i];
-		f.m_area = AreaOfParallelogram( m_nodes[ f.m_indicies[0] ].m_x, m_nodes[ f.m_indicies[1] ].m_x, m_nodes[ f.m_indicies[2] ].m_x);
+		const btVector3& position0 = m_nodes[ f.m_indicies[0] ].m_x;
+		const btVector3& position1 = m_nodes[ f.m_indicies[1] ].m_x;
+		const btVector3& position2 = m_nodes[ f.m_indicies[2] ].m_x;
+		
+		f.m_area = AreaOfParallelogram(position0, position1, position2) * btScalar(0.5f);
 	}
 	
 	// Node area
-	if (averageArea)
 	{
-		btAlignedObjectArray<int>	counts;
-		counts.resize(m_nodes.size(),0);
-		for(int i = 0; i < m_nodes.size(); ++i)
-		{
-			m_nodes[i].m_area = 0;
-		}
-		for(int i = 0; i < m_faces.size(); ++i)
-		{
-			btSoftBody::Face& f = m_faces[i];
-			for(int j = 0; j < 3; ++j)
-			{
-				int nodeIndex = f.m_indicies[j];
-				counts[nodeIndex]++;
-				m_nodes[nodeIndex].m_area += btFabs(f.m_area);
-			}
-		}
-		for(int i = 0; i < m_nodes.size(); ++i)
-		{
-			if(counts[i]>0)
-				m_nodes[i].m_area/=(btScalar)counts[i];
-			else
-				m_nodes[i].m_area=0;
-		}
-	}
-	else
-	{
-		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area = 0;
+		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area = btScalar(0.0);
 
 		for(int i = 0; i < m_faces.size(); ++i)
 		{
@@ -1299,7 +1275,7 @@ void				btSoftBody::updateArea(bool averageArea)
 			m_nodes[ f.m_indicies[2] ].m_area += area;
 		}
 
-		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area *= 0.3333333f;
+		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area *= btScalar(0.3333333);
 	}
 }
 
@@ -1446,7 +1422,7 @@ void btSoftBody::addAeroForceToNode(const AeroForce& aeroForce, btScalar timeSte
 					btVector3 fLift(0, 0, 0);
 
 					btScalar n_dot_v = nrm.dot(rel_v_nrm);
-					btScalar tri_area = 0.5f * n.m_area;
+					btScalar tri_area = n.m_area;
 							
 					fDrag = 0.5f * kDG * aeroForce.m_airDensity * rel_v2 * tri_area * n_dot_v * (-rel_v_nrm);
 							
@@ -1526,7 +1502,7 @@ void btSoftBody::addAeroForceToFace(const AeroForce& aeroForce, btScalar timeSte
 				btVector3 fLift(0, 0, 0);
 
 				btScalar n_dot_v = nrm.dot(rel_v_nrm);
-				btScalar tri_area = 0.5f * f.m_area;
+				btScalar tri_area = f.m_area;
 					
 				fDrag = 0.5f * kDG * aeroForce.m_airDensity * rel_v2 * tri_area * n_dot_v * (-rel_v_nrm);
 
