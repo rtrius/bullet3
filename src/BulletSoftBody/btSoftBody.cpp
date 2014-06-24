@@ -1321,7 +1321,7 @@ void btSoftBody::applyForces()
 	
 	m_closedTrimeshForce.applyForcesToNodes( getClosedTrimeshVolume(), m_nodes );
 
-	addAeroForces(m_aeroForce, m_timeStep, m_nodes, m_faces);
+	m_aeroForce.addAeroForces(m_timeStep, m_nodes);
 }
 
 //
@@ -1372,9 +1372,7 @@ void btSoftBody::defaultCollisionHandler(btSoftBody* psb)
 	}
 }
 
-/************************************************************************************
-///Aero force
-************************************************************************************/
+
 static inline void ApplyClampedForce(btSoftBody::Node* n, const btVector3& f, btScalar dt)
 {
 	btScalar dtim = dt * n->m_invMass;
@@ -1384,186 +1382,75 @@ static inline void ApplyClampedForce(btSoftBody::Node* n, const btVector3& f, bt
 		n->m_accumulatedForce += f;	//Unclamped force 
 }
 
-void btSoftBody::addAeroForces(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces)
+void btSoftBody::AeroForce::addAeroForces(btScalar timeStep, btAlignedObjectArray<Node>& nodes)
 {
-	const bool use_medium =	(aeroForce.m_liftCoeff > 0) || (aeroForce.m_dragCoeff > 0);
+	const bool use_medium =	(m_liftCoeff > 0) || (m_dragCoeff > 0);
 	if(use_medium)
 	{
-		for(int i = 0; i < nodes.size(); ++i)
-			if(nodes[i].m_invMass > 0) addAeroForceToNode(aeroForce, timeStep, nodes, i);
-		
-		for(int i = 0; i < faces.size(); ++i) addAeroForceToFace(aeroForce, timeStep, nodes, faces, i);	 
+		for(int i = 0; i < nodes.size(); ++i) addAeroForceToNode(timeStep, nodes, i);
 	}
 }
 
-void btSoftBody::addAeroForceToNode(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, int nodeIndex)
+void btSoftBody::AeroForce::addAeroForceToNode(btScalar timeStep, btAlignedObjectArray<Node>& nodes, int nodeIndex)
 {
-	const btScalar kLF = aeroForce.m_liftCoeff;
-	const btScalar kDG = aeroForce.m_dragCoeff;
-	
-	const bool as_lift = kLF>0;
-	const bool as_drag = kDG>0;
-	const bool as_aero = as_lift || as_drag;
-	const bool as_vaero = as_aero && (aeroForce.m_model < btSoftBody::eAeroModel::F_TwoSided);
-
 	Node& n = nodes[nodeIndex];
-
-	if(n.m_invMass > 0)
-	{
-		//Aerodynamics
-		if(as_vaero)
-		{				
-			const btVector3	rel_v = n.m_velocity - aeroForce.m_windVelocity;
-			const btScalar rel_v_len = rel_v.length();
-			const btScalar	rel_v2 = rel_v.length2();
-
-			if(rel_v2>SIMD_EPSILON)
-			{
-				const btVector3 rel_v_nrm = rel_v.normalized();
-				btVector3	nrm = n.m_normal;
-
-				if (aeroForce.m_model == btSoftBody::eAeroModel::V_TwoSidedLiftDrag)
-				{
-					nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
-					btVector3 fDrag(0, 0, 0);
-					btVector3 fLift(0, 0, 0);
-
-					btScalar n_dot_v = nrm.dot(rel_v_nrm);
-					btScalar tri_area = n.m_area;
-							
-					fDrag = 0.5f * kDG * aeroForce.m_airDensity * rel_v2 * tri_area * n_dot_v * (-rel_v_nrm);
-							
-					// Check angle of attack
-					// cos(10º) = 0.98480
-					if ( 0 < n_dot_v && n_dot_v < 0.98480f)
-						fLift = 0.5f * kLF * aeroForce.m_airDensity * rel_v_len * tri_area * btSqrt(1.0f-n_dot_v*n_dot_v) * (nrm.cross(rel_v_nrm).cross(rel_v_nrm));
-
-					// Check if the velocity change resulted by aero drag force exceeds the current velocity of the node.
-					btVector3 del_v_by_fDrag = fDrag * n.m_invMass * timeStep;
-					btScalar del_v_by_fDrag_len2 = del_v_by_fDrag.length2();
-					btScalar v_len2 = n.m_velocity.length2();
-
-					if (del_v_by_fDrag_len2 >= v_len2 && del_v_by_fDrag_len2 > 0)
-					{
-						btScalar del_v_by_fDrag_len = del_v_by_fDrag.length();
-						btScalar v_len = n.m_velocity.length();
-						fDrag *= btScalar(0.8)*(v_len / del_v_by_fDrag_len);
-					}
-
-					n.m_accumulatedForce += fDrag;
-					n.m_accumulatedForce += fLift;
-				}
-				else if (aeroForce.m_model == btSoftBody::eAeroModel::V_Point || aeroForce.m_model == btSoftBody::eAeroModel::V_TwoSided)
-				{
-					if (btSoftBody::eAeroModel::V_TwoSided)
-						nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
-
-					const btScalar dvn = btDot(rel_v,nrm);
-					//Compute forces
-					if(dvn>0)
-					{
-						btVector3		force(0,0,0);
-						const btScalar	c0	=	n.m_area * dvn * rel_v2/2;
-						const btScalar	c1	=	c0 * aeroForce.m_airDensity;
-						force	+=	nrm*(-c1*kLF);
-						force	+=	rel_v.normalized() * (-c1 * kDG);
-						ApplyClampedForce(&n, force, timeStep);
-					}
-				}	
-			}
-		}
-	}
-}
-
-void btSoftBody::addAeroForceToFace(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces, int faceIndex)
-{
-	const btScalar kLF = aeroForce.m_liftCoeff;
-	const btScalar kDG = aeroForce.m_dragCoeff;
 	
-	const bool as_lift = kLF>0;
-	const bool as_drag = kDG>0;
-	const bool as_aero = as_lift || as_drag;
-	const bool as_faero = as_aero && (aeroForce.m_model >= btSoftBody::eAeroModel::F_TwoSided);
+	const btVector3	rel_v = n.m_velocity - m_windVelocity;
+	const btScalar rel_v_len = rel_v.length();
+	const btScalar	rel_v2 = rel_v.length2();
 
-	if(as_faero)
+	if(rel_v2>SIMD_EPSILON)
 	{
-		btSoftBody::Face& f = faces[faceIndex];
-		btSoftBody::Node* faceNodes[3] = { &nodes[ f.m_indicies[0] ], &nodes[ f.m_indicies[1] ], &nodes[ f.m_indicies[2] ] };
+		const btVector3 rel_v_nrm = rel_v.normalized();
+		btVector3	nrm = n.m_normal;
 
-		const btVector3	v=(faceNodes[0]->m_velocity+faceNodes[1]->m_velocity+faceNodes[2]->m_velocity)/3;
-		
-		const btVector3	rel_v = v - aeroForce.m_windVelocity;
-		const btScalar rel_v_len = rel_v.length();
-		const btScalar	rel_v2=rel_v.length2();
-
-		if(rel_v2>SIMD_EPSILON)
+		if (m_model == btSoftBody::AeroForce::V_TwoSidedLiftDrag)
 		{
-			const btVector3 rel_v_nrm = rel_v.normalized();
-			btVector3	nrm = f.m_normal;
+			nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
+			btVector3 fDrag(0, 0, 0);
+			btVector3 fLift(0, 0, 0);
 
-			if (aeroForce.m_model == btSoftBody::eAeroModel::F_TwoSidedLiftDrag)
-			{
-				nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
-
-				btVector3 fDrag(0, 0, 0);
-				btVector3 fLift(0, 0, 0);
-
-				btScalar n_dot_v = nrm.dot(rel_v_nrm);
-				btScalar tri_area = f.m_area;
+			btScalar n_dot_v = nrm.dot(rel_v_nrm);
+			btScalar tri_area = n.m_area;
 					
-				fDrag = 0.5f * kDG * aeroForce.m_airDensity * rel_v2 * tri_area * n_dot_v * (-rel_v_nrm);
+			fDrag = 0.5f * m_dragCoeff * m_airDensity * rel_v2 * tri_area * n_dot_v * (-rel_v_nrm);
+					
+			// Check angle of attack
+			// cos(10º) = 0.98480
+			if ( 0 < n_dot_v && n_dot_v < 0.98480f)
+				fLift = 0.5f * m_liftCoeff * m_airDensity * rel_v_len * tri_area * btSqrt(1.0f-n_dot_v*n_dot_v) * (nrm.cross(rel_v_nrm).cross(rel_v_nrm));
+			
+			// Check if the velocity change resulted by aero drag force exceeds the current velocity of the node.
+			btVector3 del_v_by_fDrag = fDrag * n.m_invMass * timeStep;
+			btScalar del_v_by_fDrag_len2 = del_v_by_fDrag.length2();
+			btScalar v_len2 = n.m_velocity.length2();
 
-				// Check angle of attack
-				// cos(10º) = 0.98480
-				if ( 0 < n_dot_v && n_dot_v < 0.98480f)
-					fLift = 0.5f * kLF * aeroForce.m_airDensity * rel_v_len * tri_area * btSqrt(1.0f-n_dot_v*n_dot_v) * (nrm.cross(rel_v_nrm).cross(rel_v_nrm));
-
-				fDrag /= 3;
-				fLift /= 3;
-
-				for(int j=0;j<3;++j) 
-				{
-					if (faceNodes[j]->m_invMass > 0)
-					{
-						// Check if the velocity change resulted by aero drag force exceeds the current velocity of the node.
-						btVector3 del_v_by_fDrag = fDrag * faceNodes[j]->m_invMass * timeStep;
-						btScalar del_v_by_fDrag_len2 = del_v_by_fDrag.length2();
-						btScalar v_len2 = faceNodes[j]->m_velocity.length2();
-
-						if (del_v_by_fDrag_len2 >= v_len2 && del_v_by_fDrag_len2 > 0)
-						{
-							btScalar del_v_by_fDrag_len = del_v_by_fDrag.length();
-							btScalar v_len = faceNodes[j]->m_velocity.length();
-							fDrag *= btScalar(0.8)*(v_len / del_v_by_fDrag_len);
-						}
-
-						faceNodes[j]->m_accumulatedForce += fDrag; 
-						faceNodes[j]->m_accumulatedForce += fLift;
-					}
-				}
-			}
-			else if (aeroForce.m_model == btSoftBody::eAeroModel::F_OneSided || aeroForce.m_model == btSoftBody::eAeroModel::F_TwoSided)
+			if (del_v_by_fDrag_len2 >= v_len2 && del_v_by_fDrag_len2 > 0)
 			{
-				if (btSoftBody::eAeroModel::F_TwoSided)
-					nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
-
-				const btScalar	dvn=btDot(rel_v,nrm);
-				// Compute forces	 
-				if(dvn>0)
-				{
-					btVector3		force(0,0,0);
-					const btScalar	c0	=	f.m_area * dvn * rel_v2;
-					const btScalar	c1	=	c0*aeroForce.m_airDensity;
-					force	+=	nrm*(-c1*kLF);
-					force	+=	rel_v.normalized()*(-c1*kDG);
-					force	/=	3;
-					for(int j = 0; j < 3; ++j) ApplyClampedForce(faceNodes[j], force, timeStep);
-				}
+				btScalar del_v_by_fDrag_len = del_v_by_fDrag.length();
+				btScalar v_len = n.m_velocity.length();
+				fDrag *= btScalar(0.8)*(v_len / del_v_by_fDrag_len);
 			}
+			
+			n.m_accumulatedForce += fDrag;
+			n.m_accumulatedForce += fLift;
 		}
-	}
+		else if (m_model == btSoftBody::AeroForce::V_TwoSided)
+		{
+			nrm *= (btScalar)( (btDot(nrm,rel_v) < 0) ? -1 : +1);
 
+			const btScalar dvn = btDot(rel_v,nrm);
+			//Compute forces
+			if(dvn>0)
+			{
+				btVector3		force(0,0,0);
+				const btScalar	c0	=	n.m_area * dvn * rel_v2/2;
+				const btScalar	c1	=	c0 * m_airDensity;
+				force	+=	nrm*(-c1*m_liftCoeff);
+				force	+=	rel_v.normalized() * (-c1 * m_dragCoeff);
+				ApplyClampedForce(&n, force, timeStep);
+			}
+		}	
+	}
 }
-/************************************************************************************
-///Aero
-************************************************************************************/
+

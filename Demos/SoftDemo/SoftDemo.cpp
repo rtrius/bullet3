@@ -575,7 +575,7 @@ static void	Init_Aero(SoftDemo* pdemo)
 		psb->generateBendingConstraints(2,pm);
 		psb->m_aeroForce.m_liftCoeff =	0.004;
 		psb->m_aeroForce.m_dragCoeff =	0.0003;
-		psb->m_aeroForce.m_model = btSoftBody::eAeroModel::V_TwoSided;
+		psb->m_aeroForce.m_model = btSoftBody::AeroForce::V_TwoSided;
 		btTransform		trs;
 		btQuaternion	rot;
 		btVector3		ra=Vector3Rand()*0.1;
@@ -623,7 +623,7 @@ static void	Init_Aero2(SoftDemo* pdemo)
 		psb->m_aeroForce.m_dragCoeff = 0.01;
 
 		psb->m_cfg.m_positionIterations = 2;
-		psb->m_aeroForce.m_model = btSoftBody::eAeroModel::V_TwoSidedLiftDrag;
+		psb->m_aeroForce.m_model = btSoftBody::AeroForce::V_TwoSidedLiftDrag;
 
 		
 		psb->m_aeroForce.m_windVelocity = btVector3(4, -12.0, -25.0);

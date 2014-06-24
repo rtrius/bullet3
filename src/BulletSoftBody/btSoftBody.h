@@ -98,7 +98,7 @@ public:
 	
 	struct	Node : Feature
 	{
-		btVector3 m_position;			// Position
+		btVector3 m_position;
 		btVector3 m_prevPosition;		///<Previous step position; if m_position is overwritten this should be overwritten with the same value.
 		btVector3 m_velocity;			///<Rate at which position changes.
 		btVector3 m_accumulatedForce;	///<Applied, then set to 0 every frame; if(m_invMass == 0.0) this is set to 0 before forces are applied.
@@ -389,27 +389,17 @@ public:
 	void updateArea();
 	void applyForces();	
 	
-	/************************************************************************************
-	///Aero force
-	************************************************************************************/
-	struct eAeroModel 
-	{ 
-		enum _ 
-		{
-			V_Point,			///Vertex normals are oriented toward velocity
-			V_TwoSided,			///Vertex normals are flipped to match velocity
-			V_TwoSidedLiftDrag, ///Vertex normals are flipped to match velocity and lift and drag forces are applied
-			F_TwoSided,			///Face normals are flipped to match velocity
-			F_TwoSidedLiftDrag,	///Face normals are flipped to match velocity and lift and drag forces are applied 
-			F_OneSided			///Face normals are taken as it is
-		};
-	};
-	
 	///Generates and applies an aerodynamic force to a btSoftBody.
 	///Useful for simulating objects such as flags or falling papers.
 	struct AeroForce
 	{
-		eAeroModel::_ m_model; 		///<Aerodynamic model (default: V_Point)
+		enum AeroModel
+		{
+			V_TwoSided,			///Vertex normals are flipped to match velocity
+			V_TwoSidedLiftDrag, ///Vertex normals are flipped to match velocity and lift and drag forces are applied
+		};
+		
+		AeroForce::AeroModel m_model; 		///<Aerodynamic model (default: V_TwoSided)
 		btVector3 m_windVelocity;
 		btScalar m_dragCoeff;			///<Range [0, +inf]
 		btScalar m_liftCoeff;			///<Range [0, +inf]
@@ -417,22 +407,18 @@ public:
 		
 		AeroForce()
 		{
-			m_model = eAeroModel::V_Point;
+			m_model = AeroForce::V_TwoSided;
 			m_windVelocity = btVector3(0,0,0);
 			m_dragCoeff = btScalar(0.0);
 			m_liftCoeff = btScalar(0.0);
 			m_airDensity = btScalar(1.2);
 		}
+		
+		void addAeroForces(btScalar timeStep, btAlignedObjectArray<Node>& nodes);
+		void addAeroForceToNode(btScalar timeStep, btAlignedObjectArray<Node>& nodes, int nodeIndex);
 	};
-	static void addAeroForces(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces);
-	static void addAeroForceToNode(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, int nodeIndex);	//Add aero force to a node of the body
-	static void addAeroForceToFace(const AeroForce& aeroForce, btScalar timeStep, btAlignedObjectArray<Node>& nodes, btAlignedObjectArray<Face>& faces, int faceIndex);	//Add aero force to a face of the body
 
 	AeroForce m_aeroForce;
-	
-	/************************************************************************************
-	///Aero force
-	************************************************************************************/
 };
 
 
