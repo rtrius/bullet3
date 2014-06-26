@@ -216,7 +216,7 @@ void			btSoftBody::appendAnchor(int node,btRigidBody* body, const btVector3& loc
 	a.m_influence = influence;
 	m_anchors.push_back(a);
 
-	m_nodes[node].m_battach = 1;
+	m_nodes[node].m_isAttachedToAnchor = 1;
 }
 
 //
@@ -404,47 +404,50 @@ void btSoftBody::setRestLengthScale(btScalar restLengthScale)
 //
 void btSoftBody::setPose(btScalar poseMatching)
 {
-	m_pose.m_poseMatching = poseMatching;
+	m_pose.initializePose(m_nodes, getTotalMass(), poseMatching);
+	updateConstants();
+}
+
+void btSoftBody::Pose::initializePose(const btAlignedObjectArray<btSoftBody::Node>& nodes, btScalar dynamicMass, btScalar poseMatching)
+{
+	m_poseMatching = poseMatching;
 
 	//Set per-node weights
 	{
 		int numKinematicNodes = 0;
-		for(int i = 0; i < m_nodes.size(); ++i)
-			if(m_nodes[i].m_invMass <= 0) ++numKinematicNodes;
+		for(int i = 0; i < nodes.size(); ++i)
+			if(nodes[i].m_invMass <= 0) ++numKinematicNodes;
 		
-		btScalar dynamicMass = getTotalMass();
-		btScalar kinematicMass = dynamicMass * m_nodes.size() * btScalar(1000.0);
+		btScalar kinematicMass = dynamicMass * nodes.size() * btScalar(1000.0);
 		btScalar totalMass = dynamicMass + btScalar(numKinematicNodes) * kinematicMass;
 		
-		m_pose.m_weights.resize( m_nodes.size() );
-		for(int i = 0; i < m_nodes.size(); ++i)
+		m_weights.resize( nodes.size() );
+		for(int i = 0; i < nodes.size(); ++i)
 		{
-			Node& n = m_nodes[i];
-			m_pose.m_weights[i] = (n.m_invMass > 0) ? 1 / (m_nodes[i].m_invMass * totalMass) : kinematicMass / totalMass;
+			const Node& n = nodes[i];
+			m_weights[i] = (n.m_invMass > 0) ? 1 / (nodes[i].m_invMass * totalMass) : kinematicMass / totalMass;
 		}
 	}
 	
 	//Initialize initial positions, center of mass, rotation
 	{
-		btVector3 centerOfMass = evaluateCenterOfMass();
+		btVector3 centerOfMass = evaluateCenterOfMass(nodes);
 		
-		m_pose.m_referencePositions.resize( m_nodes.size() );
-		for(int i = 0; i < m_nodes.size(); ++i) m_pose.m_referencePositions[i] = m_nodes[i].m_position - centerOfMass;
+		m_referencePositions.resize( nodes.size() );
+		for(int i = 0; i < nodes.size(); ++i) m_referencePositions[i] = nodes[i].m_position - centerOfMass;
 		
-		m_pose.m_centerOfMass = centerOfMass;
-		m_pose.m_rotation.setIdentity();
+		m_centerOfMass = centerOfMass;
+		m_rotation.setIdentity();
 	}
-	
-	updateConstants();
 }
 
 //
-void btSoftBody::updateAndApplyPose()
+void btSoftBody::Pose::updateAndApplyPose(btAlignedObjectArray<btSoftBody::Node>& nodes)
 {
-	if( m_pose.m_poseMatching != btScalar(0.0) )
+	if( m_poseMatching != btScalar(0.0) )
 	{
 		//Update center of mass
-		btVector3 centerOfMass = evaluateCenterOfMass();
+		btVector3 centerOfMass = evaluateCenterOfMass(nodes);
 		
 		//Update rotation
 		btMatrix3x3 rotation;
@@ -456,10 +459,10 @@ void btSoftBody::updateAndApplyPose()
 			Apq[1].setY(SIMD_EPSILON*2);
 			Apq[2].setZ(SIMD_EPSILON*3);
 			
-			for(int i = 0; i < m_nodes.size(); ++i)
+			for(int i = 0; i < nodes.size(); ++i)
 			{
-				const btVector3 a = m_pose.m_weights[i] * (m_nodes[i].m_position - centerOfMass);
-				const btVector3& b = m_pose.m_referencePositions[i];
+				const btVector3 a = m_weights[i] * (nodes[i].m_position - centerOfMass);
+				const btVector3& b = m_referencePositions[i];
 				Apq[0] += a.x() * b;
 				Apq[1] += a.y() * b;
 				Apq[2] += a.z() * b;
@@ -470,18 +473,18 @@ void btSoftBody::updateAndApplyPose()
 		}
 		
 		//
-		m_pose.m_centerOfMass = centerOfMass;
-		m_pose.m_rotation = rotation;
+		m_centerOfMass = centerOfMass;
+		m_rotation = rotation;
 		
 		//Apply pose matching constraint
 		{
-			for(int i = 0; i < m_nodes.size(); ++i)
+			for(int i = 0; i < nodes.size(); ++i)
 			{
-				Node& n = m_nodes[i];
+				Node& n = nodes[i];
 				if(n.m_invMass > 0)
 				{
-					btVector3 x = rotation * m_pose.m_referencePositions[i] + centerOfMass;
-					n.m_position = Lerp(n.m_position, x, m_pose.m_poseMatching);
+					btVector3 x = rotation * m_referencePositions[i] + centerOfMass;
+					n.m_position = Lerp(n.m_position, x, m_poseMatching);
 				}
 			}
 		}
@@ -489,13 +492,13 @@ void btSoftBody::updateAndApplyPose()
 }
 
 //
-btVector3 btSoftBody::evaluateCenterOfMass() const
+btVector3 btSoftBody::Pose::evaluateCenterOfMass(const btAlignedObjectArray<btSoftBody::Node>& nodes) const
 {
 	btVector3 centerOfMass(0,0,0);
 	
-	if( m_pose.m_poseMatching != btScalar(0.0) )
+	if( m_poseMatching != btScalar(0.0) )
 	{
-		for(int i = 0; i < m_nodes.size(); ++i) centerOfMass += m_nodes[i].m_position * m_pose.m_weights[i];
+		for(int i = 0; i < nodes.size(); ++i) centerOfMass += nodes[i].m_position * m_weights[i];
 	}
 	
 	return centerOfMass;
@@ -1031,7 +1034,7 @@ void btSoftBody::predictMotion(btScalar timeStep)
 	}
 	
 	// Pose
-	updateAndApplyPose();
+	m_pose.updateAndApplyPose(m_nodes);
 	
 	// Clear contacts
 	m_rigidContacts.resize(0);

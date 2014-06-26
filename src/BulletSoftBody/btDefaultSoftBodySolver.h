@@ -38,8 +38,7 @@ public:
 	virtual void solveConstraints( float solverdt );
 
 	virtual void predictMotion( float solverdt );
-
-	static void VSolve_Links(btSoftBody* psb,btScalar kst);
+	
 	static void PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti);
 	static void PSolve_RigidContacts(btSoftBody* psb,btScalar kst,btScalar ti);
 	static void PSolve_SoftContacts(btSoftBody* psb,btScalar,btScalar ti);

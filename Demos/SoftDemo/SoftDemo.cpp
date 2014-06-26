@@ -439,7 +439,6 @@ static void	Init_CapsuleCollision(SoftDemo* pdemo)
 	psb->setTotalMass(0.1);
 
 	psb->m_cfg.m_positionIterations = 10;
-//	psb->m_cfg.m_velocityIterations = 10;
 
 
 	//	psb->appendAnchor(0,body);

@@ -359,8 +359,7 @@ struct btSoftColliders
 			const btScalar			m = n.m_invMass > 0 ? dynmargin : stamargin;
 			btSoftBody::RigidContact c;
 
-			if(	(!n.m_battach)&&
-				psb->checkContact(m_colObj1Wrap,n.m_position,m,c))
+			if( !n.m_isAttachedToAnchor && psb->checkContact(m_colObj1Wrap,n.m_position,m,c) )
 			{
 				const btScalar	ima = n.m_invMass;
 				const btScalar	imb= m_rigidBody? m_rigidBody->getInvMass() : 0.f;

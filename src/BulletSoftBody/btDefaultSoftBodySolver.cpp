@@ -46,14 +46,6 @@ void btDefaultSoftBodySolver::updateSoftBodies( )
 
 void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 {
-	//Prepare links
-	for(int i = 0; i < softBody->m_links.size();++i)
-	{
-		btSoftBody::Link& l = softBody->m_links[i];
-		l.m_gradient0to1 = softBody->m_nodes[ l.m_linkIndicies[1] ].m_prevPosition - softBody->m_nodes[ l.m_linkIndicies[0] ].m_prevPosition;
-		l.m_impulseScaling = 1 / (l.m_gradient0to1.length2() * l.m_scaledCombinedInvMass);
-	}
-	
 	//Prepare anchors
 	for(int i = 0; i < softBody->m_anchors.size(); ++i)
 	{
@@ -66,23 +58,6 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 		a.m_rotatedPosition = ra;
 		a.m_invMassDt = softBody->m_timeStep * node.m_invMass;
 		a.m_body->activate();
-	}
-	
-	//Solve velocities
-	if(softBody->m_cfg.m_velocityIterations > 0)
-	{
-		// Solve
-		for(int iteration = 0; iteration < softBody->m_cfg.m_velocityIterations; ++iteration)
-		{
-			btDefaultSoftBodySolver::VSolve_Links(softBody,1);
-		}
-		
-		// Update
-		for(int i = 0; i < softBody->m_nodes.size();++i)
-		{
-			btSoftBody::Node& n = softBody->m_nodes[i];
-			n.m_position = n.m_prevPosition + n.m_velocity * softBody->m_timeStep;
-		}
 	}
 	
 	//Solve positions
@@ -128,24 +103,6 @@ void btDefaultSoftBodySolver::predictMotion( float timeStep )
 	}
 }
 
-
-
-
-void btDefaultSoftBodySolver::VSolve_Links(btSoftBody* psb,btScalar kst)
-{
-	for(int i=0,ni=psb->m_links.size();i<ni;++i)
-	{			
-		btSoftBody::Link& l = psb->m_links[i];
-		
-		btSoftBody::Node& node0 = psb->m_nodes[ l.m_linkIndicies[0] ];
-		btSoftBody::Node& node1 = psb->m_nodes[ l.m_linkIndicies[1] ];
-		
-		const btScalar j = -btDot(l.m_gradient0to1, node0.m_velocity - node1.m_velocity) * l.m_impulseScaling * kst;
-		node0.m_velocity += l.m_gradient0to1 * (j * node0.m_invMass);
-		node1.m_velocity -= l.m_gradient0to1 * (j * node1.m_invMass);
-	}
-}
-
 void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScalar ti)
 {
 	const btScalar anchorHardness = psb->m_cfg.m_anchorHardness * kst;
@@ -185,7 +142,7 @@ void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst
 			{
 				const btScalar		dp = btMin( (btDot(node.m_position, c.m_normal) + c.m_offset), mrg );
 				const btVector3		fv = vr - (c.m_normal * dn);
-				// c0 is the impulse matrix, c3 is 1 - the friction coefficient or 0, c4 is the contact hardness coefficient
+				
 				const btVector3		impulse = c.m_impulseMatrix * ( (vr - (fv * c.m_combinedFriction) + (c.m_normal * (dp * c.m_hardness))) * kst );
 				node.m_position -= impulse * c.m_invMassDt;
 				if (tmpRigid)

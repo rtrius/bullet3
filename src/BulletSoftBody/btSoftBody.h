@@ -59,7 +59,7 @@ struct	btSoftBodyWorldInfo
 
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
 ///There is two-way interaction between btSoftBody and btRigidBody/btCollisionObject.
-class	btSoftBody : public btCollisionObject
+class btSoftBody : public btCollisionObject
 {
 public:
 	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
@@ -80,8 +80,8 @@ public:
 	
 	struct	Element
 	{
-		void*			m_tag;			// User data
-		Element() : m_tag(0) {}
+		void* m_userPointer;
+		Element() : m_userPointer(0) {}
 	};
 	
 	struct	Material : Element
@@ -103,10 +103,10 @@ public:
 		btVector3 m_velocity;			///<Rate at which position changes.
 		btVector3 m_accumulatedForce;	///<Applied, then set to 0 every frame; if(m_invMass == 0.0) this is set to 0 before forces are applied.
 		btVector3 m_normal;				///<Averaged normal over all btSoftBody::Face(s) this node is assigned to.
-		btScalar m_invMass;				///<1.0 / mass
+		btScalar m_invMass;				///<1.0 / mass; if set to 0 the node is fixed and cannot move.
 		btScalar m_area;				///<For each btSoftBody::Face that a node is a part of, it receives 1/3 of the area of the face.
 		btDbvtNode* m_leaf;				// Leaf data
-		int m_battach:1;				///<If nonzero this node is attached to a btSoftBody::Anchor
+		int m_isAttachedToAnchor:1;		///<If nonzero this node is attached to a btSoftBody::Anchor(disables rigid body collision)
 	};
 	
 	struct	Link : Feature
@@ -119,8 +119,6 @@ public:
 		int						m_bbending:1;				// Bending link
 		btScalar				m_scaledCombinedInvMass;	///<(inverse_mass_0 + inverse_mass_1) * linearStiffness
 		btScalar				m_restLengthSquared;
-		btScalar				m_impulseScaling;			// |gradient|^2/c0
-		btVector3				m_gradient0to1;
 		///@}
 	};
 	
@@ -231,11 +229,14 @@ public:
 			m_centerOfMass = btVector3(0,0,0);
 			m_rotation.setIdentity();
 		}
+		
+		void initializePose(const btAlignedObjectArray<btSoftBody::Node>& nodes, btScalar totalMass, btScalar poseMatching);
+		void updateAndApplyPose(btAlignedObjectArray<btSoftBody::Node>& nodes);
+		btVector3 evaluateCenterOfMass(const btAlignedObjectArray<btSoftBody::Node>& nodes) const;
 	};
 	
 	void setPose(btScalar poseMatching);		///<Enables pose matching constraint if (poseMatching != 0.0)
-	void updateAndApplyPose();
-	btVector3 evaluateCenterOfMass() const;
+	
 	
 	Pose m_pose;		///<Pose matching constraint; can be used to ensure that the soft body maintains a certain shape
 	
@@ -249,8 +250,7 @@ public:
 		btScalar m_softContactHardness;			///<[0, 1]; hardness(ERP) determines how quickly penetration is resolved.
 		btScalar m_anchorHardness;				///<[0, 1]
 		
-		int m_velocityIterations;
-		int m_positionIterations;
+		int m_positionIterations;				///<More iterations improves the quality, but also makes the constraints more stiff
 		
 		Config()
 		{
@@ -262,7 +262,6 @@ public:
 			m_softContactHardness = btScalar(1.0);
 			m_anchorHardness = btScalar(0.7);
 			
-			m_velocityIterations = 0;
 			m_positionIterations = 1;
 		}
 	};
