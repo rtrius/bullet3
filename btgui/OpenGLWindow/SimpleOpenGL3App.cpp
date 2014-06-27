@@ -210,14 +210,19 @@ void SimpleOpenGL3App::drawText( const char* txt, int posX, int posY)
 
 	glDisable(GL_BLEND);
 }
+
+/** <jppm> moved this struct to outside of registerCubeShape()
+ * as C++98 does not allow invoking templates of local types
+ */
+struct GfxVertex
+{
+  float x,y,z,w;
+  float nx,ny,nz;
+  float u,v;
+};
+
 int	SimpleOpenGL3App::registerCubeShape(float halfExtentsX,float halfExtentsY, float halfExtentsZ)
 {
-	struct GfxVertex
-	{
-		float x,y,z,w;
-		float nx,ny,nz;
-		float u,v;
-	};
 	
 	int strideInBytes = 9*sizeof(float);
 	int numVertices = sizeof(cube_vertices)/strideInBytes;
