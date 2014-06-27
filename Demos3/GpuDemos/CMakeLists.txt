@@ -34,7 +34,9 @@ SET(App_Bullet3_OpenCL_Demos_SRCS
 )
 
 LINK_LIBRARIES(
-			Bullet2FileLoader	Bullet3OpenCL_clew Bullet3Dynamics Bullet3Collision Bullet3Geometry Bullet3Common OpenGLWindow gwen ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY}
+			Bullet2FileLoader	Bullet3OpenCL_clew Bullet3Dynamics Bullet3Collision Bullet3Geometry Bullet3Common
+Bullet3Fluids Bullet3FluidsOpenCL
+OpenGLWindow gwen ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY}
 )
 
 
