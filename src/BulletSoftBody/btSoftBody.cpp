@@ -75,10 +75,9 @@ void	btSoftBody::initDefaults()
 btSoftBody::~btSoftBody()
 {
 	//for now, delete the internal shape
-	delete m_collisionShape;	
-	int i;
+	delete m_collisionShape;
 
-	for(i=0;i<m_materials.size();++i) 
+	for(int i=0;i<m_materials.size();++i) 
 		btAlignedFree(m_materials[i]);
 }
 
@@ -98,7 +97,7 @@ bool			btSoftBody::checkLink(int node0,int node1) const
 //
 btSoftBodyMaterial* btSoftBody::appendMaterial()
 {
-	btSoftBodyMaterial*	pm=new(btAlignedAlloc(sizeof(btSoftBodyMaterial),16)) btSoftBodyMaterial();
+	btSoftBodyMaterial*	pm = new(btAlignedAlloc(sizeof(btSoftBodyMaterial),16)) btSoftBodyMaterial;
 	if(m_materials.size()>0)
 		*pm=*m_materials[0];
 	else
@@ -125,23 +124,18 @@ void btSoftBody::appendNode(const btVector3& position, btScalar mass)
 }
 
 //
-void btSoftBody::appendLink(int model, btSoftBodyMaterial* mat)
-{
-	btSoftBodyLink l;
-	if(model>=0)
-		l=m_links[model];
-	else
-	{ ZeroInitialize(l);l.m_material=mat?mat:m_materials[0]; }
-	m_links.push_back(l);
-}
-
-//
 void btSoftBody::appendLink(int node0, int node1, btSoftBodyMaterial* mat, bool bcheckexist)
 {
 
-	if((!bcheckexist)||(!checkLink(node0,node1)))
+	if( !bcheckexist || !checkLink(node0,node1) )
 	{
-		appendLink(-1,mat);
+		{
+			btSoftBodyLink l;
+			ZeroInitialize(l);
+			l.m_material = mat ? mat : m_materials[0]; 
+			m_links.push_back(l);
+		}
+		
 		btSoftBodyLink& l = m_links[ m_links.size()-1 ];
 		l.m_linkIndicies[0] = node0;
 		l.m_linkIndicies[1] = node1;
@@ -150,16 +144,6 @@ void btSoftBody::appendLink(int node0, int node1, btSoftBodyMaterial* mat, bool 
 	}
 }
 
-//
-void btSoftBody::appendFace(int model,btSoftBodyMaterial* mat)
-{
-	btSoftBodyFace f;
-	if(model>=0)
-	{ f=m_faces[model]; }
-	else
-	{ ZeroInitialize(f);f.m_material=mat?mat:m_materials[0]; }
-	m_faces.push_back(f);
-}
 
 //
 void btSoftBody::appendFace(int node0,int node1,int node2,btSoftBodyMaterial* mat)
@@ -168,14 +152,15 @@ void btSoftBody::appendFace(int node0,int node1,int node2,btSoftBodyMaterial* ma
 	btAssert(node1!=node2);
 	btAssert(node2!=node0);
 	
-	if (node0==node1)
-		return;
-	if (node1==node2)
-		return;
-	if (node2==node0)
-		return;
+	if(node0 == node1 || node1 == node2 || node2 == node0) return;
 
-	appendFace(-1,mat);
+	{
+		btSoftBodyFace f;
+		ZeroInitialize(f);
+		f.m_material = mat ? mat : m_materials[0]; 
+		m_faces.push_back(f);
+	}
+	
 	btSoftBodyFace&	f = m_faces[m_faces.size()-1];
 	f.m_indicies[0] = node0;
 	f.m_indicies[1] = node1;
@@ -788,7 +773,7 @@ void btSoftBody::refine(btSoftImplicitShape* shape, btScalar accuracy, bool cut)
 			const int ni = edges(linkIndex0, linkIndex1);
 			if(ni > 0)		//If a new node was created between these nodes
 			{
-				appendLink(i);
+				appendLink(linkIndex0, linkIndex1, link.m_material);
 				btSoftBodyLink* pft[] = {	&m_links[i], &m_links[m_links.size()-1] };			
 				pft[0]->m_linkIndicies[0] = linkIndex0;
 				pft[0]->m_linkIndicies[1] = ni;
@@ -810,7 +795,7 @@ void btSoftBody::refine(btSoftImplicitShape* shape, btScalar accuracy, bool cut)
 				const int ni=edges(idx[j],idx[k]);
 				if(ni>0)
 				{
-					appendFace(i);
+					appendFace(idx[0], idx[1], idx[2], face.m_material);
 					const int	l=(k+1)%3;
 					btSoftBodyFace* pft[] = { &m_faces[i], &m_faces[m_faces.size()-1] };
 					pft[0]->m_indicies[0] = idx[l];
@@ -862,7 +847,7 @@ void btSoftBody::refine(btSoftImplicitShape* shape, btScalar accuracy, bool cut)
 			int	todetach = 0;
 			if(cnodes[linkIndex0] && cnodes[linkIndex1])
 			{
-				appendLink(i);
+				appendLink(linkIndex0, linkIndex1, m_links[i].m_material);
 				todetach=m_links.size()-1;
 			}
 			else
@@ -1044,16 +1029,19 @@ void btSoftBody::predictMotion(btScalar timeStep)
 struct	RayFromToCaster : btDbvt::ICollide
 {
 	const btAlignedObjectArray<btSoftBodyNode>& m_nodes;
+	const btAlignedObjectArray<btSoftBodyFace>& m_faces;
 
 	btVector3			m_rayFrom;
 	btVector3			m_rayTo;
 	btVector3			m_rayNormalizedDirection;
 	btScalar			m_mint;
-	btSoftBodyFace*	m_face;
+	const btSoftBodyFace*	m_face;
 	int					m_tests;
 	
 	
-	RayFromToCaster(const btAlignedObjectArray<btSoftBodyNode>& nodes, const btVector3& rayFrom,const btVector3& rayTo,btScalar mxt);
+	RayFromToCaster(const btAlignedObjectArray<btSoftBodyNode>& nodes,
+					const btAlignedObjectArray<btSoftBodyFace>& faces,
+					const btVector3& rayFrom,const btVector3& rayTo,btScalar mxt);
 	void Process(const btDbvtNode* leaf);
 
 	static inline btScalar	rayFromToTriangle(const btVector3& rayFrom, const btVector3& rayTo,
@@ -1061,8 +1049,9 @@ struct	RayFromToCaster : btDbvt::ICollide
 		const btVector3& a, const btVector3& b, const btVector3& c,
 		btScalar maxt=SIMD_INFINITY);
 };
-RayFromToCaster::RayFromToCaster(const btAlignedObjectArray<btSoftBodyNode>& nodes, 
-								const btVector3& rayFrom, const btVector3& rayTo, btScalar mxt) : m_nodes(nodes)
+RayFromToCaster::RayFromToCaster(const btAlignedObjectArray<btSoftBodyNode>& nodes,
+					const btAlignedObjectArray<btSoftBodyFace>& faces,
+					const btVector3& rayFrom, const btVector3& rayTo, btScalar mxt) : m_nodes(nodes), m_faces(faces)
 {
 	m_rayFrom = rayFrom;
 	m_rayNormalizedDirection = (rayTo-rayFrom);
@@ -1073,7 +1062,9 @@ RayFromToCaster::RayFromToCaster(const btAlignedObjectArray<btSoftBodyNode>& nod
 }
 void RayFromToCaster::Process(const btDbvtNode* leaf)
 {
-	btSoftBodyFace& f = *(btSoftBodyFace*)leaf->data;
+	int faceIndex = reinterpret_cast<int>(leaf->data);
+	const btSoftBodyFace& f = m_faces[faceIndex];
+	
 	btVector3 node0 = m_nodes[ f.m_indicies[0] ].m_position;
 	btVector3 node1 = m_nodes[ f.m_indicies[1] ].m_position;
 	btVector3 node2 = m_nodes[ f.m_indicies[2] ].m_position;
@@ -1147,7 +1138,7 @@ int btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btScal
 	}
 	else	//Use dbvt
 	{
-		RayFromToCaster	collider(m_nodes, rayFrom, rayTo, hitFraction);
+		RayFromToCaster	collider(m_nodes, m_faces, rayFrom, rayTo, hitFraction);
 
 		btDbvt::rayTest(m_faceBvh.m_root, rayFrom, rayTo, collider);
 		if(collider.m_face)
@@ -1175,7 +1166,7 @@ void btSoftBody::initializeFaceTree()
 		const btVector3* points[3] = { &faceNode0.m_position, &faceNode1.m_position, &faceNode2.m_position} ;
 		btDbvtVolume faceAabb = btDbvtVolume::FromPoints(points, 3);
 			
-		f.m_leaf = m_faceBvh.insert( faceAabb, &f );
+		f.m_leaf = m_faceBvh.insert( faceAabb, reinterpret_cast<void*>(i) );
 	}
 }
 

@@ -50,11 +50,6 @@ class btSoftRigidDynamicsWorld;
 class SoftDemo : public PlatformDemoApplication
 {
 public:
-
-	btAlignedObjectArray<btSoftSoftCollisionAlgorithm*> m_SoftSoftCollisionAlgorithms;
-
-	btAlignedObjectArray<btSoftRididCollisionAlgorithm*> m_SoftRigidCollisionAlgorithms;
-
 	btSoftBodyWorldInfo	m_softBodyWorldInfo;
 
 	

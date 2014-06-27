@@ -162,9 +162,10 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 		btSoftBodyNode& n = psb->m_nodes[c.m_nodeIndex];
 		
 		btAlignedObjectArray<btSoftBodyNode>& faceNodes = c.m_faceSoftBody->m_nodes;
-		btSoftBodyNode& faceNode0 = faceNodes[ c.m_face->m_indicies[0] ];
-		btSoftBodyNode& faceNode1 = faceNodes[ c.m_face->m_indicies[1] ];
-		btSoftBodyNode& faceNode2 = faceNodes[ c.m_face->m_indicies[2] ];
+		const btSoftBodyFace& face = c.m_faceSoftBody->m_faces[c.m_faceIndex];
+		btSoftBodyNode& faceNode0 = faceNodes[ face.m_indicies[0] ];
+		btSoftBodyNode& faceNode1 = faceNodes[ face.m_indicies[1] ];
+		btSoftBodyNode& faceNode2 = faceNodes[ face.m_indicies[2] ];
 	
 		btVector3 p = BaryEval(faceNode0.m_position, faceNode1.m_position, faceNode2.m_position, c.m_weights);
 		btVector3 q = BaryEval(faceNode0.m_prevPosition, faceNode1.m_prevPosition, faceNode2.m_prevPosition, c.m_weights);											

@@ -404,14 +404,15 @@ struct btSoftColliders
 			int nodeIndex = reinterpret_cast<int>(lnode->data);
 			btSoftBodyNode& node = m_nodeSoftBody->m_nodes[nodeIndex];
 			
-			btSoftBodyFace*	face=(btSoftBodyFace*)lface->data;
+			int faceIndex = reinterpret_cast<int>(lface->data);
+			btSoftBodyFace&	face = m_faceSoftBody->m_faces[faceIndex];
 			btVector3			o = node.m_position;
 			btVector3			p;
 			btScalar			d=SIMD_INFINITY;
 			
-			const btSoftBodyNode&	faceNode0 = m_faceSoftBody->m_nodes[ face->m_indicies[0] ];
-			const btSoftBodyNode&	faceNode1 = m_faceSoftBody->m_nodes[ face->m_indicies[1] ];
-			const btSoftBodyNode&	faceNode2 = m_faceSoftBody->m_nodes[ face->m_indicies[2] ];
+			const btSoftBodyNode&	faceNode0 = m_faceSoftBody->m_nodes[ face.m_indicies[0] ];
+			const btSoftBodyNode&	faceNode1 = m_faceSoftBody->m_nodes[ face.m_indicies[1] ];
+			const btSoftBodyNode&	faceNode2 = m_faceSoftBody->m_nodes[ face.m_indicies[2] ];
 			
 			ProjectOrigin(faceNode0.m_position - o, faceNode1.m_position - o, faceNode2.m_position - o, p, d);
 			const btScalar	m = mrg + (o - node.m_prevPosition).length() * 2;
@@ -433,7 +434,7 @@ struct btSoftColliders
 					c.m_normal		=	p/-btSqrt(d);
 					c.m_margin		=	m;
 					c.m_nodeIndex	=	nodeIndex;
-					c.m_face		=	face;
+					c.m_faceIndex	=	faceIndex;
 					c.m_weights		=	w;
 					c.m_friction	=	btMax(m_nodeSoftBody->m_cfg.m_dynamicFriction, m_faceSoftBody->m_cfg.m_dynamicFriction);
 					c.m_nodeCfm		=	ma / ms * m_nodeSoftBody->m_cfg.m_softContactHardness;

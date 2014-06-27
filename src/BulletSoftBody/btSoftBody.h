@@ -65,7 +65,7 @@ struct btSoftBodyNode
 	btVector3 m_normal;				///<Averaged normal over all btSoftBodyFace(s) this node is assigned to.
 	btScalar m_invMass;				///<1.0 / mass; if set to 0 the node is fixed and cannot move.
 	btScalar m_area;				///<For each btSoftBodyFace that a node is a part of, it receives 1/3 of the area of the face.
-	btDbvtNode* m_leaf;				// Leaf data
+	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this node
 	int m_isAttachedToAnchor:1;		///<If nonzero this node is attached to a btSoftBodyAnchor(disables rigid body collision)
 };
 struct btSoftBodyMaterial
@@ -164,7 +164,8 @@ struct btSoftBodyAeroForce
 	void addAeroForces(btScalar timeStep, btAlignedObjectArray<btSoftBodyNode>& nodes);
 	void addAeroForceToNode(btScalar timeStep, btAlignedObjectArray<btSoftBodyNode>& nodes, int nodeIndex);
 };
-	
+
+///Moves the soft body nodes to match a certain shape
 struct btSoftBodyPose
 {
 	btScalar m_poseMatching;								///<[0, 1]; 0.0 == disabled; use setPose() to set this
@@ -226,7 +227,7 @@ struct btSoftBodyFace
 	int m_indicies[3];				///<Indicies of m_nodes[]
 	btVector3 m_normal;				// Normal
 	btScalar m_area;
-	btDbvtNode* m_leaf;				// Leaf data
+	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this face
 	btSoftBodyMaterial* m_material;
 };
 
@@ -254,14 +255,14 @@ struct btSoftSoftContact
 {
 	btSoftBody* m_nodeSoftBody;
 	btSoftBody* m_faceSoftBody;
-	int						m_nodeIndex;	///<Index to m_nodes[] of m_nodeSoftBody
-	btSoftBodyFace*			m_face;
-	btVector3				m_weights;		// Weigths
-	btVector3				m_normal;		// Normal
-	btScalar				m_margin;		// Margin
-	btScalar				m_friction;		// Friction
-	btScalar				m_nodeCfm;		// Constraint force mixing
-	btScalar				m_faceCfm;		// Constraint force mixing
+	int			m_nodeIndex;	///<Index to m_nodes[] of m_nodeSoftBody
+	int			m_faceIndex;	///<Index to m_faces[] of m_faceSoftBody
+	btVector3	m_weights;
+	btVector3	m_normal;
+	btScalar	m_margin;
+	btScalar	m_friction;	
+	btScalar	m_nodeCfm;		// Constraint force mixing
+	btScalar	m_faceCfm;		// Constraint force mixing
 };
 
 ///Attaches a btSoftBodyNode to a btRigidBody
@@ -284,7 +285,7 @@ public:
 
 	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
 
-	btSoftBodySolver *m_softBodySolver;
+	btSoftBodySolver* m_softBodySolver;
 	
 	btSoftBodyClosedTrimeshForce m_closedTrimeshForce;
 	btSoftBodyAeroForce m_aeroForce;
@@ -330,11 +331,7 @@ public:
 	btSoftBodyMaterial* appendMaterial();
 	
 	void appendNode(const btVector3& position, btScalar mass);
-	
-	void appendLink(int model=-1,btSoftBodyMaterial* mat=0);
 	void appendLink(int node0, int node1, btSoftBodyMaterial* mat=0, bool bcheckexist=false);
-	
-	void appendFace(int model=-1,btSoftBodyMaterial* mat=0);
 	void appendFace(int node0, int node1, int node2, btSoftBodyMaterial* mat=0);
 
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
