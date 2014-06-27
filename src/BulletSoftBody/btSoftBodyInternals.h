@@ -303,7 +303,7 @@ static inline btVector3		BaryCoord(	const btVector3& a,
 
 ///Calculates the fraction, in range [0, 1], at which the line segment a-b intersects shape; 
 ///returns -1 if both vertices are on the same side of the shape. 
-static btScalar				ImplicitSolve(	btSoftBody::ImplicitFn* shape,
+static btScalar				ImplicitSolve(btSoftImplicitShape* shape,
 										  const btVector3& a,
 										  const btVector3& b,
 										  const btScalar accuracy,
@@ -354,10 +354,10 @@ struct btSoftColliders
 		}
 		void DoNode(int nodeIndex) const
 		{
-			 btSoftBody::Node& n = psb->m_nodes[nodeIndex];
+			 btSoftBodyNode& n = psb->m_nodes[nodeIndex];
 		
-			const btScalar			m = n.m_invMass > 0 ? dynmargin : stamargin;
-			btSoftBody::RigidContact c;
+			const btScalar m = n.m_invMass > 0 ? dynmargin : stamargin;
+			btSoftRigidContact c;
 
 			if( !n.m_isAttachedToAnchor && psb->checkContact(m_colObj1Wrap,n.m_position,m,c) )
 			{
@@ -402,16 +402,16 @@ struct btSoftColliders
 		void Process(const btDbvtNode* lnode, const btDbvtNode* lface)
 		{
 			int nodeIndex = reinterpret_cast<int>(lnode->data);
-			btSoftBody::Node& node = m_nodeSoftBody->m_nodes[nodeIndex];
+			btSoftBodyNode& node = m_nodeSoftBody->m_nodes[nodeIndex];
 			
-			btSoftBody::Face*	face=(btSoftBody::Face*)lface->data;
+			btSoftBodyFace*	face=(btSoftBodyFace*)lface->data;
 			btVector3			o = node.m_position;
 			btVector3			p;
 			btScalar			d=SIMD_INFINITY;
 			
-			const btSoftBody::Node&	faceNode0 = m_faceSoftBody->m_nodes[ face->m_indicies[0] ];
-			const btSoftBody::Node&	faceNode1 = m_faceSoftBody->m_nodes[ face->m_indicies[1] ];
-			const btSoftBody::Node&	faceNode2 = m_faceSoftBody->m_nodes[ face->m_indicies[2] ];
+			const btSoftBodyNode&	faceNode0 = m_faceSoftBody->m_nodes[ face->m_indicies[0] ];
+			const btSoftBodyNode&	faceNode1 = m_faceSoftBody->m_nodes[ face->m_indicies[1] ];
+			const btSoftBodyNode&	faceNode2 = m_faceSoftBody->m_nodes[ face->m_indicies[2] ];
 			
 			ProjectOrigin(faceNode0.m_position - o, faceNode1.m_position - o, faceNode2.m_position - o, p, d);
 			const btScalar	m = mrg + (o - node.m_prevPosition).length() * 2;
@@ -427,7 +427,7 @@ struct btSoftColliders
 				const btScalar	ms=ma+mb;
 				if(ms>0)
 				{
-					btSoftBody::SoftContact	c;
+					btSoftSoftContact	c;
 					c.m_nodeSoftBody = m_nodeSoftBody;
 					c.m_faceSoftBody = m_faceSoftBody;
 					c.m_normal		=	p/-btSqrt(d);
@@ -436,8 +436,8 @@ struct btSoftColliders
 					c.m_face		=	face;
 					c.m_weights		=	w;
 					c.m_friction	=	btMax(m_nodeSoftBody->m_cfg.m_dynamicFriction, m_faceSoftBody->m_cfg.m_dynamicFriction);
-					c.m_cfm[0]		=	ma / ms * m_nodeSoftBody->m_cfg.m_softContactHardness;
-					c.m_cfm[1]		=	mb / ms * m_faceSoftBody->m_cfg.m_softContactHardness;
+					c.m_nodeCfm		=	ma / ms * m_nodeSoftBody->m_cfg.m_softContactHardness;
+					c.m_faceCfm		=	mb / ms * m_faceSoftBody->m_cfg.m_softContactHardness;
 					m_nodeSoftBody->m_softContacts.push_back(c);
 				}
 			}	

@@ -49,8 +49,8 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 	//Prepare anchors
 	for(int i = 0; i < softBody->m_anchors.size(); ++i)
 	{
-		btSoftBody::Anchor& a = softBody->m_anchors[i];
-		btSoftBody::Node& node = softBody->m_nodes[a.m_nodeIndex];
+		btSoftBodyAnchor& a = softBody->m_anchors[i];
+		btSoftBodyNode& node = softBody->m_nodes[a.m_nodeIndex];
 		
 		const btVector3	ra = a.m_body->getWorldTransform().getBasis() * a.m_local;
 		a.m_impulseMatrix = ImpulseMatrix(	softBody->m_timeStep, node.m_invMass, a.m_body->getInvMass(),
@@ -74,7 +74,7 @@ void solveConstraintsSingleSoftBody(btSoftBody* softBody)
 		const btScalar	vc = (1 - softBody->m_cfg.m_damping) /  softBody->m_timeStep;
 		for(int i = 0; i < softBody->m_nodes.size(); ++i)
 		{
-			btSoftBody::Node& n = softBody->m_nodes[i];
+			btSoftBodyNode& n = softBody->m_nodes[i];
 			n.m_velocity = (n.m_position - n.m_prevPosition)*vc;
 			n.m_accumulatedForce = btVector3(0,0,0);		
 		}
@@ -109,9 +109,9 @@ void btDefaultSoftBodySolver::PSolve_Anchors(btSoftBody* psb,btScalar kst,btScal
 	const btScalar	dt=psb->m_timeStep;
 	for(int i=0,ni=psb->m_anchors.size();i<ni;++i)
 	{
-		const btSoftBody::Anchor& a = psb->m_anchors[i];
+		const btSoftBodyAnchor& a = psb->m_anchors[i];
 		const btTransform& t = a.m_body->getWorldTransform();
-		btSoftBody::Node& n = psb->m_nodes[a.m_nodeIndex];
+		btSoftBodyNode& n = psb->m_nodes[a.m_nodeIndex];
 		const btVector3 wa = t*a.m_local;
 		const btVector3 va = a.m_body->getVelocityInLocalPoint(a.m_rotatedPosition)*dt;
 		const btVector3 vb = n.m_position - n.m_prevPosition;
@@ -128,10 +128,10 @@ void btDefaultSoftBodySolver::PSolve_RigidContacts(btSoftBody* psb, btScalar kst
 	const btScalar	mrg = psb->getCollisionShape()->getMargin();
 	for(int i=0,ni=psb->m_rigidContacts.size();i<ni;++i)
 	{
-		const btSoftBody::RigidContact& c = psb->m_rigidContacts[i];
+		const btSoftRigidContact& c = psb->m_rigidContacts[i];
 		if (c.m_colObj->hasContactResponse()) 
 		{
-			btSoftBody::Node& node = psb->m_nodes[c.m_nodeIndex];
+			btSoftBodyNode& node = psb->m_nodes[c.m_nodeIndex];
 		
 			btRigidBody* tmpRigid = (btRigidBody*)btRigidBody::upcast(c.m_colObj);
 			const btVector3		va = tmpRigid ? tmpRigid->getVelocityInLocalPoint(c.m_relativeNodePosition) * dt : btVector3(0,0,0);
@@ -157,14 +157,14 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 
 	for(int i=0,ni=psb->m_softContacts.size();i<ni;++i)
 	{
-		const btSoftBody::SoftContact& c = psb->m_softContacts[i];
+		const btSoftSoftContact& c = psb->m_softContacts[i];
 		const btVector3& nr = c.m_normal;
-		btSoftBody::Node& n = psb->m_nodes[c.m_nodeIndex];
+		btSoftBodyNode& n = psb->m_nodes[c.m_nodeIndex];
 		
-		btAlignedObjectArray<btSoftBody::Node>& faceNodes = c.m_faceSoftBody->m_nodes;
-		btSoftBody::Node& faceNode0 = faceNodes[ c.m_face->m_indicies[0] ];
-		btSoftBody::Node& faceNode1 = faceNodes[ c.m_face->m_indicies[1] ];
-		btSoftBody::Node& faceNode2 = faceNodes[ c.m_face->m_indicies[2] ];
+		btAlignedObjectArray<btSoftBodyNode>& faceNodes = c.m_faceSoftBody->m_nodes;
+		btSoftBodyNode& faceNode0 = faceNodes[ c.m_face->m_indicies[0] ];
+		btSoftBodyNode& faceNode1 = faceNodes[ c.m_face->m_indicies[1] ];
+		btSoftBodyNode& faceNode2 = faceNodes[ c.m_face->m_indicies[2] ];
 	
 		btVector3 p = BaryEval(faceNode0.m_position, faceNode1.m_position, faceNode2.m_position, c.m_weights);
 		btVector3 q = BaryEval(faceNode0.m_prevPosition, faceNode1.m_prevPosition, faceNode2.m_prevPosition, c.m_weights);											
@@ -177,10 +177,10 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 			corr+=c.m_normal*j;
 		}
 		corr			-=	ProjectOnPlane(vr,nr)*c.m_friction;
-		n.m_position += corr*c.m_cfm[0];
-		faceNode0.m_position -= corr*(c.m_cfm[1]*c.m_weights.x());
-		faceNode1.m_position -= corr*(c.m_cfm[1]*c.m_weights.y());
-		faceNode2.m_position -= corr*(c.m_cfm[1]*c.m_weights.z());
+		n.m_position += corr*c.m_nodeCfm;
+		faceNode0.m_position -= corr*(c.m_faceCfm*c.m_weights.x());
+		faceNode1.m_position -= corr*(c.m_faceCfm*c.m_weights.y());
+		faceNode2.m_position -= corr*(c.m_faceCfm*c.m_weights.z());
 	}
 }
 
@@ -188,11 +188,11 @@ void btDefaultSoftBodySolver::PSolve_Links(btSoftBody* psb,btScalar kst,btScalar
 {
 	for(int i=0,ni=psb->m_links.size();i<ni;++i)
 	{			
-		btSoftBody::Link&	l=psb->m_links[i];
+		btSoftBodyLink& l = psb->m_links[i];
 		if(l.m_scaledCombinedInvMass > 0)
 		{
-			btSoftBody::Node& a = psb->m_nodes[ l.m_linkIndicies[0] ];
-			btSoftBody::Node& b = psb->m_nodes[ l.m_linkIndicies[1] ];
+			btSoftBodyNode& a = psb->m_nodes[ l.m_linkIndicies[0] ];
+			btSoftBodyNode& b = psb->m_nodes[ l.m_linkIndicies[1] ];
 			const btVector3	del = b.m_position - a.m_position;
 			const btScalar	len=del.length2();
 			if (l.m_restLengthSquared+len > SIMD_EPSILON)

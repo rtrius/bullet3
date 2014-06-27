@@ -66,8 +66,8 @@ public:
 	btClock								m_clock;
 	int									m_lastmousepos[2];
 	btVector3							m_impact;
-	btSoftBody::sRayCast				m_results;
-	btSoftBody::Node*					m_node;
+	btSoftBodyRaycastResult				m_results;
+	btSoftBodyNode*						m_node;
 	btVector3							m_goal;
 	bool								m_drag;
 

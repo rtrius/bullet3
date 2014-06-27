@@ -273,7 +273,7 @@ void	btSoftRigidDynamicsWorld::rayTestSingle(const btTransform& rayFromTrans,con
 	if (collisionShape->isSoftBody()) {
 		btSoftBody* softBody = btSoftBody::upcast(collisionObject);
 		if (softBody) {
-			btSoftBody::sRayCast softResult;
+			btSoftBodyRaycastResult softResult;
 			if (softBody->rayTest(rayFromTrans.getOrigin(), rayToTrans.getOrigin(), softResult)) 
 			{
 				

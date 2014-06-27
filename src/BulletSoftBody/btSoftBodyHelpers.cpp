@@ -156,9 +156,7 @@ static btVector3		stresscolor(btScalar stress)
 #endif
 
 //
-void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
-										btIDebugDraw* idraw,
-										int drawflags)
+void			btSoftBodyHelpers::Draw(btSoftBody* psb, btIDebugDraw* idraw, int drawflags)
 {
 	const btScalar		scl=(btScalar)0.1;
 	const btScalar		nscl=scl*5;
@@ -173,8 +171,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		{
 			for(i=0;i<psb->m_nodes.size();++i)
 			{
-				const btSoftBody::Node&	n=psb->m_nodes[i];
-				if(!n.m_material->m_debugDraw) continue;
+				const btSoftBodyNode& n = psb->m_nodes[i];
 				idraw->drawLine(n.m_position-btVector3(scl,0,0),n.m_position+btVector3(scl,0,0),btVector3(1,0,0));
 				idraw->drawLine(n.m_position-btVector3(0,scl,0),n.m_position+btVector3(0,scl,0),btVector3(0,1,0));
 				idraw->drawLine(n.m_position-btVector3(0,0,scl),n.m_position+btVector3(0,0,scl),btVector3(0,0,1));
@@ -185,7 +182,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		{
 			for(i=0;i<psb->m_links.size();++i)
 			{
-				const btSoftBody::Link&	l=psb->m_links[i];
+				const btSoftBodyLink& l = psb->m_links[i];
 				if(!l.m_material->m_debugDraw) continue;
 				idraw->drawLine( psb->m_nodes[ l.m_linkIndicies[0] ].m_position, psb->m_nodes[ l.m_linkIndicies[1] ].m_position, lcolor);
 			}
@@ -195,8 +192,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		{
 			for(i=0;i<psb->m_nodes.size();++i)
 			{
-				const btSoftBody::Node&	n=psb->m_nodes[i];
-				if(!n.m_material->m_debugDraw) continue;
+				const btSoftBodyNode& n = psb->m_nodes[i];
 				const btVector3 d = n.m_normal * nscl;
 				idraw->drawLine(n.m_position,n.m_position+d,ncolor);
 				idraw->drawLine(n.m_position,n.m_position-d,ncolor*0.5);
@@ -210,7 +206,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 				btVector3(0,0,1)};
 			for(i=0;i<psb->m_rigidContacts.size();++i)
 			{		
-				const btSoftBody::RigidContact&	c = psb->m_rigidContacts[i];
+				const btSoftRigidContact& c = psb->m_rigidContacts[i];
 				const btVector3& nodePosition = psb->m_nodes[c.m_nodeIndex].m_position;
 				
 				btVector3 o = nodePosition - c.m_normal * ( btDot(nodePosition, c.m_normal) + c.m_offset );
@@ -224,14 +220,14 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		// Faces	 
 		if(0!=(drawflags&fDrawFlags::Faces))
 		{
-			const btAlignedObjectArray<btSoftBody::Node>& nodes = psb->m_nodes;
+			const btAlignedObjectArray<btSoftBodyNode>& nodes = psb->m_nodes;
 		
 			const btScalar	scl=(btScalar)0.8;
 			const btScalar	alp=(btScalar)1;
 			const btVector3	col(0,(btScalar)0.7,0);
 			for(i=0;i<psb->m_faces.size();++i)
 			{
-				const btSoftBody::Face&	face = psb->m_faces[i];
+				const btSoftBodyFace&	face = psb->m_faces[i];
 				if(!face.m_material->m_debugDraw) continue;
 				
 				const btVector3 x[] = { nodes[ face.m_indicies[0] ].m_position, nodes[ face.m_indicies[1] ].m_position, nodes[ face.m_indicies[2] ].m_position };
@@ -245,8 +241,8 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 	{
 		for(i=0;i<psb->m_anchors.size();++i)
 		{
-			const btSoftBody::Anchor& a = psb->m_anchors[i];
-			const btSoftBody::Node& node = psb->m_nodes[a.m_nodeIndex];
+			const btSoftBodyAnchor& a = psb->m_anchors[i];
+			const btSoftBodyNode& node = psb->m_nodes[a.m_nodeIndex];
 			
 			const btVector3 q = a.m_body->getWorldTransform() * a.m_local;
 			drawVertex( idraw, node.m_position, 0.25, btVector3(1,0,0) );
@@ -255,8 +251,7 @@ void			btSoftBodyHelpers::Draw(	btSoftBody* psb,
 		}
 		for(i=0;i<psb->m_nodes.size();++i)
 		{
-			const btSoftBody::Node&	n=psb->m_nodes[i];		
-			if(!n.m_material->m_debugDraw) continue;
+			const btSoftBodyNode&	n=psb->m_nodes[i];
 			if(n.m_invMass <= 0)
 			{
 				drawVertex(idraw,n.m_position,0.25,btVector3(1,0,0));
@@ -279,7 +274,7 @@ void			btSoftBodyHelpers::DrawInfos(		btSoftBody* psb,
 {
 	for(int i=0;i<psb->m_nodes.size();++i)
 	{
-		const btSoftBody::Node&	n=psb->m_nodes[i];
+		const btSoftBodyNode&	n=psb->m_nodes[i];
 		char					text[2048]={0};
 		char					buff[1024];
 		if(masses)
@@ -369,10 +364,10 @@ typedef LinkDeps_t *LinkDepsPtr_t;
 void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 {
 	int i, nLinks=psb->m_links.size(), nNodes=psb->m_nodes.size();
-	btSoftBody::Link *lr;
+	btSoftBodyLink *lr;
 	int ar, br;
-	btSoftBody::Node *node0 = &(psb->m_nodes[0]);
-	btSoftBody::Node *node1 = &(psb->m_nodes[1]);
+	btSoftBodyNode *node0 = &(psb->m_nodes[0]);
+	btSoftBodyNode *node1 = &(psb->m_nodes[1]);
 	LinkDepsPtr_t linkDep;
 	int readyListHead, readyListTail, linkNum, linkDepFrees, depLink;
 	
@@ -385,8 +380,8 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 	LinkDepsPtr_t *linkDepListStarts = new LinkDepsPtr_t[nLinks];	// Start nodes of dependent-on-me lists, one for each link
 		
 	// Copy the original, unsorted links to a side buffer
-	btSoftBody::Link *linkBuffer = new btSoftBody::Link[nLinks];
-	memcpy(linkBuffer, &(psb->m_links[0]), sizeof(btSoftBody::Link)*nLinks);
+	btSoftBodyLink *linkBuffer = new btSoftBodyLink[nLinks];
+	memcpy(linkBuffer, &(psb->m_links[0]), sizeof(btSoftBodyLink)*nLinks);
 
 	// Clear out the node setup and ready list
 	for (i=0; i < nNodes+1; i++) {
