@@ -164,7 +164,6 @@ void btSoftBody::appendFace(int node0,int node1,int node2,btSoftBodyMaterial* ma
 	f.m_indicies[1] = node1;
 	f.m_indicies[2] = node2;
 	
-	f.m_area = AreaOfParallelogram(m_nodes[node0].m_position, m_nodes[node1].m_position, m_nodes[node2].m_position) * btScalar(0.5f);
 	m_bUpdateRtCst=true;
 }
 
@@ -649,11 +648,12 @@ void			btSoftBody::randomizeConstraints()
 }
 
 //
-void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
-						btAlignedObjectArray<btSoftBodyLink>& links,
-						btAlignedObjectArray<btSoftBodyFace>& faces,
-						btSoftImplicitShape* shape, btScalar accuracy, bool cut)
+void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut)
 {
+	btAlignedObjectArray<btSoftBodyNode>& nodes = softBody->m_nodes;
+	btAlignedObjectArray<btSoftBodyLink>& links = softBody->m_links;
+	btAlignedObjectArray<btSoftBodyFace>& faces = softBody->m_faces;
+
 	int numNodesInitial = nodes.size();
 	
 	//Symmetric matrix of size (numNodesInitial x numNodesInitial), initialized with all values = -2
@@ -741,7 +741,7 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 					btVector3 position = Lerp(a.m_position,b.m_position,t);
 					btVector3 velocity = Lerp(a.m_velocity,b.m_velocity,t);
 					
-					appendNode(position, mass);
+					softBody->appendNode(position, mass);
 					
 					int newNodeIndex = nodes.size() - 1;
 					edges(i,j) = newNodeIndex;
@@ -763,7 +763,7 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 			const int ni = edges(linkIndex0, linkIndex1);
 			if(ni > 0)		//If a new node was created between these nodes
 			{
-				appendLink(linkIndex0, linkIndex1, link.m_material);
+				softBody->appendLink(linkIndex0, linkIndex1, link.m_material);
 				btSoftBodyLink* pft[] = {	&links[i], &links[links.size()-1] };			
 				pft[0]->m_linkIndicies[0] = linkIndex0;
 				pft[0]->m_linkIndicies[1] = ni;
@@ -785,7 +785,7 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 				const int ni=edges(idx[j],idx[k]);
 				if(ni>0)
 				{
-					appendFace(idx[0], idx[1], idx[2], face.m_material);
+					softBody->appendFace(idx[0], idx[1], idx[2], face.m_material);
 					const int	l=(k+1)%3;
 					btSoftBodyFace* pft[] = { &faces[i], &faces[faces.size()-1] };
 					pft[0]->m_indicies[0] = idx[l];
@@ -794,7 +794,7 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 					pft[1]->m_indicies[0] = ni;
 					pft[1]->m_indicies[1] = idx[k];
 					pft[1]->m_indicies[2] = idx[l];
-					appendLink(ni,idx[l],pft[0]->m_material);
+					softBody->appendLink(ni,idx[l],pft[0]->m_material);
 					--i;
 					break;
 				}
@@ -816,13 +816,13 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 			const btVector3	nodePosition = nodes[i].m_position;
 			if( (i >= numNodesInitial) || (btFabs(shape->signedDistance(nodePosition)) < accuracy) )
 			{
-				btScalar m = getMass(i);
+				btScalar m = softBody->getMass(i);
 				if(m > 0)
 				{
 					m *= 0.5f;
 					nodes[i].m_invMass /= 0.5f;
 				}
-				appendNode(nodePosition, m);
+				softBody->appendNode(nodePosition, m);
 				cnodes[i] = nodes.size() - 1;
 				nodes[cnodes[i]].m_velocity = nodes[i].m_velocity;
 			}
@@ -837,7 +837,7 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 			int	todetach = 0;
 			if(cnodes[linkIndex0] && cnodes[linkIndex1])
 			{
-				appendLink(linkIndex0, linkIndex1, links[i].m_material);
+				softBody->appendLink(linkIndex0, linkIndex1, links[i].m_material);
 				todetach=links.size()-1;
 			}
 			else
@@ -916,7 +916,7 @@ void btSoftBody::refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
 		l.m_restLength = (nodePosition0 - nodePosition1).length();
 	}
 	
-	m_bUpdateRtCst=true;
+	softBody->m_bUpdateRtCst = true;
 }
 
 //
@@ -1209,7 +1209,6 @@ void btSoftBody::updateNormals()
 		btSoftBodyNode& faceNode2 = m_nodes[ face.m_indicies[2] ];
 		
 		btVector3 normal = btCross(faceNode1.m_position - faceNode0.m_position, faceNode2.m_position - faceNode0.m_position).normalized();
-		face.m_normal = normal;
 		faceNode0.m_normal += normal;
 		faceNode1.m_normal += normal;
 		faceNode2.m_normal += normal;
@@ -1244,29 +1243,21 @@ void btSoftBody::updateBounds()
 
 void btSoftBody::updateArea()
 {
-	//Compute Face area
-	for(int i = 0; i < m_faces.size(); ++i)
-	{
-		btSoftBodyFace& f = m_faces[i];
-		const btVector3& position0 = m_nodes[ f.m_indicies[0] ].m_position;
-		const btVector3& position1 = m_nodes[ f.m_indicies[1] ].m_position;
-		const btVector3& position2 = m_nodes[ f.m_indicies[2] ].m_position;
-		
-		f.m_area = AreaOfParallelogram(position0, position1, position2) * btScalar(0.5f);
-	}
-	
 	//Compute Node area
 	{
 		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area = btScalar(0.0);
 
 		for(int i = 0; i < m_faces.size(); ++i)
 		{
-			btSoftBodyFace& f = m_faces[i];
-			
-			btScalar area = btFabs(f.m_area);
-			m_nodes[ f.m_indicies[0] ].m_area += area;
-			m_nodes[ f.m_indicies[1] ].m_area += area;
-			m_nodes[ f.m_indicies[2] ].m_area += area;
+			const btSoftBodyFace& f = m_faces[i];
+			const btVector3& position0 = m_nodes[ f.m_indicies[0] ].m_position;
+			const btVector3& position1 = m_nodes[ f.m_indicies[1] ].m_position;
+			const btVector3& position2 = m_nodes[ f.m_indicies[2] ].m_position;
+		
+			btScalar faceArea = btFabs( AreaOfParallelogram(position0, position1, position2) * btScalar(0.5f) );
+			m_nodes[ f.m_indicies[0] ].m_area += faceArea;
+			m_nodes[ f.m_indicies[1] ].m_area += faceArea;
+			m_nodes[ f.m_indicies[2] ].m_area += faceArea;
 		}
 
 		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area *= btScalar(0.3333333);

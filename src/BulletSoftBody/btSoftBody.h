@@ -68,23 +68,29 @@ struct btSoftBodyNode
 	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this node
 	int m_isAttachedToAnchor:1;		///<If nonzero this node is attached to a btSoftBodyAnchor(disables rigid body collision)
 };
+
 struct btSoftBodyMaterial
 {
 	btScalar m_linearStiffness;	///<[0,1]; lower stiffness means that Links are easier to stretch.
 	bool m_debugDraw;
 };
 
-	
+///Distance constraint between 2 nodes; used for stretch, shear, and bending constraints
 struct btSoftBodyLink
 {
 	int m_linkIndicies[2];			///<Indicies of m_nodes[]
 	btScalar m_restLength;			///<Constraint tries to keep nodes at this distance
 	btSoftBodyMaterial* m_material;
 	
-	///@name Internal variables. Can be ignored by the user.
-	///@{
-	int m_bbending:1;					// Bending link
-	///@}
+	int m_bbending:1;				///If nonzero this is a bending link; used for btSoftBodyMeshModifier::refine()
+};
+
+///Triangle; used for rendering, collision and various forces(aerodynamic, pressure)
+struct btSoftBodyFace
+{
+	int m_indicies[3];				///<Indicies of m_nodes[]
+	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this face
+	btSoftBodyMaterial* m_material;
 };
 	
 
@@ -219,20 +225,7 @@ struct btSoftBodyRaycastResult
 	btScalar fraction;	///<Time of impact fraction (rayorg+(rayto-rayfrom)*fraction); 1.f == no hit
 };
 	
-//Triangle; used for rendering, collision and various forces(aerodynamic, pressure)
-struct btSoftBodyFace
-{
-	int m_indicies[3];				///<Indicies of m_nodes[]
-	btVector3 m_normal;
-	btScalar m_area;
-	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this face
-	btSoftBodyMaterial* m_material;
-};
 
-struct btSoftImplicitShape
-{
-	virtual btScalar signedDistance(const btVector3& x) = 0;		///<Returns negative if penetrating
-};
 
 ///Contact between a btRigidBody and node
 struct btSoftRigidContact
@@ -275,6 +268,16 @@ struct btSoftBodyAnchor
 	btScalar				m_invMassDt;		///<inverse_mass * timeStep
 };
 
+struct btSoftImplicitShape
+{
+	virtual btScalar signedDistance(const btVector3& x) = 0;		///<Returns negative if penetrating
+};
+class btSoftBodyMeshModifier
+{
+public:
+	static void refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut);
+};
+	
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
 ///There is two-way interaction between btSoftBody and btRigidBody/btCollisionObject.
 class btSoftBody : public btCollisionObject
@@ -355,11 +358,6 @@ public:
 	
 	int generateBendingConstraints(int distance, btSoftBodyMaterial* mat=0);	//Generate bending constraints based on distance in the adjency graph
 	void randomizeConstraints();	//Randomize constraints to reduce solver bias	
-	
-	void refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
-						btAlignedObjectArray<btSoftBodyLink>& links,
-						btAlignedObjectArray<btSoftBodyFace>& faces,
-						btSoftImplicitShape* shape, btScalar accuracy, bool cut);
 	
 	///Ray casting using rayFrom and rayTo in worldspace, (not direction!)
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, btSoftBodyRaycastResult& results);
