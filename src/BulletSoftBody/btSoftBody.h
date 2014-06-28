@@ -84,8 +84,6 @@ struct btSoftBodyLink
 	///@name Internal variables. Can be ignored by the user.
 	///@{
 	int m_bbending:1;					// Bending link
-	btScalar m_scaledCombinedInvMass;	///<(inverse_mass_0 + inverse_mass_1) * linearStiffness
-	btScalar m_restLengthSquared;
 	///@}
 };
 	
@@ -225,7 +223,7 @@ struct btSoftBodyRaycastResult
 struct btSoftBodyFace
 {
 	int m_indicies[3];				///<Indicies of m_nodes[]
-	btVector3 m_normal;				// Normal
+	btVector3 m_normal;
 	btScalar m_area;
 	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this face
 	btSoftBodyMaterial* m_material;
@@ -266,7 +264,7 @@ struct btSoftSoftContact
 };
 
 ///Attaches a btSoftBodyNode to a btRigidBody
-struct	btSoftBodyAnchor
+struct btSoftBodyAnchor
 {
 	int						m_nodeIndex;
 	btVector3				m_local;		// Anchor position in body space
@@ -276,14 +274,14 @@ struct	btSoftBodyAnchor
 	btVector3				m_rotatedPosition;
 	btScalar				m_invMassDt;		///<inverse_mass * timeStep
 };
-	
+
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
 ///There is two-way interaction between btSoftBody and btRigidBody/btCollisionObject.
 class btSoftBody : public btCollisionObject
 {
 public:
 
-	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;
+	btAlignedObjectArray<const class btCollisionObject*> m_collisionDisabledObjects;	//btRigidBody or btCollisionObject
 
 	btSoftBodySolver* m_softBodySolver;
 	
@@ -308,8 +306,6 @@ public:
 	bool					m_bUpdateRtCst;	// Update runtime constants
 	btDbvt					m_nodeBvh;		// Nodes tree
 	btDbvt					m_faceBvh;		// Faces tree
-
-	btScalar        	m_restLengthScale;
 
 public:
 	btSoftBody(btSoftBodyWorldInfo* worldInfo, int numNodes, const btVector3* nodePositions, const btScalar* nodeMasses);
@@ -355,14 +351,15 @@ public:
 	void rotate(const btQuaternion& rot);
 	void scale(const btVector3& scl);
 	
-	btScalar getRestLengthScale();					//Get link resting lengths scale
-	void setRestLengthScale(btScalar restLength);	//Scale resting length of all springs
 	btScalar getClosedTrimeshVolume() const;		///<Returns the volume, assuming that m_faces represents a closed triangle mesh
 	
 	int generateBendingConstraints(int distance, btSoftBodyMaterial* mat=0);	//Generate bending constraints based on distance in the adjency graph
 	void randomizeConstraints();	//Randomize constraints to reduce solver bias	
 	
-	void refine(btSoftImplicitShape* shape, btScalar accuracy, bool cut);
+	void refine(btAlignedObjectArray<btSoftBodyNode>& nodes,
+						btAlignedObjectArray<btSoftBodyLink>& links,
+						btAlignedObjectArray<btSoftBodyFace>& faces,
+						btSoftImplicitShape* shape, btScalar accuracy, bool cut);
 	
 	///Ray casting using rayFrom and rayTo in worldspace, (not direction!)
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, btSoftBodyRaycastResult& results);
@@ -406,7 +403,6 @@ public:
 	bool checkContact(const btCollisionObjectWrapper* colObjWrap,const btVector3& worldSpaceNodePosition,btScalar margin,btSoftRigidContact& contact) const;
 	void updateNormals();
 	void updateBounds();
-	void updateConstants();
 	void updateArea();
 	void applyForces();	
 };

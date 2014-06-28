@@ -187,18 +187,22 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 
 void btDefaultSoftBodySolver::PSolve_Links(btSoftBody* psb,btScalar kst,btScalar ti)
 {
-	for(int i=0,ni=psb->m_links.size();i<ni;++i)
+	for(int i = 0; i < psb->m_links.size(); ++i)
 	{			
 		btSoftBodyLink& l = psb->m_links[i];
-		if(l.m_scaledCombinedInvMass > 0)
+		btSoftBodyNode& a = psb->m_nodes[ l.m_linkIndicies[0] ];
+		btSoftBodyNode& b = psb->m_nodes[ l.m_linkIndicies[1] ];
+		
+		btScalar restLengthSquared = l.m_restLength * l.m_restLength;
+		btScalar scaledCombinedInvMass = (a.m_invMass + b.m_invMass) / l.m_material->m_linearStiffness;
+		
+		if(scaledCombinedInvMass > 0)
 		{
-			btSoftBodyNode& a = psb->m_nodes[ l.m_linkIndicies[0] ];
-			btSoftBodyNode& b = psb->m_nodes[ l.m_linkIndicies[1] ];
 			const btVector3	del = b.m_position - a.m_position;
 			const btScalar	len=del.length2();
-			if (l.m_restLengthSquared+len > SIMD_EPSILON)
+			if (restLengthSquared + len > SIMD_EPSILON)
 			{
-				const btScalar k = ( (l.m_restLengthSquared-len)/(l.m_scaledCombinedInvMass*(l.m_restLengthSquared+len)) ) * kst;
+				const btScalar k = ( (restLengthSquared - len) / (scaledCombinedInvMass*(restLengthSquared + len)) ) * kst;
 				a.m_position -= del * (k * a.m_invMass);
 				b.m_position += del * (k * b.m_invMass);
 			}

@@ -112,8 +112,6 @@ public:
 		return demo;
 	}
 
-	virtual	void setDrawClusters(bool drawClusters);
-
 	virtual const btSoftRigidDynamicsWorld*	getSoftDynamicsWorld() const
 	{
 		///just make it a btSoftRigidDynamicsWorld please

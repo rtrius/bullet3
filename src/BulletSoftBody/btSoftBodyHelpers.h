@@ -25,14 +25,11 @@ struct	fDrawFlags { enum _ {
 	Normals		=	0x0010,
 	Contacts	=	0x0020,
 	Anchors		=	0x0040,
-	Clusters	=	0x0100,
 	NodeTree	=	0x0200,
 	FaceTree	=	0x0400,
-	ClusterTree	=	0x0800,
-	Joints		=	0x1000,
 	
 	// presets
-	Default = Links + Faces + Anchors + Joints
+	Default = Links + Faces + Anchors
 };};
 
 struct	btSoftBodyHelpers
