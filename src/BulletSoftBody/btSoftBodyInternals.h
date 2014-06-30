@@ -399,7 +399,7 @@ struct btSoftColliders
 			btSoftBodyNode& node = m_nodeSoftBody->m_nodes[nodeIndex];
 			
 			int faceIndex = reinterpret_cast<int>(lface->data);
-			btSoftBodyFace&	face = m_faceSoftBody->m_faces[faceIndex];
+			btSoftBodyFace&	face = m_faceSoftBody->m_softShape->m_faces[faceIndex];
 			btVector3			o = node.m_position;
 			btVector3			p;
 			btScalar			d=SIMD_INFINITY;

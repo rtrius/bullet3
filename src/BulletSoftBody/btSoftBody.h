@@ -69,19 +69,14 @@ struct btSoftBodyNode
 	int m_isAttachedToAnchor:1;		///<If nonzero this node is attached to a btSoftBodyAnchor(disables rigid body collision)
 };
 
-struct btSoftBodyMaterial
-{
-	btScalar m_linearStiffness;	///<[0,1]; lower stiffness means that Links are easier to stretch.
-};
-
 ///Distance constraint between 2 nodes; used for stretch, shear, and bending constraints
 struct btSoftBodyLink
 {
-	int m_linkIndicies[2];			///<Indicies of m_nodes[]
-	btScalar m_restLength;			///<Constraint tries to keep nodes at this distance
-	btSoftBodyMaterial* m_material;
+	int m_linkIndicies[2];		///<Indicies of m_nodes[]
+	btScalar m_restLength;		///<Constraint tries to keep nodes at this distance
+	btScalar m_linkStiffness;	///<[0,1]; lower stiffness means that Links are easier to stretch.
 	
-	int m_bbending:1;				///If nonzero this is a bending link; used for btSoftBodyMeshModifier::refine()
+	int m_isBendingLink:1;		///If nonzero this is a bending link, and m_linkStiffness is scaled by m_bendingStiffness instead of m_stretchStiffness.
 };
 
 ///Triangle; used for rendering, collision and various forces(aerodynamic, pressure)
@@ -198,6 +193,9 @@ struct btSoftBodyConfig
 	btScalar m_softContactHardness;			///<[0, 1]; hardness(ERP) determines how quickly penetration is resolved.
 	btScalar m_anchorHardness;				///<[0, 1]
 	
+	btScalar m_stretchStiffness;			///<[0, 1]; btSoftBodyLink.m_linkStiffness is multiplied by this to get the actual stiffness.
+	btScalar m_bendingStiffness;			///<[0, 1]; used in place of m_stretchStiffness if (btSoftBodyLink.m_isBendingLink != 0).
+	
 	int m_positionIterations;				///<More iterations improves the quality, but also makes the constraints more stiff
 	
 	btSoftBodyConfig()
@@ -209,6 +207,9 @@ struct btSoftBodyConfig
 		m_kinematicContactHardness = btScalar(0.1);
 		m_softContactHardness = btScalar(1.0);
 		m_anchorHardness = btScalar(0.7);
+		
+		m_stretchStiffness = btScalar(1.0);
+		m_bendingStiffness = btScalar(1.0);
 		
 		m_positionIterations = 1;
 	}
@@ -276,12 +277,21 @@ public:
 	static void refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut);
 	
 	///Generate bending constraints based on distance in the adjency graph
-	static int generateBendingConstraints(btSoftBody* softBody, int distance, btSoftBodyMaterial* mat=0);
+	static int generateBendingConstraints( btSoftBody* softBody, int distance, btScalar stiffness = btScalar(1.0) );
 
 	///Randomize constraints to reduce solver bias
 	static void randomizeConstraints(btAlignedObjectArray<btSoftBodyLink>& links);	
 };
-	
+
+///Defines how the nodes of a soft body are connected(constraints, triangles).
+struct btSoftBodyShape
+{
+	//int m_numNodes;
+
+	btAlignedObjectArray<btSoftBodyLink> m_links;	///<Distance constraints
+	btAlignedObjectArray<btSoftBodyFace> m_faces;	///<Triangles
+};
+
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
 ///There is two-way interaction between btSoftBody and btRigidBody/btCollisionObject.
 class btSoftBody : public btCollisionObject
@@ -300,12 +310,11 @@ public:
 	btScalar				m_timeStep;
 	btSoftBodyWorldInfo*	m_worldInfo;	// World info
 	btAlignedObjectArray<btSoftBodyNode> m_nodes;
-	btAlignedObjectArray<btSoftBodyLink> m_links;
-	btAlignedObjectArray<btSoftBodyFace> m_faces;
 	btAlignedObjectArray<btSoftBodyAnchor> m_anchors;
 	btAlignedObjectArray<btSoftRigidContact> m_rigidContacts;
 	btAlignedObjectArray<btSoftSoftContact> m_softContacts;
-	btAlignedObjectArray<btSoftBodyMaterial*> m_materials;
+	
+	btSoftBodyShape* m_softShape;
 	
 	btVector3 m_aabbMin;
 	btVector3 m_aabbMax;
@@ -328,10 +337,8 @@ public:
 
 	bool checkLink(int node0, int node1) const;
 	
-	btSoftBodyMaterial* appendMaterial();
-	
 	void appendNode(const btVector3& position, btScalar mass);
-	void appendLink(int node0, int node1, btSoftBodyMaterial* mat=0, bool bcheckexist=false);
+	void appendLink(int node0, int node1, btScalar stiffness = btScalar(1.0), bool bcheckexist=false);
 	void appendFace(int node0, int node1, int node2);
 
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);

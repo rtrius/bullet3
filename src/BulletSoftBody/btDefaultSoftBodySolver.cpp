@@ -162,7 +162,7 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 		btSoftBodyNode& n = psb->m_nodes[c.m_nodeIndex];
 		
 		btAlignedObjectArray<btSoftBodyNode>& faceNodes = c.m_faceSoftBody->m_nodes;
-		const btSoftBodyFace& face = c.m_faceSoftBody->m_faces[c.m_faceIndex];
+		const btSoftBodyFace& face = c.m_faceSoftBody->m_softShape->m_faces[c.m_faceIndex];
 		btSoftBodyNode& faceNode0 = faceNodes[ face.m_indicies[0] ];
 		btSoftBodyNode& faceNode1 = faceNodes[ face.m_indicies[1] ];
 		btSoftBodyNode& faceNode2 = faceNodes[ face.m_indicies[2] ];
@@ -187,14 +187,17 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 
 void btDefaultSoftBodySolver::PSolve_Links(btSoftBody* psb,btScalar kst,btScalar ti)
 {
-	for(int i = 0; i < psb->m_links.size(); ++i)
+	for(int i = 0; i < psb->m_softShape->m_links.size(); ++i)
 	{			
-		btSoftBodyLink& l = psb->m_links[i];
+		const btSoftBodyLink& l = psb->m_softShape->m_links[i];
 		btSoftBodyNode& a = psb->m_nodes[ l.m_linkIndicies[0] ];
 		btSoftBodyNode& b = psb->m_nodes[ l.m_linkIndicies[1] ];
 		
+		btScalar stiffnessScaling = (l.m_isBendingLink) ?  psb->m_cfg.m_bendingStiffness : psb->m_cfg.m_stretchStiffness;
+		btScalar stiffness = stiffnessScaling * l.m_linkStiffness;
+		btScalar scaledCombinedInvMass = (a.m_invMass + b.m_invMass) / stiffness;
+		
 		btScalar restLengthSquared = l.m_restLength * l.m_restLength;
-		btScalar scaledCombinedInvMass = (a.m_invMass + b.m_invMass) / l.m_material->m_linearStiffness;
 		
 		if(scaledCombinedInvMass > 0)
 		{

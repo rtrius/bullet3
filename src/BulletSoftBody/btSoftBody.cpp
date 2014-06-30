@@ -31,49 +31,29 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo) : m_softBodySolver(0), m_
 	m_collisionShape = new btSoftBodyCollisionShape(this);
 	m_collisionShape->setMargin(0.25f);
 	
-	// Default material 
-	btSoftBodyMaterial* pm = appendMaterial();
-	pm->m_linearStiffness	=	1;
+	m_softShape = new btSoftBodyShape();
 }
 
 //
 btSoftBody::~btSoftBody()
 {
+	delete m_softShape;
+
 	//for now, delete the internal shape
 	delete m_collisionShape;
-
-	for(int i=0;i<m_materials.size();++i) 
-		btAlignedFree(m_materials[i]);
 }
 
 //
-bool			btSoftBody::checkLink(int node0,int node1) const
+bool btSoftBody::checkLink(int node0,int node1) const
 {
-	for(int i = 0; i < m_links.size(); ++i)
+	for(int i = 0; i < m_softShape->m_links.size(); ++i)
 	{
-		const btSoftBodyLink&	l = m_links[i];
+		const btSoftBodyLink& l = m_softShape->m_links[i];
 		if(	(l.m_linkIndicies[0] == node0 && l.m_linkIndicies[1] == node1) ||
 			(l.m_linkIndicies[0] == node1 && l.m_linkIndicies[1] == node0)) return true;
 	}
 	
 	return false;
-}
-
-//
-btSoftBodyMaterial* btSoftBody::appendMaterial()
-{
-	btSoftBodyMaterial*	pm = new(btAlignedAlloc(sizeof(btSoftBodyMaterial),16)) btSoftBodyMaterial;
-	if( m_materials.size() > 0 )
-	{
-		*pm = *m_materials[0];
-	}
-	else
-	{
-		pm->m_linearStiffness = btScalar(0.0);
-	}
-	
-	m_materials.push_back(pm);
-	return(pm);
 }
 
 //
@@ -99,7 +79,7 @@ void btSoftBody::appendNode(const btVector3& position, btScalar mass)
 }
 
 //
-void btSoftBody::appendLink(int node0, int node1, btSoftBodyMaterial* mat, bool bcheckexist)
+void btSoftBody::appendLink(int node0, int node1, btScalar stiffness, bool bcheckexist)
 {
 	if( !bcheckexist || !checkLink(node0,node1) )
 	{
@@ -108,10 +88,9 @@ void btSoftBody::appendLink(int node0, int node1, btSoftBodyMaterial* mat, bool 
 			l.m_linkIndicies[0] = node0;
 			l.m_linkIndicies[1] = node1;
 			l.m_restLength = (m_nodes[node0].m_position - m_nodes[node1].m_position).length();
-			//l.m_stiffness = stiffness;
-			l.m_material = mat ? mat : m_materials[0]; 
-			l.m_bbending = 0; 
-			m_links.push_back(l);
+			l.m_linkStiffness = stiffness;
+			l.m_isBendingLink = 0; 
+			m_softShape->m_links.push_back(l);
 		}
 		
 		m_bUpdateRtCst=true;
@@ -135,7 +114,7 @@ void btSoftBody::appendFace(int node0, int node1, int node2)
 		f.m_indicies[2] = node2;
 		f.m_leaf = 0;
 		
-		m_faces.push_back(f);
+		m_softShape->m_faces.push_back(f);
 	}
 	
 	m_bUpdateRtCst=true;
@@ -243,9 +222,9 @@ void			btSoftBody::setTotalMass(btScalar mass,bool fromfaces)
 		{
 			m_nodes[i].m_invMass = 0;
 		}
-		for(i=0;i<m_faces.size();++i)
+		for(i=0;i<m_softShape->m_faces.size();++i)
 		{
-			const btSoftBodyFace& face = m_faces[i];
+			const btSoftBodyFace& face = m_softShape->m_faces[i];
 			btSoftBodyNode* faceNodes[3] = { &m_nodes[ face.m_indicies[0] ], &m_nodes[ face.m_indicies[1] ], &m_nodes[ face.m_indicies[2] ] };
 			
 			btScalar twicearea = AreaOfParallelogram(faceNodes[0]->m_position, faceNodes[1]->m_position, faceNodes[2]->m_position);
@@ -331,9 +310,9 @@ void			btSoftBody::scale(const btVector3& scl)
 	updateArea();
 	
 	//Set current link lengths as resting lengths
-	for(int i = 0; i < m_links.size(); ++i)
+	for(int i = 0; i < m_softShape->m_links.size(); ++i)
 	{
-		btSoftBodyLink& l = m_links[i];
+		btSoftBodyLink& l = m_softShape->m_links[i];
 		
 		const btVector3& nodePosition0 = m_nodes[ l.m_linkIndicies[0] ].m_position;
 		const btVector3& nodePosition1 = m_nodes[ l.m_linkIndicies[1] ].m_position;
@@ -454,9 +433,9 @@ btScalar btSoftBody::getClosedTrimeshVolume() const
 		//Could also use (0,0,0) for origin; here, we assume that m_nodes[0] is closer so that
 		//there will be less loss of floating point precision if the soft body is far from (0,0,0).
 		const btVector3& origin = m_nodes[0].m_position;	
-		for(int i = 0; i < m_faces.size(); ++i)
+		for(int i = 0; i < m_softShape->m_faces.size(); ++i)
 		{
-			const btSoftBodyFace& f = m_faces[i];
+			const btSoftBodyFace& f = m_softShape->m_faces[i];
 			
 			btVector3 a = m_nodes[ f.m_indicies[0] ].m_position - origin;
 			btVector3 b = m_nodes[ f.m_indicies[1] ].m_position - origin;
@@ -481,7 +460,7 @@ struct NodeLinks
     btAlignedObjectArray<int> m_links;
 };
 
-int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int distance, btSoftBodyMaterial* mat)
+int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int distance, btScalar stiffness)
 {
 	int i,j;
 
@@ -508,10 +487,10 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 				}
 			}
 		}
-		for( i = 0; i < softBody->m_links.size(); ++i)
+		for( i = 0; i < softBody->m_softShape->m_links.size(); ++i)
 		{
-			const int ia = softBody->m_links[i].m_linkIndicies[0];
-			const int ib = softBody->m_links[i].m_linkIndicies[1];
+			const int ia = softBody->m_softShape->m_links[i].m_linkIndicies[0];
+			const int ib = softBody->m_softShape->m_links[i].m_linkIndicies[1];
 			adj[IDX(ia,ib)]=1;
 			adj[IDX(ib,ia)]=1;
 		}
@@ -527,10 +506,10 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 			// Build node links 
 			nodeLinks.resize( softBody->m_nodes.size() );
 
-			for( i = 0; i < softBody->m_links.size(); ++i)
+			for( i = 0; i < softBody->m_softShape->m_links.size(); ++i)
 			{
-				const int ia = softBody->m_links[i].m_linkIndicies[0];
-				const int ib = softBody->m_links[i].m_linkIndicies[1];
+				const int ia = softBody->m_softShape->m_links[i].m_linkIndicies[0];
+				const int ib = softBody->m_softShape->m_links[i].m_linkIndicies[1];
 				if (nodeLinks[ia].m_links.findLinearSearch(ib)==nodeLinks[ia].m_links.size())
 					nodeLinks[ia].m_links.push_back(ib);
 
@@ -588,8 +567,8 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 			{
 				if(adj[IDX(i,j)]==(unsigned)distance)
 				{
-					softBody->appendLink(i, j, mat);
-					softBody->m_links[ softBody->m_links.size() - 1 ].m_bbending = 1;
+					softBody->appendLink(i, j, stiffness);
+					softBody->m_softShape->m_links[ softBody->m_softShape->m_links.size() - 1 ].m_isBendingLink = 1;
 					++nlinks;
 				}
 			}
@@ -615,8 +594,8 @@ void btSoftBodyMeshModifier::randomizeConstraints(btAlignedObjectArray<btSoftBod
 void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut)
 {
 	btAlignedObjectArray<btSoftBodyNode>& nodes = softBody->m_nodes;
-	btAlignedObjectArray<btSoftBodyLink>& links = softBody->m_links;
-	btAlignedObjectArray<btSoftBodyFace>& faces = softBody->m_faces;
+	btAlignedObjectArray<btSoftBodyLink>& links = softBody->m_softShape->m_links;
+	btAlignedObjectArray<btSoftBodyFace>& faces = softBody->m_softShape->m_faces;
 
 	int numNodesInitial = nodes.size();
 	
@@ -631,7 +610,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 		const btVector3& nodePosition0 = nodes[ l.m_linkIndicies[0] ].m_position;
 		const btVector3& nodePosition1 = nodes[ l.m_linkIndicies[1] ].m_position;
 		
-		if(l.m_bbending)
+		if(l.m_isBendingLink)
 		{
 			if( !SameSign(shape->signedDistance(nodePosition0), shape->signedDistance(nodePosition1)) )
 			{
@@ -727,7 +706,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 			const int ni = edges(linkIndex0, linkIndex1);
 			if(ni > 0)		//If a new node was created between these nodes
 			{
-				softBody->appendLink(linkIndex0, linkIndex1, link.m_material);
+				softBody->appendLink(linkIndex0, linkIndex1);
 				btSoftBodyLink* pft[] = {	&links[i], &links[links.size()-1] };			
 				pft[0]->m_linkIndicies[0] = linkIndex0;
 				pft[0]->m_linkIndicies[1] = ni;
@@ -758,7 +737,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 					pft[1]->m_indicies[0] = ni;
 					pft[1]->m_indicies[1] = idx[k];
 					pft[1]->m_indicies[2] = idx[l];
-					softBody->appendLink(ni,idx[l], softBody->m_materials[0]);
+					softBody->appendLink(ni,idx[l]);
 					--i;
 					break;
 				}
@@ -801,7 +780,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 			int	todetach = 0;
 			if(cnodes[linkIndex0] && cnodes[linkIndex1])
 			{
-				softBody->appendLink(linkIndex0, linkIndex1, links[i].m_material);
+				softBody->appendLink(linkIndex0, linkIndex1);
 				todetach=links.size()-1;
 			}
 			else
@@ -886,7 +865,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 //
 bool btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btSoftBodyRaycastResult& results)
 {
-	if( m_faces.size() && m_faceBvh.empty() ) initializeFaceTree();
+	if( m_softShape->m_faces.size() && m_faceBvh.empty() ) initializeFaceTree();
 
 	results.body	=	this;
 	results.fraction = 1.f;
@@ -961,9 +940,9 @@ void btSoftBody::predictMotion(btScalar timeStep)
 	// Faces
 	if( !m_faceBvh.empty() )
 	{
-		for(int i = 0; i < m_faces.size(); ++i)
+		for(int i = 0; i < m_softShape->m_faces.size(); ++i)
 		{
-			btSoftBodyFace& f = m_faces[i];
+			btSoftBodyFace& f = m_softShape->m_faces[i];
 			const btSoftBodyNode& faceNode0 = m_nodes[ f.m_indicies[0] ];
 			const btSoftBodyNode& faceNode1 = m_nodes[ f.m_indicies[1] ];
 			const btSoftBodyNode& faceNode2 = m_nodes[ f.m_indicies[2] ];
@@ -1081,9 +1060,9 @@ int btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btScal
 	if( bcountonly || m_faceBvh.empty() )
 	{
 		
-		for(int i = 0; i < m_faces.size(); ++i)
+		for(int i = 0; i < m_softShape->m_faces.size(); ++i)
 		{
-			const btSoftBodyFace&	f=m_faces[i];
+			const btSoftBodyFace&	f=m_softShape->m_faces[i];
 
 			const btSoftBodyNode& faceNode0 = m_nodes[ f.m_indicies[0] ];
 			const btSoftBodyNode& faceNode1 = m_nodes[ f.m_indicies[1] ];
@@ -1103,13 +1082,13 @@ int btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btScal
 	}
 	else	//Use dbvt
 	{
-		RayFromToCaster	collider(m_nodes, m_faces, rayFrom, rayTo, hitFraction);
+		RayFromToCaster	collider(m_nodes, m_softShape->m_faces, rayFrom, rayTo, hitFraction);
 
 		btDbvt::rayTest(m_faceBvh.m_root, rayFrom, rayTo, collider);
 		if(collider.m_face)
 		{
 			hitFraction = collider.m_mint;
-			faceIndex = (int)(collider.m_face-&m_faces[0]);
+			faceIndex = (int)(collider.m_face-&m_softShape->m_faces[0]);
 			numHits = 1;
 		}
 	}
@@ -1121,9 +1100,9 @@ int btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btScal
 void btSoftBody::initializeFaceTree()
 {
 	m_faceBvh.clear();
-	for(int i = 0; i < m_faces.size(); ++i)
+	for(int i = 0; i < m_softShape->m_faces.size(); ++i)
 	{
-		btSoftBodyFace& f = m_faces[i];
+		btSoftBodyFace& f = m_softShape->m_faces[i];
 		const btSoftBodyNode& faceNode0 = m_nodes[ f.m_indicies[0] ];
 		const btSoftBodyNode& faceNode1 = m_nodes[ f.m_indicies[1] ];
 		const btSoftBodyNode& faceNode2 = m_nodes[ f.m_indicies[2] ];
@@ -1165,9 +1144,9 @@ void btSoftBody::updateNormals()
 	{
 		m_nodes[i].m_normal = btVector3(0,0,0);
 	}
-	for(int i = 0; i < m_faces.size(); ++i)
+	for(int i = 0; i < m_softShape->m_faces.size(); ++i)
 	{
-		btSoftBodyFace& face = m_faces[i];
+		btSoftBodyFace& face = m_softShape->m_faces[i];
 		btSoftBodyNode& faceNode0 = m_nodes[ face.m_indicies[0] ];
 		btSoftBodyNode& faceNode1 = m_nodes[ face.m_indicies[1] ];
 		btSoftBodyNode& faceNode2 = m_nodes[ face.m_indicies[2] ];
@@ -1211,9 +1190,9 @@ void btSoftBody::updateArea()
 	{
 		for(int i = 0; i < m_nodes.size(); ++i) m_nodes[i].m_area = btScalar(0.0);
 
-		for(int i = 0; i < m_faces.size(); ++i)
+		for(int i = 0; i < m_softShape->m_faces.size(); ++i)
 		{
-			const btSoftBodyFace& f = m_faces[i];
+			const btSoftBodyFace& f = m_softShape->m_faces[i];
 			const btVector3& position0 = m_nodes[ f.m_indicies[0] ].m_position;
 			const btVector3& position1 = m_nodes[ f.m_indicies[1] ].m_position;
 			const btVector3& position2 = m_nodes[ f.m_indicies[2] ].m_position;

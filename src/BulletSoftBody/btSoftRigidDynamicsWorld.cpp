@@ -286,7 +286,7 @@ void	btSoftRigidDynamicsWorld::rayTestSingle(const btTransform& rayFromTrans,con
 					// get the normal
 					btVector3 rayDir = rayToTrans.getOrigin() - rayFromTrans.getOrigin();
 
-					const btSoftBodyFace& face = softBody->m_faces[softResult.index];
+					const btSoftBodyFace& face = softBody->m_softShape->m_faces[softResult.index];
 					const btSoftBodyNode& node0 = softBody->m_nodes[ face.m_indicies[0] ];
 					const btSoftBodyNode& node1 = softBody->m_nodes[ face.m_indicies[1] ];
 					const btSoftBodyNode& node2 = softBody->m_nodes[ face.m_indicies[2] ];

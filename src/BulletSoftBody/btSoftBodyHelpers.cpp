@@ -104,9 +104,9 @@ void			btSoftBodyHelpers::Draw(btSoftBody* psb, btIDebugDraw* idraw, int drawfla
 		// Links	 
 		if(0!=(drawflags&fDrawFlags::Links))
 		{
-			for(i=0;i<psb->m_links.size();++i)
+			for(i=0;i<psb->m_softShape->m_links.size();++i)
 			{
-				const btSoftBodyLink& l = psb->m_links[i];
+				const btSoftBodyLink& l = psb->m_softShape->m_links[i];
 				idraw->drawLine( psb->m_nodes[ l.m_linkIndicies[0] ].m_position, psb->m_nodes[ l.m_linkIndicies[1] ].m_position, lcolor);
 			}
 		}
@@ -148,9 +148,9 @@ void			btSoftBodyHelpers::Draw(btSoftBody* psb, btIDebugDraw* idraw, int drawfla
 			const btScalar	scl=(btScalar)0.8;
 			const btScalar	alp=(btScalar)1;
 			const btVector3	col(0,(btScalar)0.7,0);
-			for(i=0;i<psb->m_faces.size();++i)
+			for(i=0;i<psb->m_softShape->m_faces.size();++i)
 			{
-				const btSoftBodyFace& face = psb->m_faces[i];
+				const btSoftBodyFace& face = psb->m_softShape->m_faces[i];
 				
 				const btVector3 x[] = { nodes[ face.m_indicies[0] ].m_position, nodes[ face.m_indicies[1] ].m_position, nodes[ face.m_indicies[2] ].m_position };
 				const btVector3 c = (x[0] + x[1] + x[2]) / 3;
@@ -285,7 +285,7 @@ typedef LinkDeps_t *LinkDepsPtr_t;
 
 void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 {
-	int i, nLinks=psb->m_links.size(), nNodes=psb->m_nodes.size();
+	int i, nLinks=psb->m_softShape->m_links.size(), nNodes=psb->m_nodes.size();
 	btSoftBodyLink *lr;
 	int ar, br;
 	btSoftBodyNode *node0 = &(psb->m_nodes[0]);
@@ -303,7 +303,7 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 		
 	// Copy the original, unsorted links to a side buffer
 	btSoftBodyLink *linkBuffer = new btSoftBodyLink[nLinks];
-	memcpy(linkBuffer, &(psb->m_links[0]), sizeof(btSoftBodyLink)*nLinks);
+	memcpy(linkBuffer, &(psb->m_softShape->m_links[0]), sizeof(btSoftBodyLink)*nLinks);
 
 	// Clear out the node setup and ready list
 	for (i=0; i < nNodes+1; i++) {
@@ -318,7 +318,7 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 	for (i=0; i < nLinks; i++) {
 	
 		// Note which prior link calculations we are dependent upon & build up dependence lists
-		lr = &(psb->m_links[i]);
+		lr = &(psb->m_softShape->m_links[i]);
 		ar = ( (&psb->m_nodes[ lr->m_linkIndicies[0] ]) - node0 ) / (node1 - node0);
 		br = ( (&psb->m_nodes[ lr->m_linkIndicies[1] ]) - node0 ) / (node1 - node0);
 		if (nodeWrittenAt[ar] > REOP_NOT_DEPENDENT) {
@@ -360,7 +360,7 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 		// Use ready list to select the next link to process
 		linkNum = readyList[readyListHead++];
 		// Copy the next-to-calculate link back into the original link array
-		psb->m_links[i++] = linkBuffer[linkNum];
+		psb->m_softShape->m_links[i++] = linkBuffer[linkNum];
 
 		// Free up any link inputs that are dependent on this one
 		linkDep = linkDepListStarts[linkNum];
@@ -812,7 +812,7 @@ btSoftBody*		btSoftBodyHelpers::CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo
 
 	if (randomizeConstraints)
 	{
-		btSoftBodyMeshModifier::randomizeConstraints(psb->m_links);
+		btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
 	}
 
 	return(psb);
@@ -847,7 +847,7 @@ btSoftBody*		btSoftBodyHelpers::CreateFromConvexHull(btSoftBodyWorldInfo& worldI
 	hlib.ReleaseResult(hres);
 	if (randomizeConstraints)
 	{
-		btSoftBodyMeshModifier::randomizeConstraints(psb->m_links);
+		btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
 	}
 	return(psb);
 }
