@@ -419,33 +419,31 @@ void			btSoftBodyHelpers::DrawFrame(		btSoftBody* psb,
 //
 btSoftBody*		btSoftBodyHelpers::CreateRope(	btSoftBodyWorldInfo& worldInfo, const btVector3& from,
 											  const btVector3& to,
-											  int res,
-											  int fixeds)
+											  int resolution,
+											  bool fromNodeStatic, bool toNodeStatic)
 {
 	// Create nodes	 
-	const int		r=res+2;
-	btVector3*		x=new btVector3[r];
-	btScalar*		m=new btScalar[r];
-	int i;
-
-	for(i=0;i<r;++i)
+	int numNodes = resolution + 2;
+	
+	btSoftBody* psb = new btSoftBody(&worldInfo);
+	
+	for(int i = 0; i < numNodes; ++i)
 	{
-		const btScalar	t=i/(btScalar)(r-1);
-		x[i]=lerp(from,to,t);
-		m[i]=1;
+		btScalar t = i / (btScalar)(numNodes - 1);
+		btVector3 nodePosition = lerp(from, to, t);
+		btScalar nodeMass = btScalar(1.0);
+		
+		psb->appendNode(nodePosition, nodeMass);
 	}
-	btSoftBody*		psb= new btSoftBody(&worldInfo,r,x,m);
-	if(fixeds&1) psb->setMass(0,0);
-	if(fixeds&2) psb->setMass(r-1,0);
-	delete[] x;
-	delete[] m;
+	
+	if(fromNodeStatic) psb->setMass(0, 0);
+	if(toNodeStatic) psb->setMass(numNodes - 1, 0);
+	
 	// Create links	 
-	for(i=1;i<r;++i)
-	{
-		psb->appendLink(i-1,i);
-	}
+	for(int i = 1; i < numNodes; ++i) psb->appendLink(i - 1, i);
+	
 	// Finished		 
-	return(psb);
+	return psb;
 }
 
 //
@@ -463,9 +461,9 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 	if((resx<2)||(resy<2)) return(0);
 	const int	rx=resx;
 	const int	ry=resy;
-	const int	tot=rx*ry;
-	btVector3*	x=new btVector3[tot];
-	btScalar*	m=new btScalar[tot];
+	const int	numNodes=rx*ry;
+	btVector3*	x=new btVector3[numNodes];
+	btScalar*	m=new btScalar[numNodes];
 	int iy;
 
 	for(iy=0;iy<ry;++iy)
@@ -480,7 +478,10 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 			m[IDX(ix,iy)]=1;
 		}
 	}
-	btSoftBody*		psb=new btSoftBody(&worldInfo,tot,x,m);
+	btSoftBody* psb = new btSoftBody(&worldInfo);
+	for(int i = 0; i < numNodes; ++i) psb->appendNode(x[i], m[i]);
+	
+	
 	if(fixeds&1)	psb->setMass(IDX(0,0),0);
 	if(fixeds&2)	psb->setMass(IDX(rx-1,0),0);
 	if(fixeds&4)	psb->setMass(IDX(0,ry-1),0);
@@ -604,15 +605,15 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 	*
 	*
 	*/
-
+	
 #define IDX(_x_,_y_)	((_y_)*rx+(_x_))
 	// Create nodes		 
 	if((resx<2)||(resy<2)) return(0);
 	const int	rx=resx;
 	const int	ry=resy;
-	const int	tot=rx*ry;
-	btVector3*	x=new btVector3[tot];
-	btScalar*	m=new btScalar[tot];
+	const int	numNodes=rx*ry;
+	btVector3*	x=new btVector3[numNodes];
+	btScalar*	m=new btScalar[numNodes];
 
 	int iy;
 
@@ -628,7 +629,8 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 			m[IDX(ix,iy)]=1;
 		}
 	}
-	btSoftBody*	psb=new btSoftBody(&worldInfo,tot,x,m);
+	btSoftBody*	psb = new btSoftBody(&worldInfo);
+	for(int i = 0; i < numNodes; ++i) psb->appendNode(x[i], m[i]);
 	if(fixeds&1)		psb->setMass(IDX(0,0),0);
 	if(fixeds&2)		psb->setMass(IDX(rx-1,0),0);
 	if(fixeds&4)		psb->setMass(IDX(0,ry-1),0);
@@ -784,7 +786,13 @@ btSoftBody*		btSoftBodyHelpers::CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo
 	{
 		vtx[j]=btVector3(vertices[i],vertices[i+1],vertices[i+2]);
 	}
-	btSoftBody*		psb=new btSoftBody(&worldInfo,vtx.size(),&vtx[0],0);
+	btSoftBody* psb = new btSoftBody(&worldInfo);
+	for(int i = 0; i < vtx.size(); ++i)
+	{
+		psb->appendNode(vtx[i], btScalar(1.0));
+	}
+	
+	
 	for( i=0,ni=ntriangles*3;i<ni;i+=3)
 	{
 		const int idx[]={triangles[i],triangles[i+1],triangles[i+2]};
@@ -819,8 +827,13 @@ btSoftBody*		btSoftBodyHelpers::CreateFromConvexHull(btSoftBodyWorldInfo& worldI
 	HullLibrary		hlib;//?? 
 	hdsc.mMaxVertices=nvertices;
 	hlib.CreateConvexHull(hdsc,hres);
-	btSoftBody*		psb=new btSoftBody(&worldInfo,(int)hres.mNumOutputVertices,
-		&hres.m_OutputVertices[0],0);
+	btSoftBody* psb = new btSoftBody(&worldInfo);
+	
+	for(int i = 0; i < (int)hres.mNumOutputVertices; ++i)
+	{
+		psb->appendNode(hres.m_OutputVertices[i], btScalar(1.0));
+	}	
+		
 	for(int i=0;i<(int)hres.mNumFaces;++i)
 	{
 		const int idx[]={	static_cast<int>(hres.m_Indices[i*3+0]),

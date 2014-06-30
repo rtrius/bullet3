@@ -315,12 +315,9 @@ public:
 	btDbvt					m_faceBvh;		// Faces tree
 
 public:
-	btSoftBody(btSoftBodyWorldInfo* worldInfo, int numNodes, const btVector3* nodePositions, const btScalar* nodeMasses);
 	btSoftBody(btSoftBodyWorldInfo* worldInfo);
 
 	virtual ~btSoftBody();
-	
-	void initDefaults();
 
 	btSoftBodyWorldInfo* getWorldInfo() { return m_worldInfo; }
 

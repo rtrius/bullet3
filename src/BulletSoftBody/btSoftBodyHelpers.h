@@ -41,11 +41,11 @@ struct	btSoftBodyHelpers
 	static void DrawFrame(btSoftBody* psb, btIDebugDraw* idraw);	// Draw rigid frame
 	
 	// Create a rope														 
-	static	btSoftBody*		CreateRope( btSoftBodyWorldInfo& worldInfo,
+	static	btSoftBody* CreateRope( btSoftBodyWorldInfo& worldInfo,
 		const btVector3& from,
 		const btVector3& to,
-		int res,
-		int fixeds);
+		int resolution,
+		bool fromNodeStatic, bool toNodeStatic);
 		
 	// Create a patch														 
 	static	btSoftBody*		CreatePatch(btSoftBodyWorldInfo& worldInfo,

@@ -19,50 +19,7 @@ subject to the following restrictions:
 #include "btSoftBodyData.h"
 #include "LinearMath/btSerializer.h"
 
-
-//
-btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo, int numNodes, const btVector3* nodePositions, const btScalar* nodeMasses)
-:m_softBodySolver(0),m_worldInfo(worldInfo)
-{	
-	//
-	initDefaults();
-
-	// Default material 
-	btSoftBodyMaterial* pm = appendMaterial();
-	pm->m_linearStiffness	=	1;
-
-	// Nodes
-	const btScalar		margin=getCollisionShape()->getMargin();
-	m_nodes.resize(numNodes);
-	for(int i = 0; i < numNodes; ++i)
-	{	
-		btVector3 position = nodePositions ? *nodePositions++ : btVector3(0,0,0);
-		btScalar mass = nodeMasses ? *nodeMasses++ : 1;
-	
-		btSoftBodyNode&	n = m_nodes[i];
-		
-		n.m_position = position;
-		n.m_prevPosition = position;
-		n.m_velocity = btVector3(0,0,0);
-		n.m_accumulatedForce = btVector3(0,0,0);
-		n.m_normal = btVector3(0,0,0);
-		n.m_invMass = (mass > 0) ? 1 / mass : 0;
-		n.m_area = btScalar(0.0);
-		n.m_leaf = m_nodeBvh.insert( btDbvtVolume::FromCR(n.m_position, margin), reinterpret_cast<void*>(i) );
-		n.m_isAttachedToAnchor = 0;
-	}
-	updateBounds();	
-
-}
-
-btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo)
-:m_worldInfo(worldInfo)
-{
-	initDefaults();
-}
-
-
-void	btSoftBody::initDefaults()
+btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo) : m_softBodySolver(0), m_worldInfo(worldInfo)
 {
 	m_internalType		=	CO_SOFT_BODY;
 	m_bUpdateRtCst		=	true;
@@ -73,6 +30,10 @@ void	btSoftBody::initDefaults()
 	///for now, create a collision shape internally
 	m_collisionShape = new btSoftBodyCollisionShape(this);
 	m_collisionShape->setMargin(0.25f);
+	
+	// Default material 
+	btSoftBodyMaterial* pm = appendMaterial();
+	pm->m_linearStiffness	=	1;
 }
 
 //

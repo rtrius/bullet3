@@ -329,7 +329,7 @@ static void	Init_Ropes(SoftDemo* pdemo)
 		btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,	btVector3(-10,0,i*0.25),
 			btVector3(10,0,i*0.25),
 			16,
-			1+2);
+			true, true);
 		psb->m_cfg.m_positionIterations		=	4;
 		psb->m_materials[0]->m_linearStiffness	=	0.1+(i/(btScalar)(n-1))*0.9;
 		psb->setTotalMass(20);
@@ -349,7 +349,7 @@ static void	Init_RopeAttach(SoftDemo* pdemo)
 	{
 		static btSoftBody* CtorRope(SoftDemo* pdemo,const btVector3& p)
 		{
-			btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,p,p+btVector3(10,0,0),8,1);
+			btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,p,p+btVector3(10,0,0),8, true, false);
 			psb->setTotalMass(50);
 			pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 			return(psb);
@@ -398,7 +398,7 @@ static void	Init_Impact(SoftDemo* pdemo)
 	btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,	btVector3(0,0,0),
 		btVector3(0,-1,0),
 		0,
-		1);
+		true, false);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 	psb->m_cfg.m_rigidContactHardness = 0.5;
 	btTransform startTransform;
@@ -721,7 +721,7 @@ static void	Init_Sticks(SoftDemo* pdemo)
 			btSoftBody*		psb=btSoftBodyHelpers::CreateRope(	pdemo->m_softBodyWorldInfo,	org,
 				org+btVector3(hg*0.001,hg,0),
 				sg,
-				1);
+				true, false);
 			psb->m_cfg.m_damping = 0.005;
 			psb->m_cfg.m_rigidContactHardness =	0.1;
 			for(int i=0;i<3;++i)
