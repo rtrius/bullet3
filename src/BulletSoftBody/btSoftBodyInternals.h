@@ -119,12 +119,6 @@ public:
 
 //
 template <typename T>
-static inline void			ZeroInitialize(T& value)
-{
-	memset(&value,0,sizeof(T));
-}
-//
-template <typename T>
 static inline T				Lerp(const T& a,const T& b,btScalar t)
 { return(a+(b-a)*t); }
 

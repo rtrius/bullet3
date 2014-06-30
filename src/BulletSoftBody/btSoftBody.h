@@ -72,7 +72,6 @@ struct btSoftBodyNode
 struct btSoftBodyMaterial
 {
 	btScalar m_linearStiffness;	///<[0,1]; lower stiffness means that Links are easier to stretch.
-	bool m_debugDraw;
 };
 
 ///Distance constraint between 2 nodes; used for stretch, shear, and bending constraints
@@ -90,7 +89,6 @@ struct btSoftBodyFace
 {
 	int m_indicies[3];				///<Indicies of m_nodes[]
 	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this face
-	btSoftBodyMaterial* m_material;
 };
 	
 
@@ -276,6 +274,12 @@ class btSoftBodyMeshModifier
 {
 public:
 	static void refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut);
+	
+	///Generate bending constraints based on distance in the adjency graph
+	static int generateBendingConstraints(btSoftBody* softBody, int distance, btSoftBodyMaterial* mat=0);
+
+	///Randomize constraints to reduce solver bias
+	static void randomizeConstraints(btAlignedObjectArray<btSoftBodyLink>& links);	
 };
 	
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
@@ -331,7 +335,7 @@ public:
 	
 	void appendNode(const btVector3& position, btScalar mass);
 	void appendLink(int node0, int node1, btSoftBodyMaterial* mat=0, bool bcheckexist=false);
-	void appendFace(int node0, int node1, int node2, btSoftBodyMaterial* mat=0);
+	void appendFace(int node0, int node1, int node2);
 
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 	void appendAnchor(int node,btRigidBody* body, const btVector3& localPivot,bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
@@ -355,9 +359,6 @@ public:
 	void scale(const btVector3& scl);
 	
 	btScalar getClosedTrimeshVolume() const;		///<Returns the volume, assuming that m_faces represents a closed triangle mesh
-	
-	int generateBendingConstraints(int distance, btSoftBodyMaterial* mat=0);	//Generate bending constraints based on distance in the adjency graph
-	void randomizeConstraints();	//Randomize constraints to reduce solver bias	
 	
 	///Ray casting using rayFrom and rayTo in worldspace, (not direction!)
 	bool rayTest(const btVector3& rayFrom, const btVector3& rayTo, btSoftBodyRaycastResult& results);

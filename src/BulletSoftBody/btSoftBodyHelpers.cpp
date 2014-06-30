@@ -107,7 +107,6 @@ void			btSoftBodyHelpers::Draw(btSoftBody* psb, btIDebugDraw* idraw, int drawfla
 			for(i=0;i<psb->m_links.size();++i)
 			{
 				const btSoftBodyLink& l = psb->m_links[i];
-				if(!l.m_material->m_debugDraw) continue;
 				idraw->drawLine( psb->m_nodes[ l.m_linkIndicies[0] ].m_position, psb->m_nodes[ l.m_linkIndicies[1] ].m_position, lcolor);
 			}
 		}
@@ -151,8 +150,7 @@ void			btSoftBodyHelpers::Draw(btSoftBody* psb, btIDebugDraw* idraw, int drawfla
 			const btVector3	col(0,(btScalar)0.7,0);
 			for(i=0;i<psb->m_faces.size();++i)
 			{
-				const btSoftBodyFace&	face = psb->m_faces[i];
-				if(!face.m_material->m_debugDraw) continue;
+				const btSoftBodyFace& face = psb->m_faces[i];
 				
 				const btVector3 x[] = { nodes[ face.m_indicies[0] ].m_position, nodes[ face.m_indicies[1] ].m_position, nodes[ face.m_indicies[2] ].m_position };
 				const btVector3 c = (x[0] + x[1] + x[2]) / 3;
@@ -806,7 +804,7 @@ btSoftBody*		btSoftBodyHelpers::CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo
 
 	if (randomizeConstraints)
 	{
-		psb->randomizeConstraints();
+		btSoftBodyMeshModifier::randomizeConstraints(psb->m_links);
 	}
 
 	return(psb);
@@ -836,7 +834,7 @@ btSoftBody*		btSoftBodyHelpers::CreateFromConvexHull(btSoftBodyWorldInfo& worldI
 	hlib.ReleaseResult(hres);
 	if (randomizeConstraints)
 	{
-		psb->randomizeConstraints();
+		btSoftBodyMeshModifier::randomizeConstraints(psb->m_links);
 	}
 	return(psb);
 }
