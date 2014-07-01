@@ -289,7 +289,13 @@ static btSoftBody* Ctor_SoftBox(SoftDemo* pdemo,const btVector3& p,const btVecto
 		p+h*btVector3(+1,-1,+1),
 		p+h*btVector3(-1,+1,+1),
 		p+h*btVector3(+1,+1,+1)};
-	btSoftBody*		psb=btSoftBodyHelpers::CreateFromConvexHull(pdemo->m_softBodyWorldInfo,c,8);
+		
+		
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromConvexHull(c, 8);
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
@@ -308,7 +314,12 @@ static btSoftBody* Ctor_SoftBoulder(SoftDemo* pdemo,const btVector3& p,const btV
 	{
 		pts.push_back(Vector3Rand()*s+p);
 	}
-	btSoftBody*		psb=btSoftBodyHelpers::CreateFromConvexHull(pdemo->m_softBodyWorldInfo,&pts[0],pts.size());
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromConvexHull( &pts[0], pts.size() );
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
@@ -323,21 +334,22 @@ static btSoftBody* Ctor_SoftBoulder(SoftDemo* pdemo,const btVector3& p,const btV
 static void	Init_Ropes(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	const int n=15;
-	for(int i=0;i<n;++i)
+	
+	const int numRopes = 15;
+	for(int i = 0; i < numRopes; ++i)
 	{
-		btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,	btVector3(-10,0,i*0.25),
-			btVector3(10,0,i*0.25),
-			16,
-			true, true);
+		btSoftBodyShape* softShape = btSoftBodyHelpers::CreateRope(btVector3(-10,0,i*0.25), btVector3(10,0,i*0.25), 16, true, true);
 		
-		btScalar linkStiffness = 0.1 + (i/(btScalar)(n-1)) * 0.9;
+		btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+		psb->setupNodesAndShape(softShape);
+		
+		btScalar linkStiffness = 0.1 + (i/(btScalar)(numRopes-1)) * 0.9;
 		
 		psb->m_cfg.m_positionIterations = 4;
 		psb->m_cfg.m_stretchStiffness = linkStiffness;
 		psb->m_cfg.m_bendingStiffness = linkStiffness;
-		
 		psb->setTotalMass(20);
+		
 		pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
 	}
@@ -354,8 +366,12 @@ static void	Init_RopeAttach(SoftDemo* pdemo)
 	{
 		static btSoftBody* CtorRope(SoftDemo* pdemo,const btVector3& p)
 		{
-			btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,p,p+btVector3(10,0,0),8, true, false);
+			btSoftBodyShape* softShape = btSoftBodyHelpers::CreateRope(p, p + btVector3(10,0,0), 8, true, false);
+			
+			btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+			psb->setupNodesAndShape(softShape);
 			psb->setTotalMass(50);
+			
 			pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 			return(psb);
 		}
@@ -379,10 +395,14 @@ static void	Init_ClothAttach(SoftDemo* pdemo)
 	const btScalar	s=4;
 	const btScalar	h=6;
 	const int		r=9;
-	btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(pdemo->m_softBodyWorldInfo,btVector3(-s,h,-s),
-		btVector3(+s,h,-s),
-		btVector3(-s,h,+s),
-		btVector3(+s,h,+s),r,r,4+8,true);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch(btVector3(-s,h,-s),
+																btVector3(+s,h,-s),
+																btVector3(-s,h,+s),
+																btVector3(+s,h,+s), r, r, 4+8, true);
+	btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 
 	btTransform startTransform;
@@ -400,12 +420,15 @@ static void	Init_ClothAttach(SoftDemo* pdemo)
 static void	Init_Impact(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateRope(pdemo->m_softBodyWorldInfo,	btVector3(0,0,0),
-		btVector3(0,-1,0),
-		0,
-		true, false);
-	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateRope(btVector3(0,0,0), btVector3(0,-1,0), 0, true, false);
+			
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
 	psb->m_cfg.m_rigidContactHardness = 0.5;
+	
+	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
+	
 	btTransform startTransform;
 	startTransform.setIdentity();
 	startTransform.setOrigin(btVector3(0,20,0));
@@ -431,11 +454,15 @@ static void	Init_CapsuleCollision(SoftDemo* pdemo)
 	btRigidBody*		body=pdemo->localCreateRigidBody(0,startTransform,capsuleShape);
 	body->setFriction( 0.8f );
 
-	int fixed=0;//4+8;
-	btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(pdemo->m_softBodyWorldInfo,btVector3(-s,h,-s),
-		btVector3(+s,h,-s),
-		btVector3(-s,h,+s),
-		btVector3(+s,h,+s),r,r,fixed,true);
+	int fixed=0;
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch(btVector3(-s,h,-s),
+																btVector3(+s,h,-s),
+																btVector3(-s,h,+s),
+																btVector3(+s,h,+s), r, r, fixed, true);
+	btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 	psb->setTotalMass(0.1);
 
@@ -457,16 +484,18 @@ static void	Init_Collide(SoftDemo* pdemo)
 	{
 		static btSoftBody* Create(SoftDemo* pdemo,const btVector3& x,const btVector3& a)
 		{
-			btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,gVertices,
-				&gIndices[0][0],
-				NUM_TRIANGLES);
+			btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromTriMesh(gVertices, &gIndices[0][0], NUM_TRIANGLES);
+			softShape->scale( btVector3(2,2,2) );
+			
+			btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+			psb->setupNodesAndShape(softShape);
+			
 			btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 			psb->m_cfg.m_positionIterations=2;
 			btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
 			btMatrix3x3	m;
 			m.setEulerZYX(a.x(),a.y(),a.z());
 			psb->transform(btTransform(m,x));
-			psb->scale(btVector3(2,2,2));
 			psb->setTotalMass(50,true);
 			pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 			return(psb);
@@ -474,7 +503,7 @@ static void	Init_Collide(SoftDemo* pdemo)
 	};
 	for(int i=0;i<3;++i)
 	{
-		Functor::Create(pdemo,btVector3(3*i,2,0),btVector3(SIMD_PI/2*(1-(i&1)),SIMD_PI/2*(i&1),0));
+		Functor::Create(pdemo,btVector3(6*i,2,0),btVector3(SIMD_PI/2*(1-(i&1)),SIMD_PI/2*(i&1),0));
 	}
 	pdemo->m_cutting=true;
 }
@@ -489,9 +518,11 @@ static void	Init_Collide2(SoftDemo* pdemo)
 	{
 		static btSoftBody* Create(SoftDemo* pdemo,const btVector3& x,const btVector3& a)
 		{
-			btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,gVerticesBunny,
-				&gIndicesBunny[0][0],
-				BUNNY_NUM_TRIANGLES);
+			btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromTriMesh(gVerticesBunny, &gIndicesBunny[0][0], BUNNY_NUM_TRIANGLES);
+			softShape->scale( btVector3(6,6,6) );
+			
+			btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+			psb->setupNodesAndShape(softShape);
 				
 			psb->m_cfg.m_bendingStiffness = btScalar(0.5);
 			psb->m_cfg.m_positionIterations	= 2;
@@ -502,7 +533,6 @@ static void	Init_Collide2(SoftDemo* pdemo)
 			btMatrix3x3	m;
 			m.setEulerZYX(a.x(),a.y(),a.z());
 			psb->transform(btTransform(m,x));
-			psb->scale(btVector3(6,6,6));
 			psb->setTotalMass(100,true);
 			pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 			return(psb);
@@ -510,7 +540,7 @@ static void	Init_Collide2(SoftDemo* pdemo)
 	};
 	for(int i=0;i<3;++i)
 	{
-		Functor::Create(pdemo,btVector3(0,-1+5*i,0),btVector3(0,SIMD_PI/2*(i&1),0));
+		Functor::Create(pdemo,btVector3(0,-4+30*i,0),btVector3(0,SIMD_PI/2*(i&1),0));
 	}	
 	pdemo->m_cutting=true;
 }
@@ -523,11 +553,15 @@ static void	Init_Collide3(SoftDemo* pdemo)
 	TRACEDEMO;
 	{
 		const btScalar	s=8;
-		btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(	pdemo->m_softBodyWorldInfo,btVector3(-s,0,-s),
-			btVector3(+s,0,-s),
-			btVector3(-s,0,+s),
-			btVector3(+s,0,+s),
-			15,15,1+2+4+8,true);
+		
+		btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch(btVector3(-s,0,-s),
+																	btVector3(+s,0,-s),
+																	btVector3(-s,0,+s),
+																	btVector3(+s,0,+s),
+																	15,15,1+2+4+8,true);
+	
+		btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+		psb->setupNodesAndShape(softShape);
 			
 		psb->m_cfg.m_stretchStiffness = btScalar(0.4);
 		psb->m_cfg.m_bendingStiffness = btScalar(0.4);
@@ -538,12 +572,16 @@ static void	Init_Collide3(SoftDemo* pdemo)
 	{		
 		const btScalar	s=4;
 		const btVector3	o=btVector3(5,10,0);
-		btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(	pdemo->m_softBodyWorldInfo,
-			btVector3(-s,0,-s)+o,
-			btVector3(+s,0,-s)+o,
-			btVector3(-s,0,+s)+o,
-			btVector3(+s,0,+s)+o,
-			7,7,0,true);
+		
+		btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch( btVector3(-s,0,-s)+o,
+																	btVector3(+s,0,-s)+o,
+																	btVector3(-s,0,+s)+o,
+																	btVector3(+s,0,+s)+o,
+																	7, 7, 0, true);
+	
+		btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+		psb->setupNodesAndShape(softShape);
+		
 		btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 			
 		psb->m_cfg.m_stretchStiffness = btScalar(0.5);
@@ -566,13 +604,13 @@ static void	Init_Aero(SoftDemo* pdemo)
 	const int		segments=6;
 	const int		count=50;
 	for(int i=0;i<count;++i)
-	{
-		btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(pdemo->m_softBodyWorldInfo,btVector3(-s,h,-s),
-			btVector3(+s,h,-s),
-			btVector3(-s,h,+s),
-			btVector3(+s,h,+s),
-			segments,segments,
-			0,true);
+	{		
+		btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch( btVector3(-s,h,-s), btVector3(+s,h,-s),
+																	btVector3(-s,h,+s), btVector3(+s,h,+s),
+																	segments, segments, 0, true);
+	
+		btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+		psb->setupNodesAndShape(softShape);
 			
 		btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 		psb->m_aeroForce.m_liftCoeff =	0.004;
@@ -608,12 +646,12 @@ static void	Init_Aero2(SoftDemo* pdemo)
 	
 	for(int i=0;i<count;++i)
 	{
-		btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(	pdemo->m_softBodyWorldInfo,btVector3(-s,0,-s*3),
-			btVector3(+s,0,-s*3),
-			btVector3(-s,0,+s),
-			btVector3(+s,0,+s),
-			segments,segments*3,
-			1+2,true);
+		btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch( btVector3(-s,0,-s*3), btVector3(+s,0,-s*3),
+																		btVector3(-s,0,+s), btVector3(+s,0,+s),
+																		segments,segments*3, 1+2,true);
+	
+		btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+		psb->setupNodesAndShape(softShape);
 		
 		psb->getCollisionShape()->setMargin(0.5);
 		psb->m_cfg.m_bendingStiffness = btScalar(0.0004);
@@ -673,9 +711,12 @@ static void	Init_Friction(SoftDemo* pdemo)
 static void	Init_Pressure(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateEllipsoid(pdemo->m_softBodyWorldInfo,btVector3(35,25,0),
-		btVector3(1,1,1)*3,
-		512);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateEllipsoid(btVector3(35,25,0), btVector3(1,1,1)*3, 512);
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+		
 	psb->m_cfg.m_stretchStiffness = btScalar(0.1);
 	psb->m_cfg.m_bendingStiffness = btScalar(0.1);
 	
@@ -697,9 +738,12 @@ static void	Init_Pressure(SoftDemo* pdemo)
 static void	Init_Volume(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateEllipsoid(pdemo->m_softBodyWorldInfo,btVector3(35,25,0),
-		btVector3(1,1,1)*3,
-		512);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateEllipsoid(btVector3(35,25,0), btVector3(1,1,1)*3, 512);
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	psb->m_cfg.m_stretchStiffness = btScalar(0.45);
 	psb->m_cfg.m_bendingStiffness = btScalar(0.45);
 	
@@ -729,15 +773,16 @@ static void	Init_Sticks(SoftDemo* pdemo)
 	{
 		for(int x=0;x<n;++x)
 		{
-			const btVector3	org(-sz+sz*2*x*in,
-				-10,
-				-sz+sz*2*y*in);
-			btSoftBody*		psb=btSoftBodyHelpers::CreateRope(	pdemo->m_softBodyWorldInfo,	org,
-				org+btVector3(hg*0.001,hg,0),
-				sg,
-				true, false);
+			const btVector3	org(-sz+sz*2*x*in, -10, -sz+sz*2*y*in);
+				
+			
+			btSoftBodyShape* softShape = btSoftBodyHelpers::CreateRope(org, org+btVector3(hg*0.001,hg,0), sg, true, false);
+					
+			btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+			psb->setupNodesAndShape(softShape);
 			psb->m_cfg.m_damping = 0.005;
 			psb->m_cfg.m_rigidContactHardness =	0.1;
+			
 			for(int i=0;i<3;++i)
 			{
 				btSoftBodyMeshModifier::generateBendingConstraints(psb, 2+i);
@@ -758,13 +803,13 @@ static void	Init_Cloth(SoftDemo* pdemo)
 {
 	TRACEDEMO;
 	const btScalar	s=8;
-	btSoftBody*		psb=btSoftBodyHelpers::CreatePatch(	pdemo->m_softBodyWorldInfo,btVector3(-s,0,-s),
-		btVector3(+s,0,-s),
-		btVector3(-s,0,+s),
-		btVector3(+s,0,+s),
-		31,31,
-		//		31,31,
-		1+2+4+8,true);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch( btVector3(-s,0,-s), btVector3(+s,0,-s),
+																btVector3(-s,0,+s), btVector3(+s,0,+s),
+																31,31, 1+2+4+8, true);
+	
+	btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
 	
 	psb->getCollisionShape()->setMargin(0.5);
 	psb->m_cfg.m_bendingStiffness = btScalar(0.4);
@@ -783,15 +828,18 @@ static void	Init_Cloth(SoftDemo* pdemo)
 static void	Init_Bunny(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,gVerticesBunny,
-		&gIndicesBunny[0][0],
-		BUNNY_NUM_TRIANGLES);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromTriMesh(gVerticesBunny, &gIndicesBunny[0][0], BUNNY_NUM_TRIANGLES);
+	softShape->scale( btVector3(6,6,6) );
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	psb->m_cfg.m_bendingStiffness = btScalar(0.5);
 	btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 	psb->m_cfg.m_positionIterations	= 2;
 	psb->m_cfg.m_dynamicFriction = 0.5;
 	btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
-	psb->scale(btVector3(6,6,6));
 	psb->setTotalMass(100,true);	
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 	pdemo->m_cutting=true;
@@ -804,13 +852,16 @@ static void	Init_Bunny(SoftDemo* pdemo)
 static void	Init_BunnyMatch(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,	gVerticesBunny,
-		&gIndicesBunny[0][0],
-		BUNNY_NUM_TRIANGLES);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromTriMesh(gVerticesBunny, &gIndicesBunny[0][0], BUNNY_NUM_TRIANGLES);
+	softShape->scale( btVector3(6,6,6) );
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+		
 	psb->m_cfg.m_dynamicFriction = 0.5;
 	psb->m_cfg.m_positionIterations = 5;
 	btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
-	psb->scale(btVector3(6,6,6));
 	psb->setTotalMass(100,true);
 	psb->setPose(0.05);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);	
@@ -823,16 +874,20 @@ static void	Init_BunnyMatch(SoftDemo* pdemo)
 static void	Init_Torus(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(	pdemo->m_softBodyWorldInfo,	gVertices,
-		&gIndices[0][0],
-		NUM_TRIANGLES);
+	
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromTriMesh(gVertices, &gIndices[0][0], NUM_TRIANGLES);
+	softShape->scale( btVector3(2,2,2) );
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	btSoftBodyMeshModifier::generateBendingConstraints(psb, 2);
 	psb->m_cfg.m_positionIterations=2;
 	btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
 	btMatrix3x3	m;
 	m.setEulerZYX(SIMD_PI/2,0,0);
 	psb->transform(btTransform(m,btVector3(0,4,0)));
-	psb->scale(btVector3(2,2,2));
 	psb->setTotalMass(50,true);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 	pdemo->m_cutting=true;
@@ -846,9 +901,13 @@ static void	Init_Torus(SoftDemo* pdemo)
 static void	Init_TorusMatch(SoftDemo* pdemo)
 {
 	TRACEDEMO;
-	btSoftBody*	psb=btSoftBodyHelpers::CreateFromTriMesh(pdemo->m_softBodyWorldInfo,	gVertices,
-		&gIndices[0][0],
-		NUM_TRIANGLES);
+	
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreateFromTriMesh(gVertices, &gIndices[0][0], NUM_TRIANGLES);
+	softShape->scale( btVector3(2,2,2) );
+	
+	btSoftBody* psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	psb->m_cfg.m_stretchStiffness = btScalar(0.1);
 	psb->m_cfg.m_bendingStiffness = btScalar(0.1);
 	
@@ -856,7 +915,6 @@ static void	Init_TorusMatch(SoftDemo* pdemo)
 	btMatrix3x3	m;
 	m.setEulerZYX(SIMD_PI/2,0,0);
 	psb->transform(btTransform(m,btVector3(0,4,0)));
-	psb->scale(btVector3(2,2,2));
 	psb->setTotalMass(50,true);
 	psb->setPose(0.05);
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
@@ -874,7 +932,12 @@ static void	Init_Cutting1(SoftDemo* pdemo)
 		btVector3(-s,h,-s),
 		btVector3(+s,h,+s),
 		btVector3(-s,h,+s)};
-	btSoftBody*	psb=btSoftBodyHelpers::CreatePatch(pdemo->m_softBodyWorldInfo,p[0],p[1],p[2],p[3],r,r,1+2+4+8,true);
+		
+	btSoftBodyShape* softShape = btSoftBodyHelpers::CreatePatch(p[0], p[1], p[2], p[3], r, r, 1+2+4+8, true);
+	
+	btSoftBody*	psb = new btSoftBody(&pdemo->m_softBodyWorldInfo);
+	psb->setupNodesAndShape(softShape);
+	
 	pdemo->getSoftDynamicsWorld()->addSoftBody(psb);
 	psb->m_cfg.m_positionIterations=1;
 	pdemo->m_cutting=true;	

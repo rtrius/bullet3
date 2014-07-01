@@ -30,31 +30,31 @@ btSoftBody::btSoftBody(btSoftBodyWorldInfo*	worldInfo) : m_softBodySolver(0), m_
 	///for now, create a collision shape internally
 	m_collisionShape = new btSoftBodyCollisionShape(this);
 	m_collisionShape->setMargin(0.25f);
-	
-	m_softShape = new btSoftBodyShape();
 }
 
+void btSoftBody::setupNodesAndShape(btSoftBodyShape* softShape)
+{
+	m_softShape = softShape;
+	
+	//
+	m_nodes.resize(0);
+	for(int i = 0; i < softShape->numNodes(); ++i)
+		appendNode(softShape->m_referencePositions[i], softShape->m_referenceMasses[i]);
+		
+	updateNormals();
+	updateBounds();
+	updateArea();
+	
+	m_bUpdateRtCst = true;
+}
+	
 //
 btSoftBody::~btSoftBody()
 {
-	delete m_softShape;
-
 	//for now, delete the internal shape
 	delete m_collisionShape;
 }
 
-//
-bool btSoftBody::checkLink(int node0,int node1) const
-{
-	for(int i = 0; i < m_softShape->m_links.size(); ++i)
-	{
-		const btSoftBodyLink& l = m_softShape->m_links[i];
-		if(	(l.m_linkIndicies[0] == node0 && l.m_linkIndicies[1] == node1) ||
-			(l.m_linkIndicies[0] == node1 && l.m_linkIndicies[1] == node0)) return true;
-	}
-	
-	return false;
-}
 
 //
 void btSoftBody::appendNode(const btVector3& position, btScalar mass)
@@ -79,31 +79,36 @@ void btSoftBody::appendNode(const btVector3& position, btScalar mass)
 }
 
 //
-void btSoftBody::appendLink(int node0, int node1, btScalar stiffness, bool bcheckexist)
+bool btSoftBodyShape::checkLink(int node0,int node1) const
+{
+	for(int i = 0; i < m_links.size(); ++i)
+	{
+		const btSoftBodyLink& l = m_links[i];
+		if(	(l.m_linkIndicies[0] == node0 && l.m_linkIndicies[1] == node1) ||
+			(l.m_linkIndicies[0] == node1 && l.m_linkIndicies[1] == node0) ) return true;
+	}
+	
+	return false;
+}
+void btSoftBodyShape::appendLink(int node0, int node1, btScalar stiffness, bool bcheckexist)
 {
 	if( !bcheckexist || !checkLink(node0,node1) )
 	{
-		{
-			btSoftBodyLink l;
-			l.m_linkIndicies[0] = node0;
-			l.m_linkIndicies[1] = node1;
-			l.m_restLength = (m_nodes[node0].m_position - m_nodes[node1].m_position).length();
-			l.m_linkStiffness = stiffness;
-			l.m_isBendingLink = 0; 
-			m_softShape->m_links.push_back(l);
-		}
+		btSoftBodyLink l;
+		l.m_linkIndicies[0] = node0;
+		l.m_linkIndicies[1] = node1;
+		l.m_restLength = (m_referencePositions[node0] - m_referencePositions[node1]).length();
+		l.m_linkStiffness = stiffness;
+		l.m_isBendingLink = 0; 
+		m_links.push_back(l);
 		
-		m_bUpdateRtCst=true;
 	}
 }
-
-
-//
-void btSoftBody::appendFace(int node0, int node1, int node2)
+void btSoftBodyShape::appendFace(int node0, int node1, int node2)
 {
-	btAssert(node0!=node1);
-	btAssert(node1!=node2);
-	btAssert(node2!=node0);
+	btAssert(node0 != node1);
+	btAssert(node1 != node2);
+	btAssert(node2 != node0);
 	
 	if(node0 == node1 || node1 == node2 || node2 == node0) return;
 
@@ -112,17 +117,27 @@ void btSoftBody::appendFace(int node0, int node1, int node2)
 		f.m_indicies[0] = node0;
 		f.m_indicies[1] = node1;
 		f.m_indicies[2] = node2;
-		f.m_leaf = 0;
 		
-		m_softShape->m_faces.push_back(f);
+		m_faces.push_back(f);
 	}
+}
+void btSoftBodyShape::scale(const btVector3& scaling)
+{
+	for(int i = 0; i < m_referencePositions.size(); ++i) m_referencePositions[i] *= scaling; 
 	
-	m_bUpdateRtCst=true;
+	//Set current link lengths as resting lengths
+	for(int i = 0; i < m_links.size(); ++i)
+	{
+		btSoftBodyLink& l = m_links[i];
+		
+		const btVector3& nodePosition0 = m_referencePositions[ l.m_linkIndicies[0] ];
+		const btVector3& nodePosition1 = m_referencePositions[ l.m_linkIndicies[1] ];
+		
+		l.m_restLength = (nodePosition0 - nodePosition1).length();
+	}
 }
 
-//
-
-void			btSoftBody::appendAnchor(int node,btRigidBody* body, bool disableCollisionBetweenLinkedBodies,btScalar influence)
+void btSoftBody::appendAnchor(int node,btRigidBody* body, bool disableCollisionBetweenLinkedBodies,btScalar influence)
 {
 	btVector3 local = body->getWorldTransform().inverse()*m_nodes[node].m_position;
 	appendAnchor(node,body,local,disableCollisionBetweenLinkedBodies,influence);
@@ -288,37 +303,6 @@ void			btSoftBody::rotate(	const btQuaternion& rot)
 	t.setIdentity();
 	t.setRotation(rot);
 	transform(t);
-}
-
-//
-void			btSoftBody::scale(const btVector3& scl)
-{
-
-	const btScalar	margin=getCollisionShape()->getMargin();
-	ATTRIBUTE_ALIGNED16(btDbvtVolume)	vol;
-	
-	for(int i=0,ni=m_nodes.size();i<ni;++i)
-	{
-		btSoftBodyNode& n = m_nodes[i];
-		n.m_position*=scl;
-		n.m_prevPosition *= scl;
-		vol = btDbvtVolume::FromCR(n.m_position,margin);
-		m_nodeBvh.update(n.m_leaf, vol);
-	}
-	updateNormals();
-	updateBounds();
-	updateArea();
-	
-	//Set current link lengths as resting lengths
-	for(int i = 0; i < m_softShape->m_links.size(); ++i)
-	{
-		btSoftBodyLink& l = m_softShape->m_links[i];
-		
-		const btVector3& nodePosition0 = m_nodes[ l.m_linkIndicies[0] ].m_position;
-		const btVector3& nodePosition1 = m_nodes[ l.m_linkIndicies[1] ].m_position;
-		
-		l.m_restLength = (nodePosition0 - nodePosition1).length();
-	}
 }
 
 void btSoftBody::setPose(btScalar poseMatching)
@@ -567,7 +551,7 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 			{
 				if(adj[IDX(i,j)]==(unsigned)distance)
 				{
-					softBody->appendLink(i, j, stiffness);
+					softBody->m_softShape->appendLink(i, j, stiffness);
 					softBody->m_softShape->m_links[ softBody->m_softShape->m_links.size() - 1 ].m_isBendingLink = 1;
 					++nlinks;
 				}
@@ -706,7 +690,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 			const int ni = edges(linkIndex0, linkIndex1);
 			if(ni > 0)		//If a new node was created between these nodes
 			{
-				softBody->appendLink(linkIndex0, linkIndex1);
+				softBody->m_softShape->appendLink(linkIndex0, linkIndex1);
 				btSoftBodyLink* pft[] = {	&links[i], &links[links.size()-1] };			
 				pft[0]->m_linkIndicies[0] = linkIndex0;
 				pft[0]->m_linkIndicies[1] = ni;
@@ -728,7 +712,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 				const int ni=edges(idx[j],idx[k]);
 				if(ni>0)
 				{
-					softBody->appendFace(idx[0], idx[1], idx[2]);
+					softBody->m_softShape->appendFace(idx[0], idx[1], idx[2]);
 					const int	l=(k+1)%3;
 					btSoftBodyFace* pft[] = { &faces[i], &faces[faces.size()-1] };
 					pft[0]->m_indicies[0] = idx[l];
@@ -737,7 +721,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 					pft[1]->m_indicies[0] = ni;
 					pft[1]->m_indicies[1] = idx[k];
 					pft[1]->m_indicies[2] = idx[l];
-					softBody->appendLink(ni,idx[l]);
+					softBody->m_softShape->appendLink(ni,idx[l]);
 					--i;
 					break;
 				}
@@ -780,7 +764,7 @@ void btSoftBodyMeshModifier::refine(btSoftBody* softBody, btSoftImplicitShape* s
 			int	todetach = 0;
 			if(cnodes[linkIndex0] && cnodes[linkIndex1])
 			{
-				softBody->appendLink(linkIndex0, linkIndex1);
+				softBody->m_softShape->appendLink(linkIndex0, linkIndex1);
 				todetach=links.size()-1;
 			}
 			else
@@ -953,7 +937,7 @@ void btSoftBody::predictMotion(btScalar timeStep)
 			
 			btVector3 averageVelocity = (faceNode0.m_velocity + faceNode1.m_velocity + faceNode2.m_velocity) / 3;
 			
-			m_faceBvh.update(f.m_leaf, aabb, averageVelocity * velocityMargin, updateMargin);
+			m_faceBvh.update(m_faceLeaves[i], aabb, averageVelocity * velocityMargin, updateMargin);
 		}
 	}
 	
@@ -1100,7 +1084,11 @@ int btSoftBody::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btScal
 void btSoftBody::initializeFaceTree()
 {
 	m_faceBvh.clear();
-	for(int i = 0; i < m_softShape->m_faces.size(); ++i)
+	
+	int numFaces = m_softShape->m_faces.size();
+	
+	m_faceLeaves.resize(numFaces);
+	for(int i = 0; i < numFaces; ++i)
 	{
 		btSoftBodyFace& f = m_softShape->m_faces[i];
 		const btSoftBodyNode& faceNode0 = m_nodes[ f.m_indicies[0] ];
@@ -1110,7 +1098,7 @@ void btSoftBody::initializeFaceTree()
 		const btVector3* points[3] = { &faceNode0.m_position, &faceNode1.m_position, &faceNode2.m_position} ;
 		btDbvtVolume faceAabb = btDbvtVolume::FromPoints(points, 3);
 			
-		f.m_leaf = m_faceBvh.insert( faceAabb, reinterpret_cast<void*>(i) );
+		m_faceLeaves[i] = m_faceBvh.insert( faceAabb, reinterpret_cast<void*>(i) );
 	}
 }
 

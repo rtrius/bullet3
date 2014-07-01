@@ -41,52 +41,24 @@ struct	btSoftBodyHelpers
 	static void DrawFrame(btSoftBody* psb, btIDebugDraw* idraw);	// Draw rigid frame
 	
 	// Create a rope														 
-	static	btSoftBody* CreateRope( btSoftBodyWorldInfo& worldInfo,
-		const btVector3& from,
-		const btVector3& to,
-		int resolution,
-		bool fromNodeStatic, bool toNodeStatic);
+	static btSoftBodyShape* CreateRope(const btVector3& from, const btVector3& to, 
+										int resolution, bool fromNodeStatic, bool toNodeStatic);
 		
 	// Create a patch														 
-	static	btSoftBody*		CreatePatch(btSoftBodyWorldInfo& worldInfo,
-		const btVector3& corner00,
-		const btVector3& corner10,
-		const btVector3& corner01,
-		const btVector3& corner11,
-		int resx,
-		int resy,
-		int fixeds,
-		bool gendiags);
+	static btSoftBodyShape* CreatePatch(const btVector3& corner00, const btVector3& corner10,
+										const btVector3& corner01, const btVector3& corner11,
+										int resx, int resy, int fixeds, bool gendiags);
 		
 	// Create a patch with UV Texture Coordinates	 
-	static	btSoftBody*		CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
-		const btVector3& corner00,
-		const btVector3& corner10,
-		const btVector3& corner01,
-		const btVector3& corner11,
-		int resx,
-		int resy,
-		int fixeds,
-		bool gendiags,
-		float* tex_coords=0);
+	static btSoftBodyShape* CreatePatchUV( const btVector3& corner00, const btVector3& corner10,
+											const btVector3& corner01, const btVector3& corner11,
+											int resx, int resy, int fixeds, bool gendiags, float* tex_coords = 0);
 		
 	static float CalculateUV(int resx,int resy,int ix,int iy,int id);
 	
-	static btSoftBody* CreateEllipsoid(btSoftBodyWorldInfo& worldInfo,
-		const btVector3& center,
-		const btVector3& radius,
-		int res);	
-		
-	static btSoftBody* CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo,
-		const btScalar*	vertices,
-		const int* triangles,
-		int ntriangles,
-		bool randomizeConstraints = true);
-		
-	static btSoftBody* CreateFromConvexHull(btSoftBodyWorldInfo& worldInfo,
-		const btVector3* vertices,
-		int nvertices,
-		bool randomizeConstraints = true);
+	static btSoftBodyShape* CreateEllipsoid(const btVector3& center, const btVector3& radius, int res);
+	static btSoftBodyShape* CreateFromTriMesh(const btScalar* vertices, const int* triangles, int ntriangles, bool randomizeConstraints = true);
+	static btSoftBodyShape* CreateFromConvexHull(const btVector3* vertices, int nvertices, bool randomizeConstraints = true);
 
 
 	/// Sort the list of links to move link calculations that are dependent upon earlier

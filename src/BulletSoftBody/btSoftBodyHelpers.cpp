@@ -188,11 +188,7 @@ void			btSoftBodyHelpers::Draw(btSoftBody* psb, btIDebugDraw* idraw, int drawfla
 }
 
 //
-void			btSoftBodyHelpers::DrawInfos(		btSoftBody* psb,
-											 btIDebugDraw* idraw,
-											 bool masses,
-											 bool areas,
-											 bool)
+void btSoftBodyHelpers::DrawInfos(btSoftBody* psb, btIDebugDraw* idraw, bool masses, bool areas, bool)
 {
 	for(int i=0;i<psb->m_nodes.size();++i)
 	{
@@ -214,19 +210,11 @@ void			btSoftBodyHelpers::DrawInfos(		btSoftBody* psb,
 }
 
 //
-void			btSoftBodyHelpers::DrawNodeTree(	btSoftBody* psb,
-												btIDebugDraw* idraw,
-												int mindepth,
-												int maxdepth)
+void btSoftBodyHelpers::DrawNodeTree(btSoftBody* psb, btIDebugDraw* idraw, int mindepth, int maxdepth)
 {
 	drawTree(idraw, psb->m_nodeBvh.m_root, 0, btVector3(1,0,1), btVector3(1,1,1), mindepth, maxdepth);
 }
-
-//
-void			btSoftBodyHelpers::DrawFaceTree(	btSoftBody* psb,
-												btIDebugDraw* idraw,
-												int mindepth,
-												int maxdepth)
+void btSoftBodyHelpers::DrawFaceTree(btSoftBody* psb, btIDebugDraw* idraw, int mindepth, int maxdepth)
 {
 	drawTree(idraw,psb->m_faceBvh.m_root,0,btVector3(0,1,0),btVector3(1,0,0),mindepth,maxdepth);
 }
@@ -393,8 +381,7 @@ void btSoftBodyHelpers::ReoptimizeLinkOrder(btSoftBody *psb)
 
 
 //
-void			btSoftBodyHelpers::DrawFrame(		btSoftBody* psb,
-											 btIDebugDraw* idraw)
+void btSoftBodyHelpers::DrawFrame(btSoftBody* psb, btIDebugDraw* idraw)
 {
 	if( psb->m_pose.m_poseMatching != btScalar(0.0) )
 	{
@@ -417,15 +404,13 @@ void			btSoftBodyHelpers::DrawFrame(		btSoftBody* psb,
 }
 
 //
-btSoftBody*		btSoftBodyHelpers::CreateRope(	btSoftBodyWorldInfo& worldInfo, const btVector3& from,
-											  const btVector3& to,
-											  int resolution,
-											  bool fromNodeStatic, bool toNodeStatic)
+btSoftBodyShape* btSoftBodyHelpers::CreateRope(const btVector3& from, const btVector3& to,
+											  int resolution, bool fromNodeStatic, bool toNodeStatic)
 {
 	// Create nodes	 
 	int numNodes = resolution + 2;
 	
-	btSoftBody* psb = new btSoftBody(&worldInfo);
+	btSoftBodyShape* softShape = new btSoftBodyShape();
 	
 	for(int i = 0; i < numNodes; ++i)
 	{
@@ -433,21 +418,22 @@ btSoftBody*		btSoftBodyHelpers::CreateRope(	btSoftBodyWorldInfo& worldInfo, cons
 		btVector3 nodePosition = lerp(from, to, t);
 		btScalar nodeMass = btScalar(1.0);
 		
-		psb->appendNode(nodePosition, nodeMass);
+		softShape->m_referencePositions.push_back(nodePosition);
+		softShape->m_referenceMasses.push_back(nodeMass);
 	}
 	
-	if(fromNodeStatic) psb->setMass(0, 0);
-	if(toNodeStatic) psb->setMass(numNodes - 1, 0);
+	if(fromNodeStatic) softShape->m_referenceMasses[0] = btScalar(0.0);
+	if(toNodeStatic) softShape->m_referenceMasses[numNodes - 1] = btScalar(0.0);
 	
 	// Create links	 
-	for(int i = 1; i < numNodes; ++i) psb->appendLink(i - 1, i);
+	for(int i = 1; i < numNodes; ++i) softShape->appendLink(i - 1, i);
 	
 	// Finished		 
-	return psb;
+	return softShape;
 }
 
 //
-btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const btVector3& corner00,
+btSoftBodyShape* btSoftBodyHelpers::CreatePatch(const btVector3& corner00,
 											   const btVector3& corner10,
 											   const btVector3& corner01,
 											   const btVector3& corner11,
@@ -478,14 +464,19 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 			m[IDX(ix,iy)]=1;
 		}
 	}
-	btSoftBody* psb = new btSoftBody(&worldInfo);
-	for(int i = 0; i < numNodes; ++i) psb->appendNode(x[i], m[i]);
 	
+	btSoftBodyShape* softShape = new btSoftBodyShape();
+	for(int i = 0; i < numNodes; ++i)
+	{
+		softShape->m_referencePositions.push_back(x[i]);
+		softShape->m_referenceMasses.push_back(m[i]);
+	}
 	
-	if(fixeds&1)	psb->setMass(IDX(0,0),0);
-	if(fixeds&2)	psb->setMass(IDX(rx-1,0),0);
-	if(fixeds&4)	psb->setMass(IDX(0,ry-1),0);
-	if(fixeds&8)	psb->setMass(IDX(rx-1,ry-1),0);
+	if(fixeds & 1) softShape->m_referenceMasses[ IDX(0,0) ] = btScalar(0.0);
+	if(fixeds & 2) softShape->m_referenceMasses[ IDX(rx-1,0) ] = btScalar(0.0);
+	if(fixeds & 4) softShape->m_referenceMasses[ IDX(0,ry-1) ] = btScalar(0.0);
+	if(fixeds & 8) softShape->m_referenceMasses[ IDX(rx-1,ry-1) ] = btScalar(0.0);
+	
 	delete[] x;
 	delete[] m;
 	// Create links	and faces  
@@ -496,26 +487,26 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 			const int	idx=IDX(ix,iy);
 			const bool	mdx=(ix+1)<rx;
 			const bool	mdy=(iy+1)<ry;
-			if(mdx) psb->appendLink(idx,IDX(ix+1,iy));
-			if(mdy) psb->appendLink(idx,IDX(ix,iy+1));
+			if(mdx) softShape->appendLink(idx,IDX(ix+1,iy));
+			if(mdy) softShape->appendLink(idx,IDX(ix,iy+1));
 			if(mdx&&mdy)
 			{
 				if((ix+iy)&1)
 				{
-					psb->appendFace(IDX(ix,iy),IDX(ix+1,iy),IDX(ix+1,iy+1));
-					psb->appendFace(IDX(ix,iy),IDX(ix+1,iy+1),IDX(ix,iy+1));
+					softShape->appendFace(IDX(ix,iy),IDX(ix+1,iy),IDX(ix+1,iy+1));
+					softShape->appendFace(IDX(ix,iy),IDX(ix+1,iy+1),IDX(ix,iy+1));
 					if(gendiags)
 					{
-						psb->appendLink(IDX(ix,iy),IDX(ix+1,iy+1));
+						softShape->appendLink(IDX(ix,iy),IDX(ix+1,iy+1));
 					}
 				}
 				else
 				{
-					psb->appendFace(IDX(ix,iy+1),IDX(ix,iy),IDX(ix+1,iy));
-					psb->appendFace(IDX(ix,iy+1),IDX(ix+1,iy),IDX(ix+1,iy+1));
+					softShape->appendFace(IDX(ix,iy+1),IDX(ix,iy),IDX(ix+1,iy));
+					softShape->appendFace(IDX(ix,iy+1),IDX(ix+1,iy),IDX(ix+1,iy+1));
 					if(gendiags)
 					{
-						psb->appendLink(IDX(ix+1,iy),IDX(ix,iy+1));
+						softShape->appendLink(IDX(ix+1,iy),IDX(ix,iy+1));
 					}
 				}
 			}
@@ -523,12 +514,11 @@ btSoftBody*		btSoftBodyHelpers::CreatePatch(btSoftBodyWorldInfo& worldInfo,const
 	}
 	// Finished		 
 #undef IDX
-	return(psb);
+	return softShape;
 }
 
 //
-btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
-												 const btVector3& corner00,
+btSoftBodyShape* btSoftBodyHelpers::CreatePatchUV(const btVector3& corner00,
 												 const btVector3& corner10,
 												 const btVector3& corner01,
 												 const btVector3& corner11,
@@ -629,17 +619,21 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 			m[IDX(ix,iy)]=1;
 		}
 	}
-	btSoftBody*	psb = new btSoftBody(&worldInfo);
-	for(int i = 0; i < numNodes; ++i) psb->appendNode(x[i], m[i]);
-	if(fixeds&1)		psb->setMass(IDX(0,0),0);
-	if(fixeds&2)		psb->setMass(IDX(rx-1,0),0);
-	if(fixeds&4)		psb->setMass(IDX(0,ry-1),0);
-	if(fixeds&8)		psb->setMass(IDX(rx-1,ry-1),0);
-	if(fixeds&16)		psb->setMass(IDX((rx-1)/2,0),0);
-	if(fixeds&32)		psb->setMass(IDX(0,(ry-1)/2),0);
-	if(fixeds&64)		psb->setMass(IDX(rx-1,(ry-1)/2),0);
-	if(fixeds&128)		psb->setMass(IDX((rx-1)/2,ry-1),0);
-	if(fixeds&256)		psb->setMass(IDX((rx-1)/2,(ry-1)/2),0);
+	btSoftBodyShape* softShape = new btSoftBodyShape();
+	for(int i = 0; i < numNodes; ++i)
+	{
+		softShape->m_referencePositions.push_back(x[i]);
+		softShape->m_referenceMasses.push_back(m[i]);
+	}
+	if(fixeds &   1) softShape->m_referenceMasses[ IDX(0,0) ] = btScalar(0.0);
+	if(fixeds &   2) softShape->m_referenceMasses[ IDX(rx-1,0) ] = btScalar(0.0);
+	if(fixeds &   4) softShape->m_referenceMasses[ IDX(0,ry-1) ] = btScalar(0.0);
+	if(fixeds &   8) softShape->m_referenceMasses[ IDX(rx-1,ry-1) ] = btScalar(0.0);
+	if(fixeds &  16) softShape->m_referenceMasses[ IDX((rx-1)/2,0) ] = btScalar(0.0);
+	if(fixeds &  32) softShape->m_referenceMasses[ IDX(0,(ry-1)/2) ] = btScalar(0.0);
+	if(fixeds &  64) softShape->m_referenceMasses[ IDX(rx-1,(ry-1)/2) ] = btScalar(0.0);
+	if(fixeds & 128) softShape->m_referenceMasses[ IDX((rx-1)/2,ry-1) ] = btScalar(0.0);
+	if(fixeds & 256) softShape->m_referenceMasses[ IDX((rx-1)/2,(ry-1)/2) ] = btScalar(0.0);
 	delete[] x;
 	delete[] m;
 
@@ -658,11 +652,11 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 			int node10=IDX(ix,iy+1);
 			int node11=IDX(ix+1,iy+1);
 
-			if(mdx) psb->appendLink(node00,node01);
-			if(mdy) psb->appendLink(node00,node10);
+			if(mdx) softShape->appendLink(node00,node01);
+			if(mdy) softShape->appendLink(node00,node10);
 			if(mdx&&mdy)
 			{
-				psb->appendFace(node00,node10,node11);
+				softShape->appendFace(node00,node10,node11);
 				if (tex_coords) {
 					tex_coords[z+0]=CalculateUV(resx,resy,ix,iy,0);
 					tex_coords[z+1]=CalculateUV(resx,resy,ix,iy,1);
@@ -671,7 +665,7 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 					tex_coords[z+4]=CalculateUV(resx,resy,ix,iy,3);
 					tex_coords[z+5]=CalculateUV(resx,resy,ix,iy,2);
 				}
-				psb->appendFace(node11,node01,node00);
+				softShape->appendFace(node11,node01,node00);
 				if (tex_coords) {
 					tex_coords[z+6 ]=CalculateUV(resx,resy,ix,iy,3);
 					tex_coords[z+7 ]=CalculateUV(resx,resy,ix,iy,2);
@@ -680,14 +674,14 @@ btSoftBody*		btSoftBodyHelpers::CreatePatchUV(btSoftBodyWorldInfo& worldInfo,
 					tex_coords[z+10]=CalculateUV(resx,resy,ix,iy,0);
 					tex_coords[z+11]=CalculateUV(resx,resy,ix,iy,1);
 				}
-				if (gendiags) psb->appendLink(node00,node11);
+				if (gendiags) softShape->appendLink(node00,node11);
 				z += 12;
 			}
 		}
 	}
 	// Finished	 
 #undef IDX
-	return(psb);
+	return softShape;
 }
 
 float   btSoftBodyHelpers::CalculateUV(int resx,int resy,int ix,int iy,int id)
@@ -734,9 +728,7 @@ float   btSoftBodyHelpers::CalculateUV(int resx,int resy,int ix,int iy,int id)
 	return tc;
 }
 //
-btSoftBody*		btSoftBodyHelpers::CreateEllipsoid(btSoftBodyWorldInfo& worldInfo,const btVector3& center,
-												   const btVector3& radius,
-												   int res)
+btSoftBodyShape* btSoftBodyHelpers::CreateEllipsoid(const btVector3& center, const btVector3& radius, int res)
 {
 	struct	Hammersley
 	{
@@ -760,15 +752,13 @@ btSoftBody*		btSoftBodyHelpers::CreateEllipsoid(btSoftBodyWorldInfo& worldInfo,c
 	{
 		vtx[i]=vtx[i]*radius+center;
 	}
-	return(CreateFromConvexHull(worldInfo,&vtx[0],vtx.size()));
+	return CreateFromConvexHull(&vtx[0],vtx.size());
 }
 
 
 
 //
-btSoftBody*		btSoftBodyHelpers::CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo,const btScalar*	vertices,
-													 const int* triangles,
-													 int ntriangles, bool randomizeConstraints)
+btSoftBodyShape* btSoftBodyHelpers::CreateFromTriMesh(const btScalar* vertices, const int* triangles, int ntriangles, bool randomizeConstraints)
 {
 	int		maxidx=0;
 	int i,j,ni;
@@ -786,10 +776,11 @@ btSoftBody*		btSoftBodyHelpers::CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo
 	{
 		vtx[j]=btVector3(vertices[i],vertices[i+1],vertices[i+2]);
 	}
-	btSoftBody* psb = new btSoftBody(&worldInfo);
+	btSoftBodyShape* softShape = new btSoftBodyShape();
 	for(int i = 0; i < vtx.size(); ++i)
 	{
-		psb->appendNode(vtx[i], btScalar(1.0));
+		softShape->m_referencePositions.push_back( vtx[i] );
+		softShape->m_referenceMasses.push_back( btScalar(1.0) );
 	}
 	
 	
@@ -803,52 +794,55 @@ btSoftBody*		btSoftBodyHelpers::CreateFromTriMesh(btSoftBodyWorldInfo& worldInfo
 			{
 				chks[IDX(idx[j],idx[k])]=true;
 				chks[IDX(idx[k],idx[j])]=true;
-				psb->appendLink(idx[j],idx[k]);
+				softShape->appendLink(idx[j],idx[k]);
 			}
 		}
 #undef IDX
-		psb->appendFace(idx[0],idx[1],idx[2]);
+		softShape->appendFace(idx[0],idx[1],idx[2]);
 	}
 
 	if (randomizeConstraints)
 	{
-		btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
+		btSoftBodyMeshModifier::randomizeConstraints(softShape->m_links);
 	}
 
-	return(psb);
+	return softShape;
 }
 
 //
-btSoftBody*		btSoftBodyHelpers::CreateFromConvexHull(btSoftBodyWorldInfo& worldInfo,	const btVector3* vertices,
-														int nvertices, bool randomizeConstraints)
+btSoftBodyShape* btSoftBodyHelpers::CreateFromConvexHull(const btVector3* vertices, int nvertices, bool randomizeConstraints)
 {
 	HullDesc		hdsc(QF_TRIANGLES,nvertices,vertices);
 	HullResult		hres;
-	HullLibrary		hlib;//?? 
-	hdsc.mMaxVertices=nvertices;
-	hlib.CreateConvexHull(hdsc,hres);
-	btSoftBody* psb = new btSoftBody(&worldInfo);
+	HullLibrary		hlib;
+	hdsc.mMaxVertices = nvertices;
+	hlib.CreateConvexHull(hdsc, hres);
+	
+	btSoftBodyShape* softShape = new btSoftBodyShape();
 	
 	for(int i = 0; i < (int)hres.mNumOutputVertices; ++i)
 	{
-		psb->appendNode(hres.m_OutputVertices[i], btScalar(1.0));
+		softShape->m_referencePositions.push_back( hres.m_OutputVertices[i] );
+		softShape->m_referenceMasses.push_back( btScalar(1.0) );
 	}	
 		
-	for(int i=0;i<(int)hres.mNumFaces;++i)
+	for(int i = 0; i < (int)hres.mNumFaces; ++i)
 	{
 		const int idx[]={	static_cast<int>(hres.m_Indices[i*3+0]),
 							static_cast<int>(hres.m_Indices[i*3+1]),
-							static_cast<int>(hres.m_Indices[i*3+2])};
-		if(idx[0]<idx[1]) psb->appendLink(	idx[0],idx[1]);
-		if(idx[1]<idx[2]) psb->appendLink(	idx[1],idx[2]);
-		if(idx[2]<idx[0]) psb->appendLink(	idx[2],idx[0]);
-		psb->appendFace(idx[0],idx[1],idx[2]);
+							static_cast<int>(hres.m_Indices[i*3+2])		};
+							
+		if(idx[0] < idx[1]) softShape->appendLink(idx[0], idx[1]);
+		if(idx[1] < idx[2]) softShape->appendLink(idx[1], idx[2]);
+		if(idx[2] < idx[0]) softShape->appendLink(idx[2], idx[0]);
+		
+		softShape->appendFace(idx[0],idx[1],idx[2]);
 	}
 	hlib.ReleaseResult(hres);
 	if (randomizeConstraints)
 	{
-		btSoftBodyMeshModifier::randomizeConstraints(psb->m_softShape->m_links);
+		btSoftBodyMeshModifier::randomizeConstraints(softShape->m_links);
 	}
-	return(psb);
+	return softShape;
 }
 

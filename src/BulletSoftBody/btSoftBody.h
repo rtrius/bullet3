@@ -83,7 +83,6 @@ struct btSoftBodyLink
 struct btSoftBodyFace
 {
 	int m_indicies[3];				///<Indicies of m_nodes[]
-	btDbvtNode* m_leaf;				///<BVH Leaf data; m_leaf->data contains the index of this face
 };
 	
 
@@ -274,6 +273,7 @@ struct btSoftImplicitShape
 class btSoftBodyMeshModifier
 {
 public:
+	///Each soft body should have its own shape when calling this
 	static void refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut);
 	
 	///Generate bending constraints based on distance in the adjency graph
@@ -284,12 +284,22 @@ public:
 };
 
 ///Defines how the nodes of a soft body are connected(constraints, triangles).
+///Multiple btSoftBody(s) can share a single shape, if the shape is not modified.
 struct btSoftBodyShape
 {
-	//int m_numNodes;
-
+	///Default positions and masses of vertices(nodes); m_referencePositions.size() == m_referenceMasses.size()
+	btAlignedObjectArray<btVector3> m_referencePositions;
+	btAlignedObjectArray<btScalar> m_referenceMasses;
+	
 	btAlignedObjectArray<btSoftBodyLink> m_links;	///<Distance constraints
 	btAlignedObjectArray<btSoftBodyFace> m_faces;	///<Triangles
+	
+	int numNodes() const { return m_referencePositions.size(); }
+	
+	bool checkLink(int node0, int node1) const;
+	void appendLink(int node0, int node1, btScalar stiffness = btScalar(1.0), bool bcheckexist = false);
+	void appendFace(int node0, int node1, int node2);
+	void scale(const btVector3& scaling);
 };
 
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
@@ -309,10 +319,13 @@ public:
 	btSoftBodyConfig m_cfg;					// Configuration
 	btScalar				m_timeStep;
 	btSoftBodyWorldInfo*	m_worldInfo;	// World info
+	
 	btAlignedObjectArray<btSoftBodyNode> m_nodes;
 	btAlignedObjectArray<btSoftBodyAnchor> m_anchors;
 	btAlignedObjectArray<btSoftRigidContact> m_rigidContacts;
 	btAlignedObjectArray<btSoftSoftContact> m_softContacts;
+	
+	btAlignedObjectArray<btDbvtNode*> m_faceLeaves;		///<m_faceLeaves[]->data contains the index of the face in m_softShape
 	
 	btSoftBodyShape* m_softShape;
 	
@@ -325,9 +338,10 @@ public:
 
 public:
 	btSoftBody(btSoftBodyWorldInfo* worldInfo);
-
 	virtual ~btSoftBody();
 
+	void setupNodesAndShape(btSoftBodyShape* softShape);
+	
 	btSoftBodyWorldInfo* getWorldInfo() { return m_worldInfo; }
 
 	void setPose(btScalar poseMatching);		///<Enables pose matching constraint if (poseMatching != 0.0)
@@ -335,11 +349,8 @@ public:
 	///@todo: avoid internal softbody shape hack and move collision code to collision library
 	virtual void setCollisionShape(btCollisionShape* collisionShape) {}
 
-	bool checkLink(int node0, int node1) const;
 	
 	void appendNode(const btVector3& position, btScalar mass);
-	void appendLink(int node0, int node1, btScalar stiffness = btScalar(1.0), bool bcheckexist=false);
-	void appendFace(int node0, int node1, int node2);
 
 	void appendAnchor(int node, btRigidBody* body, bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
 	void appendAnchor(int node,btRigidBody* body, const btVector3& localPivot,bool disableCollisionBetweenLinkedBodies=false,btScalar influence = 1);
@@ -360,7 +371,6 @@ public:
 	void transform(const btTransform& trs);
 	void translate(const btVector3& trs);
 	void rotate(const btQuaternion& rot);
-	void scale(const btVector3& scl);
 	
 	btScalar getClosedTrimeshVolume() const;		///<Returns the volume, assuming that m_faces represents a closed triangle mesh
 	
