@@ -131,11 +131,11 @@ typedef struct
 class b3FluidSphRigidInteractorCL
 {
 	//If either of these values is exceeded, the interactor silently discards additional contacts/broadphase pairs
-	static const int MAX_FLUID_RIGID_PAIRS = 131072*4; 	//Also the max number of fluid-rigid contacts
-	static const int MAX_MIDPHASE_PAIRS = 131072*1;
+	static const int MAX_FLUID_RIGID_PAIRS; 	//Also the max number of fluid-rigid contacts
+	static const int MAX_MIDPHASE_PAIRS;
 
 	///Maximum number of rigid bodies with large AABBs(AABBs larger than the fluid's grid) that are considered for collision
-	static const int MAX_LARGE_AABB_RIGIDS = 32;	
+	static const int MAX_LARGE_AABB_RIGIDS;	
 	
 	cl_context m_context;
 	cl_command_queue m_commandQueue;

@@ -23,6 +23,10 @@
 
 #include "fluidSphRigidCL.h"
 
+const int b3FluidSphRigidInteractorCL::MAX_FLUID_RIGID_PAIRS = 131072*4;
+const int b3FluidSphRigidInteractorCL::MAX_MIDPHASE_PAIRS = 131072*1;
+const int b3FluidSphRigidInteractorCL::MAX_LARGE_AABB_RIGIDS = 32;
+
 b3FluidSphRigidInteractorCL::b3FluidSphRigidInteractorCL(cl_context context, cl_device_id device, cl_command_queue queue) 
 :	m_fill(context, device, queue), 
 	m_radixSorter(context, device, queue),
