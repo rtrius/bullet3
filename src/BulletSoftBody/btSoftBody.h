@@ -266,23 +266,6 @@ struct btSoftBodyAnchor
 	btScalar				m_invMassDt;		///<inverse_mass * timeStep
 };
 
-struct btSoftImplicitShape
-{
-	virtual btScalar signedDistance(const btVector3& x) = 0;		///<Returns negative if penetrating
-};
-class btSoftBodyMeshModifier
-{
-public:
-	///Each soft body should have its own shape when calling this
-	static void refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut);
-	
-	///Generate bending constraints based on distance in the adjency graph
-	static int generateBendingConstraints( btSoftBody* softBody, int distance, btScalar stiffness = btScalar(1.0) );
-
-	///Randomize constraints to reduce solver bias
-	static void randomizeConstraints(btAlignedObjectArray<btSoftBodyLink>& links);	
-};
-
 ///Defines how the nodes of a soft body are connected(constraints, triangles).
 ///Multiple btSoftBody(s) can share a single shape, if the shape is not modified.
 struct btSoftBodyShape
@@ -301,6 +284,28 @@ struct btSoftBodyShape
 	void appendFace(int node0, int node1, int node2);
 	void scale(const btVector3& scaling);
 };
+
+struct btSoftImplicitShape
+{
+	virtual btScalar signedDistance(const btVector3& x) = 0;		///<Returns negative if penetrating
+};
+class btSoftBodyMeshModifier
+{
+public:
+	///Each btSoftBody should have its own btSoftBodyShape when calling this.
+	///refine() increases the resolution of a soft body that intersects the distance field defined
+	///by btSoftImplicitShape. In particlar, links and triangles that intersect the boundary at
+	///(distance == 0) are subdivided. If (cut == true), the region within the shape (signedDistance < 0)
+	///is also separated so that it is no longer connected to the outer region (signedDistance >= 0).
+	static void refine(btSoftBody* softBody, btSoftImplicitShape* shape, btScalar accuracy, bool cut);
+	
+	///Generate bending constraints based on distance in the adjency graph
+	static int generateBendingConstraints( btSoftBodyShape* softShape, int distance, btScalar stiffness = btScalar(1.0) );
+
+	///Randomize constraints to reduce solver bias
+	static void randomizeConstraints(btAlignedObjectArray<btSoftBodyLink>& links);	
+};
+
 
 ///The btSoftBody is an class to simulate cloth and volumetric soft bodies. 
 ///There is two-way interaction between btSoftBody and btRigidBody/btCollisionObject.

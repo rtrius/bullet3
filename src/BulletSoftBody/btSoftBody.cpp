@@ -446,22 +446,20 @@ struct NodeLinks
     btAlignedObjectArray<int> m_links;
 };
 
-int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int distance, btScalar stiffness)
+int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBodyShape* softShape, int distance, btScalar stiffness)
 {
-	int i,j;
-
 	if(distance>1)
 	{
 		// Build graph	 
-		const int		n = softBody->m_nodes.size();
+		const int numNodes = softShape->numNodes();
 		const unsigned	inf=(~(unsigned)0)>>1;
-		unsigned*		adj=new unsigned[n*n];
+		unsigned* adj = new unsigned[numNodes * numNodes];
 		
 
-#define IDX(_x_,_y_)	((_y_)*n+(_x_))
-		for(j=0;j<n;++j)
+#define IDX(_x_,_y_)	((_y_)*numNodes+(_x_))
+		for(int j = 0; j < numNodes; ++j)
 		{
-			for(i=0;i<n;++i)
+			for(int i = 0; i < numNodes; ++i)
 			{
 				if(i!=j)
 				{
@@ -473,10 +471,10 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 				}
 			}
 		}
-		for( i = 0; i < softBody->m_softShape->m_links.size(); ++i)
+		for(int i = 0; i < softShape->m_links.size(); ++i)
 		{
-			const int ia = softBody->m_softShape->m_links[i].m_linkIndicies[0];
-			const int ib = softBody->m_softShape->m_links[i].m_linkIndicies[1];
+			const int ia = softShape->m_links[i].m_linkIndicies[0];
+			const int ib = softShape->m_links[i].m_linkIndicies[1];
 			adj[IDX(ia,ib)]=1;
 			adj[IDX(ib,ia)]=1;
 		}
@@ -490,12 +488,12 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 
 
 			// Build node links 
-			nodeLinks.resize( softBody->m_nodes.size() );
+			nodeLinks.resize(numNodes);
 
-			for( i = 0; i < softBody->m_softShape->m_links.size(); ++i)
+			for(int i = 0; i < softShape->m_links.size(); ++i)
 			{
-				const int ia = softBody->m_softShape->m_links[i].m_linkIndicies[0];
-				const int ib = softBody->m_softShape->m_links[i].m_linkIndicies[1];
+				const int ia = softShape->m_links[i].m_linkIndicies[0];
+				const int ib = softShape->m_links[i].m_linkIndicies[1];
 				if (nodeLinks[ia].m_links.findLinearSearch(ib)==nodeLinks[ia].m_links.size())
 					nodeLinks[ia].m_links.push_back(ib);
 
@@ -528,11 +526,11 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 		} else
 		{
 			///generic Floyd's algorithm
-			for(int k=0;k<n;++k)
+			for(int k = 0; k < numNodes; ++k)
 			{
-				for(j=0;j<n;++j)
+				for(int j = 0; j < numNodes; ++j)
 				{
-					for(i=j+1;i<n;++i)
+					for(int i = j + 1; i < numNodes; ++i)
 					{
 						const unsigned	sum=adj[IDX(i,k)]+adj[IDX(k,j)];
 						if(adj[IDX(i,j)]>sum)
@@ -547,14 +545,14 @@ int btSoftBodyMeshModifier::generateBendingConstraints(btSoftBody* softBody, int
 
 		// Build links	 
 		int	nlinks=0;
-		for(j=0;j<n;++j)
+		for(int j = 0; j < numNodes; ++j)
 		{
-			for(i=j+1;i<n;++i)
+			for(int i = j + 1; i < numNodes; ++i)
 			{
 				if(adj[IDX(i,j)]==(unsigned)distance)
 				{
-					softBody->m_softShape->appendLink(i, j, stiffness);
-					softBody->m_softShape->m_links[ softBody->m_softShape->m_links.size() - 1 ].m_isBendingLink = 1;
+					softShape->appendLink(i, j, stiffness);
+					softShape->m_links[ softShape->m_links.size() - 1 ].m_isBendingLink = 1;
 					++nlinks;
 				}
 			}
