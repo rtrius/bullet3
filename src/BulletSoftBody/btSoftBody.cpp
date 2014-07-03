@@ -45,6 +45,8 @@ void btSoftBody::setupNodesAndShape(btSoftBodyShape* softShape)
 	updateBounds();
 	updateArea();
 	
+	initializeFaceTree();
+	
 	m_bUpdateRtCst = true;
 }
 	
@@ -1240,7 +1242,7 @@ void btSoftBody::defaultCollisionHandler(btSoftBody* psb)
 		btSoftColliders::SoftSoftVertexFaceCollider callback;
 		
 		// common
-		callback.mrg =	getCollisionShape()->getMargin()+ psb->getCollisionShape()->getMargin();
+		callback.m_combinedMargin = getCollisionShape()->getMargin()+ psb->getCollisionShape()->getMargin();
 		
 		//
 		callback.m_nodeSoftBody = this;

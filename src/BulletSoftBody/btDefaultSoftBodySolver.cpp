@@ -158,7 +158,7 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 	for(int i=0,ni=psb->m_softContacts.size();i<ni;++i)
 	{
 		const btSoftSoftContact& c = psb->m_softContacts[i];
-		const btVector3& nr = c.m_normal;
+		const btVector3& faceNormal = c.m_normalOnFace;
 		btSoftBodyNode& n = psb->m_nodes[c.m_nodeIndex];
 		
 		btAlignedObjectArray<btSoftBodyNode>& faceNodes = c.m_faceSoftBody->m_nodes;
@@ -171,13 +171,13 @@ void btDefaultSoftBodySolver::PSolve_SoftContacts(btSoftBody* psb,btScalar,btSca
 		btVector3 q = BaryEval(faceNode0.m_prevPosition, faceNode1.m_prevPosition, faceNode2.m_prevPosition, c.m_weights);											
 		const btVector3		vr=(n.m_position-n.m_prevPosition)-(p-q);
 		btVector3			corr(0,0,0);
-		btScalar dot = btDot(vr,nr);
+		btScalar dot = btDot(vr, faceNormal);
 		if(dot<0)
 		{
-			const btScalar	j = c.m_margin - ( btDot(nr, n.m_position) - btDot(nr, p) );
-			corr+=c.m_normal*j;
+			const btScalar	j = c.m_margin - ( btDot(faceNormal, n.m_position) - btDot(faceNormal, p) );
+			corr += faceNormal * j;
 		}
-		corr			-=	ProjectOnPlane(vr,nr)*c.m_friction;
+		corr			-=	ProjectOnPlane(vr,faceNormal)*c.m_friction;
 		n.m_position += corr*c.m_nodeCfm;
 		faceNode0.m_position -= corr*(c.m_faceCfm*c.m_weights.x());
 		faceNode1.m_position -= corr*(c.m_faceCfm*c.m_weights.y());

@@ -396,50 +396,50 @@ struct btSoftColliders
 		void Process(const btDbvtNode* lnode, const btDbvtNode* lface)
 		{
 			int nodeIndex = reinterpret_cast<int>(lnode->data);
-			btSoftBodyNode& node = m_nodeSoftBody->m_nodes[nodeIndex];
+			const btSoftBodyNode& node = m_nodeSoftBody->m_nodes[nodeIndex];
 			
 			int faceIndex = reinterpret_cast<int>(lface->data);
-			btSoftBodyFace&	face = m_faceSoftBody->m_softShape->m_faces[faceIndex];
-			btVector3			o = node.m_position;
-			btVector3			p;
-			btScalar			d=SIMD_INFINITY;
+			const btSoftBodyFace& face = m_faceSoftBody->m_softShape->m_faces[faceIndex];
+			btVector3 nodePos = node.m_position;
+			btVector3 normalOnNode;
+			btScalar sqDistance = SIMD_INFINITY;
 			
-			const btSoftBodyNode&	faceNode0 = m_faceSoftBody->m_nodes[ face.m_indicies[0] ];
-			const btSoftBodyNode&	faceNode1 = m_faceSoftBody->m_nodes[ face.m_indicies[1] ];
-			const btSoftBodyNode&	faceNode2 = m_faceSoftBody->m_nodes[ face.m_indicies[2] ];
+			const btSoftBodyNode& faceNode0 = m_faceSoftBody->m_nodes[ face.m_indicies[0] ];
+			const btSoftBodyNode& faceNode1 = m_faceSoftBody->m_nodes[ face.m_indicies[1] ];
+			const btSoftBodyNode& faceNode2 = m_faceSoftBody->m_nodes[ face.m_indicies[2] ];
 			
-			ProjectOrigin(faceNode0.m_position - o, faceNode1.m_position - o, faceNode2.m_position - o, p, d);
-			const btScalar	m = mrg + (o - node.m_prevPosition).length() * 2;
-			if(d<(m*m))
+			ProjectOrigin(faceNode0.m_position - nodePos, faceNode1.m_position - nodePos, faceNode2.m_position - nodePos, normalOnNode, sqDistance);
+			const btScalar margin = m_combinedMargin + (nodePos - node.m_prevPosition).length() * 2;
+			if(sqDistance < margin * margin)
 			{
-				btVector3 w = BaryCoord(faceNode0.m_position, faceNode1.m_position, faceNode2.m_position, p + o);
-				btScalar ma = node.m_invMass;
-				btScalar mb = BaryEval(faceNode0.m_invMass, faceNode1.m_invMass, faceNode2.m_invMass, w);
-				if(	(faceNode0.m_invMass <= 0) || (faceNode1.m_invMass <= 0)|| (faceNode2.m_invMass <= 0) )
-				{
-					mb=0;
-				}
-				const btScalar	ms=ma+mb;
-				if(ms>0)
+				btVector3 baryWeight = BaryCoord(faceNode0.m_position, faceNode1.m_position, faceNode2.m_position, normalOnNode + nodePos);
+				btScalar nodeInvMass = node.m_invMass;
+				btScalar faceInvMass = BaryEval(faceNode0.m_invMass, faceNode1.m_invMass, faceNode2.m_invMass, baryWeight);
+				if(	(faceNode0.m_invMass <= 0) || (faceNode1.m_invMass <= 0)|| (faceNode2.m_invMass <= 0) ) faceInvMass = 0;
+				
+				
+				const btScalar summedInvMass = nodeInvMass + faceInvMass;
+				if( summedInvMass > 0 && sqDistance != btScalar(0.0) )	//Avoid generating a contact at 0 distance to prevent NaN normal
 				{
 					btSoftSoftContact	c;
 					c.m_nodeSoftBody = m_nodeSoftBody;
 					c.m_faceSoftBody = m_faceSoftBody;
-					c.m_normal		=	p/-btSqrt(d);
-					c.m_margin		=	m;
+					c.m_normalOnFace = -normalOnNode / btSqrt(sqDistance);
+					c.m_margin		=	margin;
 					c.m_nodeIndex	=	nodeIndex;
 					c.m_faceIndex	=	faceIndex;
-					c.m_weights		=	w;
+					c.m_weights		=	baryWeight;
 					c.m_friction	=	btMax(m_nodeSoftBody->m_cfg.m_dynamicFriction, m_faceSoftBody->m_cfg.m_dynamicFriction);
-					c.m_nodeCfm		=	ma / ms * m_nodeSoftBody->m_cfg.m_softContactHardness;
-					c.m_faceCfm		=	mb / ms * m_faceSoftBody->m_cfg.m_softContactHardness;
+					c.m_nodeCfm		=	nodeInvMass / summedInvMass * m_nodeSoftBody->m_cfg.m_softContactHardness;
+					c.m_faceCfm		=	faceInvMass / summedInvMass * m_faceSoftBody->m_cfg.m_softContactHardness;
+					
 					m_nodeSoftBody->m_softContacts.push_back(c);
 				}
 			}	
 		}
 		btSoftBody* m_nodeSoftBody;
 		btSoftBody* m_faceSoftBody;
-		btScalar		mrg;
+		btScalar m_combinedMargin;
 	};
 };
 

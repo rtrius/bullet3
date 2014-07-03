@@ -247,7 +247,7 @@ struct btSoftSoftContact
 	int			m_nodeIndex;	///<Index to m_nodes[] of m_nodeSoftBody
 	int			m_faceIndex;	///<Index to m_faces[] of m_faceSoftBody
 	btVector3	m_weights;
-	btVector3	m_normal;
+	btVector3	m_normalOnFace;
 	btScalar	m_margin;
 	btScalar	m_friction;	
 	btScalar	m_nodeCfm;		// Constraint force mixing
