@@ -285,6 +285,12 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 	int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
 	const struct b3GpuNarrowPhaseInternalData* narrowphaseData, class b3GpuBroadphaseInterface* broadphase)
 {
+	if(0)
+	{
+		castRaysUsingPairs(rays, hitResults, numBodies, bodies, numCollidables, collidables, narrowphaseData, broadphase);
+		return;
+	}
+
 	B3_PROFILE("b3GpuRaycast::castRays()");
 	
 	{

@@ -30,7 +30,7 @@
 const int TEXTURE_WIDTH = 512;
 const int TEXTURE_HEIGHT = 512;
 const int NUM_RAYS = TEXTURE_WIDTH * TEXTURE_HEIGHT;
-const int MAX_RAY_RIGID_PAIRS = NUM_RAYS * 4;	//Raycaster will miss collisions if not enough pairs are allocated
+const int MAX_RAY_RIGID_PAIRS = NUM_RAYS * 8;	//Raycaster will miss collisions if not enough pairs are allocated
 
 struct GpuRaytraceInternalData
 {
@@ -99,9 +99,9 @@ int	GpuRaytraceScene::createDynamicsObjects(const ConstructionInfo& ci2)
 {
 	//m_raytraceData->m_renderToTexture->init(ci2.m_instancingRenderer->getScreenWidth(),ci2.m_instancingRenderer->getScreenHeight());
 	ConstructionInfo ci = ci2;
-	ci.arraySizeX = 2;
-	ci.arraySizeY = 50;
-	ci.arraySizeZ = 2;
+	ci.arraySizeX = 20;
+	ci.arraySizeY = 20;
+	ci.arraySizeZ = 20;
 
 	int strideInBytes = 9*sizeof(float);
 	int numVertices = sizeof(cube_vertices)/strideInBytes;
