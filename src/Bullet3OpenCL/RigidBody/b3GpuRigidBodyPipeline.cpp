@@ -229,7 +229,7 @@ int b3GpuRigidBodyPipeline::createFixedConstraint(int bodyA, int bodyB, const fl
 
 void	b3GpuRigidBodyPipeline::stepSimulation(float deltaTime)
 {
-
+#ifdef GPU_API_REDESIGN
 	//update worldspace AABBs from local AABB/worldtransform
 	{
 		B3_PROFILE("setupGpuAabbs");
@@ -481,7 +481,7 @@ void	b3GpuRigidBodyPipeline::stepSimulation(float deltaTime)
 	}
 
 	integrate(deltaTime);
-
+#endif
 }
 
 
@@ -524,6 +524,7 @@ void	b3GpuRigidBodyPipeline::integrate(float timeStep)
 
 void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 {
+#ifdef GPU_API_REDESIGN
 	cl_int ciErrNum=0;
 
 	int numBodies = m_data->m_narrowphase->getNumRigidBodies();
@@ -595,11 +596,7 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 
 	};
 	*/
-
-	
-
-
-
+#endif
 }
 
 
@@ -633,7 +630,8 @@ void 		b3GpuRigidBodyPipeline::writeAllInstancesToGpu()
 
 int		b3GpuRigidBodyPipeline::registerPhysicsInstance(float mass, const float* position, const float* orientation, int collidableIndex, int userIndex, bool writeInstanceToGpu)
 {
-	
+	return 0;	//#ifdef GPU_API_REDESIGN
+#ifdef GPU_API_REDESIGN
 	b3Vector3 aabbMin=b3MakeVector3(0,0,0),aabbMax=b3MakeVector3(0,0,0);
 
 	
@@ -697,6 +695,7 @@ int		b3GpuRigidBodyPipeline::registerPhysicsInstance(float mass, const float* po
 	*/
 
 	return bodyIndex;
+#endif
 }
 
 void	b3GpuRigidBodyPipeline::castRays(const b3AlignedObjectArray<b3RayInfo>& rays,	b3AlignedObjectArray<b3RayHit>& hitResults)

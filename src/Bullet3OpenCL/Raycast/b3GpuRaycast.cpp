@@ -285,6 +285,7 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 	int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
 	const struct b3GpuNarrowPhaseInternalData* narrowphaseData, class b3GpuBroadphaseInterface* broadphase)
 {
+#ifdef GPU_API_REDESIGN
 	if(0)
 	{
 		castRaysUsingPairs(rays, hitResults, numBodies, bodies, numCollidables, collidables, narrowphaseData, broadphase);
@@ -395,6 +396,7 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 		B3_PROFILE("raycast copyToHost");
 		m_data->m_gpuHitResults->copyToHost(hitResults);
 	}
+#endif
 }
 
 void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& rays,	b3AlignedObjectArray<b3RayHit>& hitResults,
@@ -402,7 +404,7 @@ void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& ray
 		const struct b3GpuNarrowPhaseInternalData* narrowphaseData,	class b3GpuBroadphaseInterface* broadphase)
 {
 	B3_PROFILE("b3GpuRaycast::castRaysUsingPairs()");
-	
+#ifdef GPU_API_REDESIGN
 	{
 		B3_PROFILE("raycast copyFromHost");
 		m_data->m_gpuRays->copyFromHost(rays);
@@ -526,6 +528,7 @@ void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& ray
 		B3_PROFILE("raycast copyToHost");
 		m_data->m_gpuHitResults->copyToHost(hitResults);
 	}
+#endif
 }
 
 

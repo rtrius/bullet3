@@ -10,20 +10,8 @@ subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 
-#include "b3GpuParallelLinearBvhBroadphase.h"
+#include "b3StateOverlappingPairs.h"
 
-
-b3GpuParallelLinearBvhBroadphase::b3GpuParallelLinearBvhBroadphase(cl_context context, cl_device_id device, cl_command_queue queue) :
-m_plbvh(context, device, queue)
+b3StateOverlappingPairs::b3StateOverlappingPairs(cl_context context, cl_command_queue queue) : m_overlappingPairsGpu(context, queue)
 {
-}
-
-void b3GpuParallelLinearBvhBroadphase::computeOverlappingPairs(b3StateAabbs& input, b3StateOverlappingPairs& output, int maxPairs)
-{
-	//Reconstruct BVH
-	m_plbvh.build(input.m_aabbsGpu, input.m_smallAabbsMappingGpu, input.m_largeAabbsMappingGpu);
-
-	//
-	output.m_overlappingPairsGpu.resize(maxPairs);
-	m_plbvh.calculateOverlappingPairs(output.m_overlappingPairsGpu);
 }

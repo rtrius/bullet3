@@ -50,10 +50,10 @@
 
 #ifdef B3_USE_CLEW
 #ifndef NO_OPENGL3
-/* //todo: GPU_API_REDESIGN_DEMO
+	#ifdef GPU_API_REDESIGN
 #include "../OpenCL/broadphase/PairBench.h"
 #include "../OpenCL/rigidbody/GpuConvexScene.h"
-*/
+	#endif
 #endif
 #endif //B3_USE_CLEW
 
@@ -262,12 +262,11 @@ static ExampleEntry gDefaultExamples[]=
 static ExampleEntry gOpenCLExamples[]=
 {
 	ExampleEntry(0, "OpenCL (experimental)"),
-	/*
-	//todo: GPU_API_REDESIGN_DEMO
+#ifdef GPU_API_REDESIGN
 	ExampleEntry(1,"Box-Box", "Full OpenCL implementation of the entire physics and collision detection pipeline, showing box-box rigid body",
 	OpenCLBoxBoxCreateFunc),
 	ExampleEntry(1,"Pair Bench", "Benchmark of overlapping pair search using OpenCL.", PairBenchOpenCLCreateFunc),
-	*/
+#endif
 };
 #endif
 #endif //
