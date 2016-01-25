@@ -20,7 +20,7 @@
 
 
 b3GpuNarrowPhase::b3GpuNarrowPhase(cl_context ctx, cl_device_id device, cl_command_queue queue, const b3Config& config)
-:m_data(0) ,m_planeBodyIndex(-1),m_static0Index(-1),
+:m_data(0),m_static0Index(-1),
 m_context(ctx),
 m_device(device),
 m_queue(queue)
@@ -45,26 +45,17 @@ m_queue(queue)
     
 	m_data->m_pBufContactOutCPU = new b3AlignedObjectArray<b3Contact4>();
 	m_data->m_pBufContactOutCPU->resize(config.m_maxBroadphasePairs);
-	m_data->m_bodyBufferCPU = new b3AlignedObjectArray<b3RigidBodyData>();
-	m_data->m_bodyBufferCPU->resize(config.m_maxConvexBodies);
     
-	m_data->m_inertiaBufferCPU = new b3AlignedObjectArray<b3InertiaData>();
-	m_data->m_inertiaBufferCPU->resize(config.m_maxConvexBodies);
 	
 	m_data->m_pBufContactBuffersGPU[0] = new b3OpenCLArray<b3Contact4>(ctx,queue, config.m_maxContactCapacity,true);
 	m_data->m_pBufContactBuffersGPU[1] = new b3OpenCLArray<b3Contact4>(ctx,queue, config.m_maxContactCapacity,true);
 	
-	m_data->m_inertiaBufferGPU = new b3OpenCLArray<b3InertiaData>(ctx,queue,config.m_maxConvexBodies,false);
 	m_data->m_collidablesGPU = new b3OpenCLArray<b3Collidable>(ctx,queue,config.m_maxConvexShapes);
 	m_data->m_collidablesCPU.reserve(config.m_maxConvexShapes);
 
 	m_data->m_localShapeAABBCPU = new b3AlignedObjectArray<b3SapAabb>;
 	m_data->m_localShapeAABBGPU = new b3OpenCLArray<b3SapAabb>(ctx,queue,config.m_maxConvexShapes);
     
-    
-	//m_data->m_solverDataGPU = adl::Solver<adl::TYPE_CL>::allocate(ctx,queue, config.m_maxBroadphasePairs,false);
-	m_data->m_bodyBufferGPU = new b3OpenCLArray<b3RigidBodyData>(ctx,queue, config.m_maxConvexBodies,false);
-
 	m_data->m_convexFacesGPU = new b3OpenCLArray<b3GpuFace>(ctx,queue,config.m_maxConvexShapes*config.m_maxFacesPerShape,false);
 	m_data->m_convexFaces.reserve(config.m_maxConvexShapes*config.m_maxFacesPerShape);
 
@@ -98,7 +89,6 @@ m_queue(queue)
 	m_data->m_convexPolyhedra.resize(config.m_maxConvexShapes);
     
 	m_data->m_numAcceleratedShapes = 0;
-	m_data->m_numAcceleratedRigidBodies = 0;
     
 		
 	m_data->m_subTreesGPU = new b3OpenCLArray<b3BvhSubtreeInfo>(this->m_context,this->m_queue);
@@ -121,17 +111,13 @@ b3GpuNarrowPhase::~b3GpuNarrowPhase()
 	//delete m_data->m_convexPairsOutGPU;
 	//delete m_data->m_planePairs;
 	delete m_data->m_pBufContactOutCPU;
-	delete m_data->m_bodyBufferCPU;
-	delete m_data->m_inertiaBufferCPU;
 	delete m_data->m_pBufContactBuffersGPU[0];
 	delete m_data->m_pBufContactBuffersGPU[1];
 
 
-	delete m_data->m_inertiaBufferGPU;
 	delete m_data->m_collidablesGPU;
 	delete m_data->m_localShapeAABBCPU;
 	delete m_data->m_localShapeAABBGPU;
-	delete m_data->m_bodyBufferGPU;
 	delete m_data->m_convexFacesGPU;
 	delete m_data->m_gpuChildShapes;
 	delete m_data->m_convexPolyhedraGPU;
@@ -733,34 +719,6 @@ int b3GpuNarrowPhase::registerConcaveMeshShape(b3AlignedObjectArray<b3Vector3>* 
 
 
 
-cl_mem	b3GpuNarrowPhase::getBodiesGpu()
-{
-	return (cl_mem)m_data->m_bodyBufferGPU->getBufferCL();
-}
-
-const struct b3RigidBodyData* b3GpuNarrowPhase::getBodiesCpu() const
-{
-	return &m_data->m_bodyBufferCPU->at(0);
-};
-
-
-
-
-int	b3GpuNarrowPhase::getNumBodiesGpu() const
-{
-	return m_data->m_bodyBufferGPU->size();
-}
-
-cl_mem	b3GpuNarrowPhase::getBodyInertiasGpu()
-{
-	return (cl_mem)m_data->m_inertiaBufferGPU->getBufferCL();
-}
-
-int	b3GpuNarrowPhase::getNumBodyInertiasGpu() const
-{
-	return m_data->m_inertiaBufferGPU->size();
-}
-
 
 b3Collidable& b3GpuNarrowPhase::getCollidableCpu(int collidableIndex)
 {
@@ -824,7 +782,7 @@ const b3Contact4* b3GpuNarrowPhase::getContactsCPU() const
 
 void b3GpuNarrowPhase::computeContacts(cl_mem broadphasePairs, int numBroadphasePairs, cl_mem aabbsWorldSpace, int numObjects)
 {
-
+#ifdef GPU_API_REDESIGN
 	cl_mem aabbsLocalSpace = m_data->m_localShapeAABBGPU->getBufferCL();
 
 	int nContactOut = 0;
@@ -881,10 +839,7 @@ void b3GpuNarrowPhase::computeContacts(cl_mem broadphasePairs, int numBroadphase
 		numTriConvexPairsOut
 		);
 
-	/*b3AlignedObjectArray<b3Int4> broadphasePairsCPU;
-	broadphasePairsGPU.copyToHost(broadphasePairsCPU);
-	printf("checking pairs\n");
-	*/
+#endif
 }
 
 const b3SapAabb& b3GpuNarrowPhase::getLocalSpaceAabb(int collidableIndex) const
@@ -894,110 +849,6 @@ const b3SapAabb& b3GpuNarrowPhase::getLocalSpaceAabb(int collidableIndex) const
 
 
 
-
-
-int b3GpuNarrowPhase::registerRigidBody(int collidableIndex, float mass, const float* position, const float* orientation , const float* aabbMinPtr, const float* aabbMaxPtr,bool writeToGpu)
-{
-	b3Vector3 aabbMin=b3MakeVector3(aabbMinPtr[0],aabbMinPtr[1],aabbMinPtr[2]);
-	b3Vector3 aabbMax=b3MakeVector3(aabbMaxPtr[0],aabbMaxPtr[1],aabbMaxPtr[2]);
-	
-
-	if (m_data->m_numAcceleratedRigidBodies >= (m_data->m_config.m_maxConvexBodies))
-	{
-		b3Error("registerRigidBody: exceeding the number of rigid bodies, %d > %d \n",m_data->m_numAcceleratedRigidBodies,m_data->m_config.m_maxConvexBodies);
-		return -1;
-	}
-    
-	m_data->m_bodyBufferCPU->resize(m_data->m_numAcceleratedRigidBodies+1);
-    
-	b3RigidBodyData& body = m_data->m_bodyBufferCPU->at(m_data->m_numAcceleratedRigidBodies);
-    
-	float friction = 1.f;
-	float restitution = 0.f;
-    
-	body.m_frictionCoeff = friction;
-	body.m_restituitionCoeff = restitution;
-	body.m_angVel = b3MakeVector3(0,0,0);
-	body.m_linVel=b3MakeVector3(0,0,0);//.setZero();
-	body.m_pos =b3MakeVector3(position[0],position[1],position[2]);
-	body.m_quat.setValue(orientation[0],orientation[1],orientation[2],orientation[3]);
-	body.m_collidableIdx = collidableIndex;
-	if (collidableIndex>=0)
-	{
-//		body.m_shapeType = m_data->m_collidablesCPU.at(collidableIndex).m_shapeType;
-	} else
-	{
-	//	body.m_shapeType = CollisionShape::SHAPE_PLANE;
-		m_planeBodyIndex = m_data->m_numAcceleratedRigidBodies;
-	}
-	//body.m_shapeType = shapeType;
-	
-	
-	body.m_invMass = mass? 1.f/mass : 0.f;
-    
-	if (writeToGpu)
-	{
-		m_data->m_bodyBufferGPU->copyFromHostPointer(&body,1,m_data->m_numAcceleratedRigidBodies);
-	}
-    
-	b3InertiaData& shapeInfo = m_data->m_inertiaBufferCPU->at(m_data->m_numAcceleratedRigidBodies);
-    
-	if (mass==0.f)
-	{
-		if (m_data->m_numAcceleratedRigidBodies==0)
-			m_static0Index = 0;
-        
-		shapeInfo.m_initInvInertia.setValue(0,0,0,0,0,0,0,0,0);
-		shapeInfo.m_invInertiaWorld.setValue(0,0,0,0,0,0,0,0,0);
-	} else
-	{
-        
-		b3Assert(body.m_collidableIdx>=0);
-        
-		//approximate using the aabb of the shape
-        
-		//Aabb aabb = (*m_data->m_shapePointers)[shapeIndex]->m_aabb;
-		b3Vector3 halfExtents = (aabbMax-aabbMin);//*0.5f;//fake larger inertia makes demos more stable ;-)
-        
-		b3Vector3 localInertia;
-        
-		float lx=2.f*halfExtents[0];
-		float ly=2.f*halfExtents[1];
-		float lz=2.f*halfExtents[2];
-        
-		localInertia.setValue( (mass/12.0f) * (ly*ly + lz*lz),
-                                   (mass/12.0f) * (lx*lx + lz*lz),
-                                   (mass/12.0f) * (lx*lx + ly*ly));
-        
-		b3Vector3 invLocalInertia;
-		invLocalInertia[0] = 1.f/localInertia[0];
-		invLocalInertia[1] = 1.f/localInertia[1];
-		invLocalInertia[2] = 1.f/localInertia[2];
-		invLocalInertia[3] = 0.f;
-        
-		shapeInfo.m_initInvInertia.setValue(
-			invLocalInertia[0],		0,						0,
-			0,						invLocalInertia[1],		0,
-			0,						0,						invLocalInertia[2]);
-
-		b3Matrix3x3 m (body.m_quat);
-
-		shapeInfo.m_invInertiaWorld = m.scaled(invLocalInertia) * m.transpose();
-        
-	}
-    
-	if (writeToGpu)
-		m_data->m_inertiaBufferGPU->copyFromHostPointer(&shapeInfo,1,m_data->m_numAcceleratedRigidBodies);
-    
-    
-    
-	return m_data->m_numAcceleratedRigidBodies++;
-}
-
-int b3GpuNarrowPhase::getNumRigidBodies() const
-{
-	return m_data->m_numAcceleratedRigidBodies;
-}
 
 void	b3GpuNarrowPhase::writeAllBodiesToGpu()
 {
@@ -1018,15 +869,6 @@ void	b3GpuNarrowPhase::writeAllBodiesToGpu()
 	m_data->m_treeNodesGPU->copyFromHost(m_data->m_treeNodesCPU);
 	m_data->m_subTreesGPU->copyFromHost(m_data->m_subTreesCPU);
 
-
-	m_data->m_bodyBufferGPU->resize(m_data->m_numAcceleratedRigidBodies);
-	m_data->m_inertiaBufferGPU->resize(m_data->m_numAcceleratedRigidBodies);
-    
-	if (m_data->m_numAcceleratedRigidBodies)
-	{
-		m_data->m_bodyBufferGPU->copyFromHostPointer(&m_data->m_bodyBufferCPU->at(0),m_data->m_numAcceleratedRigidBodies);
-		m_data->m_inertiaBufferGPU->copyFromHostPointer(&m_data->m_inertiaBufferCPU->at(0),m_data->m_numAcceleratedRigidBodies);
-	}
     if (m_data->m_collidablesCPU.size())
 	{
 		m_data->m_collidablesGPU->copyFromHost(m_data->m_collidablesCPU);
@@ -1039,7 +881,6 @@ void	b3GpuNarrowPhase::writeAllBodiesToGpu()
 void	b3GpuNarrowPhase::reset()
 {
 	m_data->m_numAcceleratedShapes = 0;
-	m_data->m_numAcceleratedRigidBodies = 0;
 	this->m_static0Index = -1;
 	m_data->m_uniqueEdges.resize(0);
 	m_data->m_convexVertices.resize(0);
@@ -1057,51 +898,3 @@ void	b3GpuNarrowPhase::reset()
 }
 
 
-void	b3GpuNarrowPhase::readbackAllBodiesToCpu()
-{
-	m_data->m_bodyBufferGPU->copyToHostPointer(&m_data->m_bodyBufferCPU->at(0),m_data->m_numAcceleratedRigidBodies);
-}
-
-void b3GpuNarrowPhase::setObjectTransformCpu(float* position, float* orientation , int bodyIndex)
-{
-	if (bodyIndex>=0 && bodyIndex<m_data->m_bodyBufferCPU->size())
-	{
-		m_data->m_bodyBufferCPU->at(bodyIndex).m_pos=b3MakeVector3(position[0],position[1],position[2]);
-		m_data->m_bodyBufferCPU->at(bodyIndex).m_quat.setValue(orientation[0],orientation[1],orientation[2],orientation[3]);
-	}
-	else
-	{
-		b3Warning("setObjectVelocityCpu out of range.\n");
-	}
-}
-void b3GpuNarrowPhase::setObjectVelocityCpu(float* linVel, float* angVel, int bodyIndex)
-{
-	if (bodyIndex>=0 && bodyIndex<m_data->m_bodyBufferCPU->size())
-	{
-		m_data->m_bodyBufferCPU->at(bodyIndex).m_linVel=b3MakeVector3(linVel[0],linVel[1],linVel[2]);
-		m_data->m_bodyBufferCPU->at(bodyIndex).m_angVel=b3MakeVector3(angVel[0],angVel[1],angVel[2]);
-	} else
-	{
-		b3Warning("setObjectVelocityCpu out of range.\n");
-	}
-}
-
-bool b3GpuNarrowPhase::getObjectTransformFromCpu(float* position, float* orientation , int bodyIndex) const
-{
-	if (bodyIndex>=0 && bodyIndex<m_data->m_bodyBufferCPU->size())
-	{
-		position[0] = m_data->m_bodyBufferCPU->at(bodyIndex).m_pos.x;
-		position[1] = m_data->m_bodyBufferCPU->at(bodyIndex).m_pos.y;
-		position[2] = m_data->m_bodyBufferCPU->at(bodyIndex).m_pos.z;
-		position[3] = 1.f;//or 1
-
-		orientation[0] = m_data->m_bodyBufferCPU->at(bodyIndex).m_quat.x;
-		orientation[1] = m_data->m_bodyBufferCPU->at(bodyIndex).m_quat.y;
-		orientation[2] = m_data->m_bodyBufferCPU->at(bodyIndex).m_quat.z;
-		orientation[3] = m_data->m_bodyBufferCPU->at(bodyIndex).m_quat.w;
-		return true;
-	}
-
-	b3Warning("getObjectTransformFromCpu out of range.\n");
-	return false;
-}

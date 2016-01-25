@@ -12,7 +12,6 @@ protected:
 
 	struct b3GpuNarrowPhaseInternalData*	m_data;
 	int m_acceleratedCompanionShapeIndex;
-	int m_planeBodyIndex;
 	int	m_static0Index;
 
 	cl_context m_context;
@@ -44,29 +43,13 @@ public:
 	int	registerConvexHullShape(b3ConvexUtility* utilPtr);
 	int	registerConvexHullShape(const float* vertices, int strideInBytes, int numVertices, const float* scaling);
 
-	int registerRigidBody(int collidableIndex, float mass, const float* position, const float* orientation, const float* aabbMin, const float* aabbMax,bool writeToGpu);
-	void setObjectTransform(const float* position, const float* orientation , int bodyIndex);
-
 	void	writeAllBodiesToGpu();
 	void  reset();
 	void	readbackAllBodiesToCpu();
-	bool	getObjectTransformFromCpu(float* position, float* orientation , int bodyIndex) const;
 
-	void setObjectTransformCpu(float* position, float* orientation , int bodyIndex);
-	void setObjectVelocityCpu(float* linVel, float* angVel, int bodyIndex);
-
-	
 	virtual void computeContacts(cl_mem broadphasePairs, int numBroadphasePairs, cl_mem aabbsWorldSpace, int numObjects);
 	
 
-	cl_mem	getBodiesGpu();
-	const struct b3RigidBodyData* getBodiesCpu() const;
-	//struct b3RigidBodyData* getBodiesCpu();
-
-	int	getNumBodiesGpu() const;
-
-	cl_mem	getBodyInertiasGpu();
-	int	getNumBodyInertiasGpu() const;
 
 	cl_mem	getCollidablesGpu();
 	const struct b3Collidable* getCollidablesCpu() const;
@@ -81,7 +64,6 @@ public:
 
 	cl_mem	getAabbLocalSpaceBufferGpu();
 	
-	int getNumRigidBodies() const;
 
 	int allocateCollidable();
 

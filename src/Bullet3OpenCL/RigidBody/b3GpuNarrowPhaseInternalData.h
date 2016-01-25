@@ -59,15 +59,8 @@ struct b3GpuNarrowPhaseInternalData
 	int	m_currentContactBuffer;
 	b3AlignedObjectArray<b3Contact4>* m_pBufContactOutCPU;
 	
-    
-	b3AlignedObjectArray<b3RigidBodyData>* m_bodyBufferCPU;
-	b3OpenCLArray<b3RigidBodyData>* m_bodyBufferGPU;
-    
-	b3AlignedObjectArray<b3InertiaData>*	m_inertiaBufferCPU;
-	b3OpenCLArray<b3InertiaData>*	m_inertiaBufferGPU;
-    
+   
 	int m_numAcceleratedShapes;
-	int m_numAcceleratedRigidBodies;
     
 	b3AlignedObjectArray<b3Collidable>	m_collidablesCPU;
 	b3OpenCLArray<b3Collidable>*	m_collidablesGPU;

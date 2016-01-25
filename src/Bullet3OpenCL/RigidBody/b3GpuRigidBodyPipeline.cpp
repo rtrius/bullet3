@@ -487,6 +487,7 @@ void	b3GpuRigidBodyPipeline::stepSimulation(float deltaTime)
 
 void	b3GpuRigidBodyPipeline::integrate(float timeStep)
 {
+#ifdef GPU_API_REDESIGN
 	//integrate
 	int numBodies = m_data->m_narrowphase->getNumRigidBodies();
 	float angularDamp = 0.99f;
@@ -517,6 +518,7 @@ void	b3GpuRigidBodyPipeline::integrate(float timeStep)
 		launcher.setConst(m_data->m_gravity);
 		launcher.launch1D(numBodies);
 	}
+#endif
 }
 
 
@@ -600,7 +602,7 @@ void	b3GpuRigidBodyPipeline::setupGpuAabbsFull()
 }
 
 
-
+#ifdef GPU_API_REDESIGN
 cl_mem	b3GpuRigidBodyPipeline::getBodyBuffer()
 {
 	return m_data->m_narrowphase->getBodiesGpu();
@@ -610,6 +612,7 @@ int	b3GpuRigidBodyPipeline::getNumBodies() const
 {
 	return m_data->m_narrowphase->getNumRigidBodies();
 }
+#endif
 
 void	b3GpuRigidBodyPipeline::setGravity(const float* grav)
 {
@@ -700,8 +703,10 @@ int		b3GpuRigidBodyPipeline::registerPhysicsInstance(float mass, const float* po
 
 void	b3GpuRigidBodyPipeline::castRays(const b3AlignedObjectArray<b3RayInfo>& rays,	b3AlignedObjectArray<b3RayHit>& hitResults)
 {
+#ifdef GPU_API_REDESIGN
 	this->m_data->m_raycaster->castRays(rays,hitResults,
 		getNumBodies(),this->m_data->m_narrowphase->getBodiesCpu(),
 		m_data->m_narrowphase->getNumCollidablesGpu(), m_data->m_narrowphase->getCollidablesCpu(),
 		m_data->m_narrowphase->getInternalData(), m_data->m_broadphaseSap);
+#endif
 }
