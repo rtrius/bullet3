@@ -66,7 +66,6 @@ bool gClearPairsOnGpu = true;
 b3GpuRigidBodyPipeline::b3GpuRigidBodyPipeline(cl_context ctx,cl_device_id device, cl_command_queue  q,class b3GpuNarrowPhase* narrowphase, class b3GpuBroadphaseInterface* broadphaseSap , struct b3DynamicBvhBroadphase* broadphaseDbvt, const b3Config& config)
 {
 	m_data = new b3GpuRigidBodyPipelineInternalData;
-	m_data->m_constraintUid=0;
 	m_data->m_config = config;
 	m_data->m_context = ctx;
 	m_data->m_device = device;
@@ -78,7 +77,6 @@ b3GpuRigidBodyPipeline::b3GpuRigidBodyPipeline(cl_context ctx,cl_device_id devic
 	m_data->m_allAabbsGPU = new b3OpenCLArray<b3SapAabb>(ctx,q,config.m_maxConvexBodies);
 	m_data->m_overlappingPairsGPU = new b3OpenCLArray<b3BroadphasePair>(ctx,q,config.m_maxBroadphasePairs);
 
-	m_data->m_gpuConstraints = new b3OpenCLArray<b3GpuGenericConstraint>(ctx,q);
 #ifdef TEST_OTHER_GPU_SOLVER
 	m_data->m_solver3 = new b3GpuJacobiContactSolver(ctx,device,q,config.m_maxBroadphasePairs);	
 #endif //	TEST_OTHER_GPU_SOLVER
@@ -131,7 +129,6 @@ b3GpuRigidBodyPipeline::~b3GpuRigidBodyPipeline()
 	delete m_data->m_raycaster;
 	delete m_data->m_solver;
 	delete m_data->m_allAabbsGPU;
-	delete m_data->m_gpuConstraints;
 	delete m_data->m_overlappingPairsGPU;
 
 #ifdef TEST_OTHER_GPU_SOLVER
@@ -146,85 +143,11 @@ b3GpuRigidBodyPipeline::~b3GpuRigidBodyPipeline()
 
 void	b3GpuRigidBodyPipeline::reset()
 {
-	m_data->m_gpuConstraints->resize(0);
-	m_data->m_cpuConstraints.resize(0);
 	m_data->m_allAabbsGPU->resize(0);
 	m_data->m_allAabbsCPU.resize(0);
 }
 
-void	b3GpuRigidBodyPipeline::addConstraint(b3TypedConstraint* constraint)
-{
-	m_data->m_joints.push_back(constraint);
-}
 
-void	b3GpuRigidBodyPipeline::removeConstraint(b3TypedConstraint* constraint)
-{
-	m_data->m_joints.remove(constraint);
-}
-
-
-
-void  b3GpuRigidBodyPipeline::removeConstraintByUid(int uid)
-{
-	m_data->m_gpuSolver->recomputeBatches();
-	//slow linear search
-	m_data->m_gpuConstraints->copyToHost(m_data->m_cpuConstraints);
-	//remove
-	for (int i=0;i<m_data->m_cpuConstraints.size();i++)
-	{
-		if (m_data->m_cpuConstraints[i].m_uid == uid)
-		{
-			//m_data->m_cpuConstraints.remove(m_data->m_cpuConstraints[i]);
-			m_data->m_cpuConstraints.swap(i,m_data->m_cpuConstraints.size()-1);
-			m_data->m_cpuConstraints.pop_back();
-
-			break;
-		}
-	}
-
-	if (m_data->m_cpuConstraints.size())
-	{
-		m_data->m_gpuConstraints->copyFromHost(m_data->m_cpuConstraints);
-	} else
-	{
-		m_data->m_gpuConstraints->resize(0);
-	}
-
-}
-int b3GpuRigidBodyPipeline::createPoint2PointConstraint(int bodyA, int bodyB, const float* pivotInA, const float* pivotInB,float breakingThreshold)
-{
-	m_data->m_gpuSolver->recomputeBatches();
-	b3GpuGenericConstraint c;
-	c.m_uid = m_data->m_constraintUid;
-	m_data->m_constraintUid++;
-	c.m_flags = B3_CONSTRAINT_FLAG_ENABLED;
-	c.m_rbA = bodyA;
-	c.m_rbB = bodyB;
-	c.m_pivotInA.setValue(pivotInA[0],pivotInA[1],pivotInA[2]);
-	c.m_pivotInB.setValue(pivotInB[0],pivotInB[1],pivotInB[2]);
-	c.m_breakingImpulseThreshold = breakingThreshold;
-	c.m_constraintType = B3_GPU_POINT2POINT_CONSTRAINT_TYPE;
-	m_data->m_cpuConstraints.push_back(c);
-	return c.m_uid;
-}
-int b3GpuRigidBodyPipeline::createFixedConstraint(int bodyA, int bodyB, const float* pivotInA, const float* pivotInB, const float* relTargetAB,float breakingThreshold)
-{
-	m_data->m_gpuSolver->recomputeBatches();
-	b3GpuGenericConstraint c;
-	c.m_uid = m_data->m_constraintUid;
-	m_data->m_constraintUid++;
-	c.m_flags = B3_CONSTRAINT_FLAG_ENABLED;
-	c.m_rbA = bodyA;
-	c.m_rbB = bodyB;
-	c.m_pivotInA.setValue(pivotInA[0],pivotInA[1],pivotInA[2]);
-	c.m_pivotInB.setValue(pivotInB[0],pivotInB[1],pivotInB[2]);
-	c.m_relTargetAB.setValue(relTargetAB[0],relTargetAB[1],relTargetAB[2],relTargetAB[3]);
-	c.m_breakingImpulseThreshold = breakingThreshold;
-	c.m_constraintType = B3_GPU_FIXED_CONSTRAINT_TYPE;
-
-	m_data->m_cpuConstraints.push_back(c);
-	return c.m_uid;
-}
 
 
 void	b3GpuRigidBodyPipeline::stepSimulation(float deltaTime)
@@ -619,15 +542,9 @@ void	b3GpuRigidBodyPipeline::setGravity(const float* grav)
 	m_data->m_gravity.setValue(grav[0],grav[1],grav[2]);
 }
 
-void 		b3GpuRigidBodyPipeline::copyConstraintsToHost()
-{
-	m_data->m_gpuConstraints->copyToHost(m_data->m_cpuConstraints);
-}
-
 void 		b3GpuRigidBodyPipeline::writeAllInstancesToGpu()
 {
 	m_data->m_allAabbsGPU->copyFromHost(m_data->m_allAabbsCPU);
-	m_data->m_gpuConstraints->copyFromHost(m_data->m_cpuConstraints);
 }
 
 

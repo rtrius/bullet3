@@ -12,7 +12,7 @@ subject to the following restrictions:
 
 #include "b3StateAabbs.h"
 
-b3StateAabbs::b3StateAabbs(cl_context context, cl_device_id device, cl_command_queue queue) : 
+b3StateAabbs::b3StateAabbs(cl_context context, cl_command_queue queue) : 
 	m_aabbsGpu(context, queue),
 	m_smallAabbsMappingGpu(context, queue),
 	m_largeAabbsMappingGpu(context, queue)

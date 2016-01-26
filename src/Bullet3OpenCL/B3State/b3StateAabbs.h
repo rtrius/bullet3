@@ -26,7 +26,7 @@ struct b3StateAabbs
 	b3AlignedObjectArray<int> m_smallAabbsMappingCpu;
 	b3AlignedObjectArray<int> m_largeAabbsMappingCpu;
 
-	b3StateAabbs(cl_context context, cl_device_id device, cl_command_queue queue);
+	b3StateAabbs(cl_context context, cl_command_queue queue);
 	virtual ~b3StateAabbs() {}
 	
 	virtual void createProxy(const b3Vector3& aabbMin, const b3Vector3& aabbMax, int userPtr, 

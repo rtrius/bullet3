@@ -39,29 +39,14 @@ public:
 	void	integrate(float timeStep);
 	void	setupGpuAabbsFull();
 
-	int		registerConvexPolyhedron(class b3ConvexUtility* convex);
-
-	//int		registerConvexPolyhedron(const float* vertices, int strideInBytes, int numVertices, const float* scaling);
-	//int		registerSphereShape(float radius);
-	//int		registerPlaneShape(const b3Vector3& planeNormal, float planeConstant);
-	
-	//int		registerConcaveMesh(b3AlignedObjectArray<b3Vector3>* vertices, b3AlignedObjectArray<int>* indices, const float* scaling);
-	//int		registerCompoundShape(b3AlignedObjectArray<b3GpuChildShape>* childShapes);
 
 	
 	int		registerPhysicsInstance(float mass, const float* position, const float* orientation, int collisionShapeIndex, int userData, bool writeInstanceToGpu);
 	//if you passed "writeInstanceToGpu" false in the registerPhysicsInstance method (for performance) you need to call writeAllInstancesToGpu after all instances are registered
 	void	writeAllInstancesToGpu();
-	void	copyConstraintsToHost();
 	void	setGravity(const float* grav);
 	void reset();
-	
-	int createPoint2PointConstraint(int bodyA, int bodyB, const float* pivotInA, const float* pivotInB,float breakingThreshold);
-	int createFixedConstraint(int bodyA, int bodyB, const float* pivotInA, const float* pivotInB, const float* relTargetAB, float breakingThreshold);
-	void removeConstraintByUid(int uid);
 
-	void	addConstraint(class b3TypedConstraint* constraint);
-	void	removeConstraint(b3TypedConstraint* constraint);
 
 	void	castRays(const b3AlignedObjectArray<b3RayInfo>& rays,	b3AlignedObjectArray<b3RayHit>& hitResults);
 
