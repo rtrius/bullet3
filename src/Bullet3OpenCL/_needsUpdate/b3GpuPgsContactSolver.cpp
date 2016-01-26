@@ -21,7 +21,7 @@ bool optionalSortContactsDeterminism = true;
 #include <string.h>
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 #include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
-#include "Bullet3OpenCL/RigidBody/b3Solver.h"
+#include "Bullet3OpenCL/_needsUpdate/b3Solver.h"
 
 
 #define B3_SOLVER_SETUP_KERNEL_PATH "src/Bullet3OpenCL/RigidBody/kernels/solverSetup.cl"

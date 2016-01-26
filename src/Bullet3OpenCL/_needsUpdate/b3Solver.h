@@ -18,7 +18,7 @@ subject to the following restrictions:
 #define __ADL_SOLVER_H
 
 #include "Bullet3OpenCL/ParallelPrimitives/b3OpenCLArray.h"
-#include "b3GpuConstraint4.h"
+#include "Bullet3OpenCL/RigidBody/b3GpuConstraint4.h"
 
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3RigidBodyData.h"
 #include "Bullet3Collision/NarrowPhaseCollision/b3Contact4.h"

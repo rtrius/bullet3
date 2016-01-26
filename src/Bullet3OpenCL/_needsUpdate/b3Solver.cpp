@@ -29,14 +29,14 @@ bool gConvertConstraintOnCpu = false;
 
 #include "Bullet3Dynamics/shared/b3ConvertConstraint4.h"
 
-#include "kernels/solverSetup.h"
-#include "kernels/solverSetup2.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solverSetup.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solverSetup2.h"
 
-#include "kernels/solveContact.h"
-#include "kernels/solveFriction.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solveContact.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solveFriction.h"
 
-#include "kernels/batchingKernels.h"
-#include "kernels/batchingKernelsNew.h"
+#include "Bullet3OpenCL/RigidBody/kernels/batchingKernels.h"
+#include "Bullet3OpenCL/RigidBody/kernels/batchingKernelsNew.h"
 
 
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"

@@ -53,8 +53,6 @@ bool gClearPairsOnGpu = true;
 #include "Bullet3Collision/NarrowPhaseCollision/b3Contact4.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuPgsConstraintSolver.h"
 
-#include "b3Solver.h"
-
 #include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
 #include "Bullet3OpenCL/Raycast/b3GpuRaycast.h"
 
@@ -133,7 +131,7 @@ b3GpuRigidBodyPipeline::~b3GpuRigidBodyPipeline()
 	delete m_data->m_solver3;
 #endif //TEST_OTHER_GPU_SOLVER
 	
-	delete m_data->m_solver2;
+	//delete m_data->m_solver2;
 	
 	
 	delete m_data;
