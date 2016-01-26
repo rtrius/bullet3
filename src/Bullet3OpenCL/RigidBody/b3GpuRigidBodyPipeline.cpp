@@ -53,7 +53,6 @@ bool gClearPairsOnGpu = true;
 #include "Bullet3Collision/NarrowPhaseCollision/b3Contact4.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuPgsConstraintSolver.h"
 
-#include "b3GpuPgsContactSolver.h"
 #include "b3Solver.h"
 
 #include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
@@ -81,7 +80,6 @@ b3GpuRigidBodyPipeline::b3GpuRigidBodyPipeline(cl_context ctx,cl_device_id devic
 	m_data->m_solver3 = new b3GpuJacobiContactSolver(ctx,device,q,config.m_maxBroadphasePairs);	
 #endif //	TEST_OTHER_GPU_SOLVER
 	
-	m_data->m_solver2 = new b3GpuPgsContactSolver(ctx,device,q,config.m_maxBroadphasePairs);
 
 	m_data->m_raycaster = new b3GpuRaycast(ctx,device,q);
 

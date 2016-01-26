@@ -21,7 +21,7 @@ bool optionalSortContactsDeterminism = true;
 #include <string.h>
 #include "Bullet3OpenCL/Initialize/b3OpenCLUtils.h"
 #include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
-#include "b3Solver.h"
+#include "Bullet3OpenCL/RigidBody/b3Solver.h"
 
 
 #define B3_SOLVER_SETUP_KERNEL_PATH "src/Bullet3OpenCL/RigidBody/kernels/solverSetup.cl"
@@ -31,12 +31,12 @@ bool optionalSortContactsDeterminism = true;
 #define B3_BATCHING_PATH "src/Bullet3OpenCL/RigidBody/kernels/batchingKernels.cl"
 #define B3_BATCHING_NEW_PATH "src/Bullet3OpenCL/RigidBody/kernels/batchingKernelsNew.cl"
 
-#include "kernels/solverSetup.h"
-#include "kernels/solverSetup2.h"
-#include "kernels/solveContact.h"
-#include "kernels/solveFriction.h"
-#include "kernels/batchingKernels.h"
-#include "kernels/batchingKernelsNew.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solverSetup.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solverSetup2.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solveContact.h"
+#include "Bullet3OpenCL/RigidBody/kernels/solveFriction.h"
+#include "Bullet3OpenCL/RigidBody/kernels/batchingKernels.h"
+#include "Bullet3OpenCL/RigidBody/kernels/batchingKernelsNew.h"
 
 
 
