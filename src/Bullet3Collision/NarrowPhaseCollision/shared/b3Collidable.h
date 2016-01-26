@@ -21,6 +21,15 @@ enum b3ShapeTypes
 typedef struct b3Collidable b3Collidable_t;
 
 
+
+///@brief Main shape class; contains indices to actual shape data.
+///@par
+///Use of m_shapeIndex varies depending on m_shapeType; if m_shapeType is:
+/// - SHAPE_CONVEX_HULL m_shapeIndex refers to b3ConvexPolyhedronData
+/// - SHAPE_PLANE m_shapeIndex refers to b3GpuFace
+/// - SHAPE_CONCAVE_TRIMESH m_shapeIndex refers to b3ConvexPolyhedronData
+/// - SHAPE_COMPOUND_OF_CONVEX_HULLS m_shapeIndex refers to b3GpuChildShape
+/// - SHAPE_SPHERE m_shapeIndex is unused
 struct b3Collidable
 {
 	union {
@@ -36,7 +45,7 @@ struct b3Collidable
 	int m_shapeType;
 	union
 	{
-		int m_shapeIndex;
+		int m_shapeIndex;		///<Use depends on m_shapeType
 		float m_height;
 	};
 };

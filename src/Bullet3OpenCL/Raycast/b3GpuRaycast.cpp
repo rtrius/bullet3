@@ -2,6 +2,7 @@
 #include "b3GpuRaycast.h"
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3Collidable.h"
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3RigidBodyData.h"
+#include "Bullet3Collision/NarrowPhaseCollision/shared/b3ConvexPolyhedronData.h"
 #include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhaseInternalData.h"
 
 
@@ -154,6 +155,7 @@ bool sphere_intersect(const b3Vector3& spherePos,  b3Scalar radius, const b3Vect
 bool rayConvex(const b3Vector3& rayFromLocal, const b3Vector3& rayToLocal, const b3ConvexPolyhedronData& poly,
 	const b3AlignedObjectArray<b3GpuFace>& faces,  float& hitFraction, b3Vector3& hitNormal)
 {
+#ifdef GPU_API_REDESIGN
 	float exitFraction = hitFraction;
 	float enterFraction = -0.1f;
 	b3Vector3 curHitNormal=b3MakeVector3(0,0,0);
@@ -197,6 +199,7 @@ bool rayConvex(const b3Vector3& rayFromLocal, const b3Vector3& rayToLocal, const
 
 	hitFraction = enterFraction;
 	hitNormal = curHitNormal;
+#endif
 	return true;
 }
 
@@ -204,6 +207,7 @@ void b3GpuRaycast::castRaysHost(const b3AlignedObjectArray<b3RayInfo>& rays,	b3A
 		int numBodies,const struct b3RigidBodyData* bodies, int numCollidables,const struct b3Collidable* collidables, const struct b3GpuNarrowPhaseInternalData* narrowphaseData)
 {
 
+#ifdef GPU_API_REDESIGN
 //	return castRays(rays,hitResults,numBodies,bodies,numCollidables,collidables);
 
 	B3_PROFILE("castRaysHost");
@@ -279,6 +283,7 @@ void b3GpuRaycast::castRaysHost(const b3AlignedObjectArray<b3RayInfo>& rays,	b3A
 		}
 
 	}
+#endif
 }
 
 void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3AlignedObjectArray<b3RayHit>& hitResults,
