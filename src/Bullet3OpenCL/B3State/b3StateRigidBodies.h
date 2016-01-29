@@ -28,7 +28,7 @@ struct b3StateRigidBodies
 	b3AlignedObjectArray<b3InertiaData> m_inertiaBufferCPU;
 
 
-	b3StateRigidBodies(cl_context context, cl_device_id device, cl_command_queue queue, int maxRigidBodies);
+	b3StateRigidBodies(cl_context context, cl_command_queue queue, int maxRigidBodies);
 	virtual ~b3StateRigidBodies();
 
 	int registerRigidBody(int collidableIndex, float mass, const float* position, const float* orientation, const float* aabbMin, const float* aabbMax, bool writeToGpu);

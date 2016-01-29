@@ -12,7 +12,7 @@ subject to the following restrictions:
 #include "b3StateRigidBodies.h"
 
 
-b3StateRigidBodies::b3StateRigidBodies(cl_context context, cl_device_id device, cl_command_queue queue, int maxRigidBodies) :
+b3StateRigidBodies::b3StateRigidBodies(cl_context context, cl_command_queue queue, int maxRigidBodies) :
 	m_maxRigidBodies(maxRigidBodies),
 	m_numRigidBodies(0),
 	m_bodyBufferGPU(context, queue), 

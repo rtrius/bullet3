@@ -43,24 +43,14 @@ struct b3GpuRigidBodyPipelineInternalData
 	cl_kernel	m_updateAabbsKernel;
 	cl_kernel	m_clearOverlappingPairsKernel;
 	
-	class b3PgsJacobiSolver* m_solver;
-	
-	class b3GpuPgsConstraintSolver* m_gpuSolver;
 
-	class b3GpuPgsContactSolver* m_solver2;
-	class b3GpuJacobiContactSolver* m_solver3;
-	class b3GpuRaycast* m_raycaster;
-	
-	class b3GpuBroadphaseInterface* m_broadphaseSap;
-	
-	struct b3DynamicBvhBroadphase* m_broadphaseDbvt;
-	b3OpenCLArray<b3SapAabb>*	m_allAabbsGPU;
-	b3AlignedObjectArray<b3SapAabb>	m_allAabbsCPU;
-	b3OpenCLArray<b3BroadphasePair>*		m_overlappingPairsGPU;
-
+	class b3GpuBroadphaseInterface* m_broadphase;
 	class b3GpuNarrowPhase*	m_narrowphase;
-	b3Vector3	m_gravity;
+	//class b3GpuPgsConstraintSolver* m_jointSolver;
+	class b3GpuJacobiContactSolver* m_contactSolver;
+	//class b3GpuRaycast* m_raycaster;
 
+	b3Vector3	m_gravity;
 	b3Config	m_config;
 };
 

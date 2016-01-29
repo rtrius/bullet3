@@ -12,7 +12,9 @@ public:
 	typedef class b3GpuBroadphaseInterface* (CreateFunc)(cl_context ctx,cl_device_id device, cl_command_queue q);
 
 	virtual ~b3GpuBroadphaseInterface(){}
-
+	
+	//For each pair of intersecting AABBs, b3SapAabb.m_minIndices[3] is stored in the output
+	//size() of output is set to the number of overlapping pairs (-> return int?)
 	virtual void computeOverlappingPairs(b3StateAabbs& input, b3StateOverlappingPairs& output, int maxPairs) = 0;
 
 };
