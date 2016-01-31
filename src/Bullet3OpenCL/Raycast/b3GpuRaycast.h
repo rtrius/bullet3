@@ -2,12 +2,13 @@
 #define B3_GPU_RAYCAST_H
 
 #include "Bullet3Common/b3Vector3.h"
-#include "Bullet3OpenCL/Initialize/b3OpenCLInclude.h"
-
 #include "Bullet3Common/b3AlignedObjectArray.h"
 #include "Bullet3Collision/NarrowPhaseCollision/b3RaycastInfo.h"
 
-
+#include "Bullet3OpenCL/Initialize/b3OpenCLInclude.h"
+#include "Bullet3OpenCL/B3State/b3StateAabbs.h"
+#include "Bullet3OpenCL/B3State/b3StateRigidCollidables.h"
+#include "Bullet3OpenCL/B3State/b3StateRigidBodies.h"
 
 class b3GpuRaycast
 {
@@ -20,13 +21,8 @@ public:
 	b3GpuRaycast(cl_context ctx,cl_device_id device, cl_command_queue  q);
 	virtual ~b3GpuRaycast();
 
-	void castRaysHost(const b3AlignedObjectArray<b3RayInfo>& raysIn,	b3AlignedObjectArray<b3RayHit>& hitResults,
-		int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
-		const struct b3GpuNarrowPhaseInternalData* narrowphaseData);
-	
 	void castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3AlignedObjectArray<b3RayHit>& hitResults,
-		int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
-		const struct b3GpuNarrowPhaseInternalData* narrowphaseData, class b3GpuBroadphaseInterface* broadphase);
+		int numBodies, b3OpenCLArray<b3RigidBodyData>& rigidBodies, b3StateRigidCollidables& collidables, b3StateAabbs& aabbs);
 	
 	///@brief Make sure that setMaxRayRigidPairs() is correct.
 	///@remarks
@@ -42,8 +38,7 @@ public:
 	///AABBs that are expected to intersect each ray on average. Each pair consumes
 	///sizeof(b3Int2) + sizeof(b3Vector3), or 24 bytes.
 	void castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& rays, b3AlignedObjectArray<b3RayHit>& hitResults,
-		int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
-		const b3GpuNarrowPhaseInternalData* narrowphaseData, b3GpuBroadphaseInterface* broadphase);
+		int numBodies, b3OpenCLArray<b3RigidBodyData>& rigidBodies, b3StateRigidCollidables& collidables, b3StateAabbs& aabbs);
 	
 	///Only used by castRaysUsingPairs()
 	void setMaxRayRigidPairs(int maxRayRigidPairs) { m_maxRayRigidPairs = maxRayRigidPairs; }

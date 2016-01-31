@@ -128,172 +128,12 @@ b3GpuRaycast::~b3GpuRaycast()
 	delete m_data;
 }
 
-bool sphere_intersect(const b3Vector3& spherePos,  b3Scalar radius, const b3Vector3& rayFrom, const b3Vector3& rayTo, float& hitFraction)
-{
-    b3Vector3 rs = rayFrom - spherePos;
-	b3Vector3 rayDir = rayTo-rayFrom;
-	
-	float A = b3Dot(rayDir,rayDir);
-    float B = b3Dot(rs, rayDir);
-    float C = b3Dot(rs, rs) - (radius * radius);
-    
-	float D = B * B - A*C;
-
-    if (D > 0.0)
-    {
-        float t = (-B - sqrt(D))/A;
-
-        if ( (t >= 0.0f) && (t < hitFraction) )
-        {
-			hitFraction = t;
-            return true;
-		}
-	}
-	return false;
-}
-
-bool rayConvex(const b3Vector3& rayFromLocal, const b3Vector3& rayToLocal, const b3ConvexPolyhedronData& poly,
-	const b3AlignedObjectArray<b3GpuFace>& faces,  float& hitFraction, b3Vector3& hitNormal)
-{
-#ifdef GPU_API_REDESIGN
-	float exitFraction = hitFraction;
-	float enterFraction = -0.1f;
-	b3Vector3 curHitNormal=b3MakeVector3(0,0,0);
-	for (int i=0;i<poly.m_numFaces;i++)
-	{
-		const b3GpuFace& face = faces[poly.m_faceOffset+i];
-		float fromPlaneDist = b3Dot(rayFromLocal,face.m_plane)+face.m_plane.w;
-		float toPlaneDist = b3Dot(rayToLocal,face.m_plane)+face.m_plane.w;
-		if (fromPlaneDist<0.f)
-		{
-			if (toPlaneDist >= 0.f)
-			{
-				float fraction = fromPlaneDist / (fromPlaneDist-toPlaneDist);
-				if (exitFraction>fraction)
-				{
-					exitFraction = fraction;
-				}
-			} 			
-		} else
-		{
-			if (toPlaneDist<0.f)
-			{
-				float fraction = fromPlaneDist / (fromPlaneDist-toPlaneDist);
-				if (enterFraction <= fraction)
-				{
-					enterFraction = fraction;
-					curHitNormal = face.m_plane;
-					curHitNormal.w = 0.f;
-				}
-			} else
-			{
-				return false;
-			}
-		}
-		if (exitFraction <= enterFraction)
-			return false;
-	}
-
-	if (enterFraction < 0.f)
-		return false;
-
-	hitFraction = enterFraction;
-	hitNormal = curHitNormal;
-#endif
-	return true;
-}
-
-void b3GpuRaycast::castRaysHost(const b3AlignedObjectArray<b3RayInfo>& rays,	b3AlignedObjectArray<b3RayHit>& hitResults,
-		int numBodies,const struct b3RigidBodyData* bodies, int numCollidables,const struct b3Collidable* collidables, const struct b3GpuNarrowPhaseInternalData* narrowphaseData)
-{
-
-#ifdef GPU_API_REDESIGN
-//	return castRays(rays,hitResults,numBodies,bodies,numCollidables,collidables);
-
-	B3_PROFILE("castRaysHost");
-	for (int r=0;r<rays.size();r++)
-	{
-		b3Vector3 rayFrom = rays[r].m_from;
-		b3Vector3 rayTo = rays[r].m_to;
-		float hitFraction = hitResults[r].m_hitFraction;
-
-		int hitBodyIndex= -1;
-		b3Vector3 hitNormal;
-
-		for (int b=0;b<numBodies;b++)
-		{
-				
-			const b3Vector3& pos = bodies[b].m_pos;
-			const b3Quaternion& orn = bodies[b].m_quat;
-			
-			switch (collidables[bodies[b].m_collidableIdx].m_shapeType)
-			{
-			case SHAPE_SPHERE:
-				{
-					b3Scalar radius = collidables[bodies[b].m_collidableIdx].m_radius;
-					if (sphere_intersect(pos,  radius, rayFrom, rayTo,hitFraction))
-					{
-						hitBodyIndex = b;
-						b3Vector3 hitPoint;
-						hitPoint.setInterpolate3(rays[r].m_from, rays[r].m_to,hitFraction);
-						hitNormal = (hitPoint-bodies[b].m_pos).normalize();
-					}
-				}
-			case SHAPE_CONVEX_HULL:
-				{
-
-					b3Transform convexWorldTransform;
-					convexWorldTransform.setIdentity();
-					convexWorldTransform.setOrigin(bodies[b].m_pos);
-					convexWorldTransform.setRotation(bodies[b].m_quat);
-					b3Transform convexWorld2Local = convexWorldTransform.inverse();
-
-					b3Vector3 rayFromLocal = convexWorld2Local(rayFrom);
-					b3Vector3 rayToLocal = convexWorld2Local(rayTo);
-					
-					
-					int shapeIndex = collidables[bodies[b].m_collidableIdx].m_shapeIndex;
-					const b3ConvexPolyhedronData& poly = narrowphaseData->m_convexPolyhedra[shapeIndex];
-					if (rayConvex(rayFromLocal, rayToLocal,poly,narrowphaseData->m_convexFaces, hitFraction, hitNormal))
-					{
-						hitBodyIndex = b;
-					}
-
-					
-					break;
-				}
-			default:
-				{
-					static bool once=true;
-					if (once)
-					{
-						once=false;
-						b3Warning("Raytest: unsupported shape type\n");
-					}
-				}
-			}
-		}
-		if (hitBodyIndex>=0)
-		{
-
-			hitResults[r].m_hitFraction = hitFraction;
-			hitResults[r].m_hitPoint.setInterpolate3(rays[r].m_from, rays[r].m_to,hitFraction);
-			hitResults[r].m_hitNormal = hitNormal;
-			hitResults[r].m_hitBody = hitBodyIndex;
-		}
-
-	}
-#endif
-}
-
 void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3AlignedObjectArray<b3RayHit>& hitResults,
-	int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
-	const struct b3GpuNarrowPhaseInternalData* narrowphaseData, class b3GpuBroadphaseInterface* broadphase)
+	int numBodies, b3OpenCLArray<b3RigidBodyData>& rigidBodies, b3StateRigidCollidables& collidables, b3StateAabbs& aabbs)
 {
-#ifdef GPU_API_REDESIGN
 	if(0)
 	{
-		castRaysUsingPairs(rays, hitResults, numBodies, bodies, numCollidables, collidables, narrowphaseData, broadphase);
+		castRaysUsingPairs(rays, hitResults, numBodies, rigidBodies, collidables, aabbs);
 		return;
 	}
 
@@ -319,17 +159,17 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 		launcher.setBuffer(m_data->m_gpuHitResults->getBufferCL());
 
 		launcher.setConst(numBodies);
-		launcher.setBuffer(narrowphaseData->m_bodyBufferGPU->getBufferCL());
-		launcher.setBuffer(narrowphaseData->m_collidablesGPU->getBufferCL());
-		launcher.setBuffer(narrowphaseData->m_convexFacesGPU->getBufferCL());
-		launcher.setBuffer(narrowphaseData->m_convexPolyhedraGPU->getBufferCL());
+		launcher.setBuffer(rigidBodies.getBufferCL());
+		launcher.setBuffer(collidables.m_collidablesGpu.getBufferCL());
+		launcher.setBuffer(collidables.m_convexFacesGpu.getBufferCL());
+		launcher.setBuffer(collidables.m_convexPolyhedraGpu.getBufferCL());
 		
 		launcher.launch1D(numRays);
 		clFinish(m_data->m_q);
 	}
 	else
 	{
-		m_data->m_plbvh->build( broadphase->getAllAabbsGPU(), broadphase->getSmallAabbIndicesGPU(), broadphase->getLargeAabbIndicesGPU() );
+		m_data->m_plbvh->build(aabbs.m_aabbsGpu, aabbs.m_smallAabbsMappingGpu, aabbs.m_largeAabbsMappingGpu);
 		
 		//Simultaneously traverse BVH and find first/closest hit(computes ray-rigid intersection and ray-AABB intersection)
 		{
@@ -346,18 +186,19 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 				b3BufferInfoCL( m_data->m_plbvh->getInternalNodeAabbs().getBufferCL() ),
 				b3BufferInfoCL( m_data->m_plbvh->getMortonCodesAndAabbIndices().getBufferCL() ),
 		
-				b3BufferInfoCL( narrowphaseData->m_bodyBufferGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_collidablesGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_convexFacesGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_convexPolyhedraGPU->getBufferCL() ),
+				b3BufferInfoCL( rigidBodies.getBufferCL() ),
+				b3BufferInfoCL( collidables.m_collidablesGpu.getBufferCL() ),
+				b3BufferInfoCL( collidables.m_convexFacesGpu.getBufferCL() ),
+				b3BufferInfoCL( collidables.m_convexPolyhedraGpu.getBufferCL() ),
 				
 				b3BufferInfoCL( m_data->m_gpuRays->getBufferCL() ),
 				b3BufferInfoCL( m_data->m_gpuHitResults->getBufferCL() )
 			};
 			
+			const int UNUSED = -1;
 			b3LauncherCL launcher(m_data->m_q, m_data->m_plbvhRayTraverseFirstHitKernel, "m_plbvhRayTraverseFirstHitKernel");
 			launcher.setBuffers( bufferInfo, sizeof(bufferInfo)/sizeof(b3BufferInfoCL) );
-			launcher.setConst( narrowphaseData->m_bodyBufferGPU->size() );
+			launcher.setConst(UNUSED);
 			launcher.setConst(numRays);
 			
 			launcher.launch1D(numRays);
@@ -376,11 +217,11 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 			b3BufferInfoCL bufferInfo[] = 
 			{
 				b3BufferInfoCL( largeAabbs.getBufferCL() ),
-				
-				b3BufferInfoCL( narrowphaseData->m_bodyBufferGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_collidablesGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_convexFacesGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_convexPolyhedraGPU->getBufferCL() ),
+
+				b3BufferInfoCL(rigidBodies.getBufferCL()),
+				b3BufferInfoCL(collidables.m_collidablesGpu.getBufferCL()),
+				b3BufferInfoCL(collidables.m_convexFacesGpu.getBufferCL()),
+				b3BufferInfoCL(collidables.m_convexPolyhedraGpu.getBufferCL()),
 				
 				b3BufferInfoCL( m_data->m_gpuRays->getBufferCL() ),
 				b3BufferInfoCL( m_data->m_gpuHitResults->getBufferCL() )
@@ -401,15 +242,13 @@ void b3GpuRaycast::castRays(const b3AlignedObjectArray<b3RayInfo>& rays, b3Align
 		B3_PROFILE("raycast copyToHost");
 		m_data->m_gpuHitResults->copyToHost(hitResults);
 	}
-#endif
 }
 
-void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& rays,	b3AlignedObjectArray<b3RayHit>& hitResults,
-		int numBodies, const struct b3RigidBodyData* bodies, int numCollidables, const struct b3Collidable* collidables,
-		const struct b3GpuNarrowPhaseInternalData* narrowphaseData,	class b3GpuBroadphaseInterface* broadphase)
+void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& rays, b3AlignedObjectArray<b3RayHit>& hitResults,
+	int numBodies, b3OpenCLArray<b3RigidBodyData>& rigidBodies, b3StateRigidCollidables& collidables, b3StateAabbs& aabbs)
 {
 	B3_PROFILE("b3GpuRaycast::castRaysUsingPairs()");
-#ifdef GPU_API_REDESIGN
+
 	{
 		B3_PROFILE("raycast copyFromHost");
 		m_data->m_gpuRays->copyFromHost(rays);
@@ -428,8 +267,8 @@ void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& ray
 			m_data->m_gpuRayRigidPairs->resize(m_maxRayRigidPairs);
 			m_data->m_normalAndHitFractionPerPair->resize(m_maxRayRigidPairs);
 		}
-	
-		m_data->m_plbvh->build( broadphase->getAllAabbsGPU(), broadphase->getSmallAabbIndicesGPU(), broadphase->getLargeAabbIndicesGPU() );
+
+		m_data->m_plbvh->build(aabbs.m_aabbsGpu, aabbs.m_smallAabbsMappingGpu, aabbs.m_largeAabbsMappingGpu);
 
 		m_data->m_plbvh->testRaysAgainstBvhAabbs(*m_data->m_gpuRays, *m_data->m_gpuNumRayRigidPairs, *m_data->m_gpuRayRigidPairs);
 		
@@ -486,11 +325,11 @@ void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& ray
 			{
 				b3BufferInfoCL( m_data->m_gpuRays->getBufferCL() ),
 				b3BufferInfoCL( m_data->m_gpuHitResults->getBufferCL() ),
-				
-				b3BufferInfoCL( narrowphaseData->m_bodyBufferGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_collidablesGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_convexFacesGPU->getBufferCL() ),
-				b3BufferInfoCL( narrowphaseData->m_convexPolyhedraGPU->getBufferCL() ),
+
+				b3BufferInfoCL(rigidBodies.getBufferCL()),
+				b3BufferInfoCL(collidables.m_collidablesGpu.getBufferCL()),
+				b3BufferInfoCL(collidables.m_convexFacesGpu.getBufferCL()),
+				b3BufferInfoCL(collidables.m_convexPolyhedraGpu.getBufferCL()),
 				
 				b3BufferInfoCL( m_data->m_gpuRayRigidPairs->getBufferCL() ),
 				b3BufferInfoCL( m_data->m_normalAndHitFractionPerPair->getBufferCL() )
@@ -533,7 +372,6 @@ void b3GpuRaycast::castRaysUsingPairs(const b3AlignedObjectArray<b3RayInfo>& ray
 		B3_PROFILE("raycast copyToHost");
 		m_data->m_gpuHitResults->copyToHost(hitResults);
 	}
-#endif
 }
 
 
