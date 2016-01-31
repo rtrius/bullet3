@@ -25,6 +25,7 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/BroadphaseCollision/b3GpuBroadphaseInterface.h"
 #include "Bullet3OpenCL/ParallelPrimitives/b3LauncherCL.h"
 #include "Bullet3Dynamics/ConstraintSolver/b3PgsJacobiSolver.h"
+#include "Bullet3OpenCL/RigidBody/b3GpuPgsContactSolver.h"
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3UpdateAabbs.h"
 #include "Bullet3Collision/BroadPhaseCollision/b3DynamicBvhBroadphase.h"
 
@@ -37,9 +38,12 @@ subject to the following restrictions:
 
 #include "Bullet3Collision/NarrowPhaseCollision/shared/b3RigidBodyData.h"
 #include "Bullet3Collision/NarrowPhaseCollision/b3Contact4.h"
-#include "Bullet3OpenCL/RigidBody/b3GpuPgsConstraintSolver.h"
 
 #include "Bullet3Collision/NarrowPhaseCollision/b3Config.h"
+
+#include "Bullet3OpenCL/BroadphaseCollision/b3GpuParallelLinearBvhBroadphase.h"
+#include "Bullet3OpenCL/RigidBody/b3GpuNarrowPhase.h"
+#include "Bullet3OpenCL/RigidBody/b3GpuPgsConstraintSolver.h"
 #include "Bullet3OpenCL/Raycast/b3GpuRaycast.h"
 
 	
@@ -49,25 +53,24 @@ subject to the following restrictions:
 #define MAX_RIGID_BODIES 32*1024			//todo: move 
 #define MAX_CONTACTS 16*MAX_RIGID_BODIES		//todo: move
 
-b3GpuRigidBodyPipeline::b3GpuRigidBodyPipeline(cl_context ctx, cl_device_id device, cl_command_queue q,
-												class b3GpuNarrowPhase* narrowphase, class b3GpuBroadphaseInterface* broadphase, 
-												const b3Config& config) :
+b3GpuRigidBodyPipeline::b3GpuRigidBodyPipeline(cl_context ctx, cl_device_id device, cl_command_queue q) :
 m_aabbs(ctx, q),
 m_pairs(ctx, q),
 m_collidables(ctx, q),
 m_rigidBodies(ctx, q, MAX_RIGID_BODIES),
+m_constraints(ctx, q),
 m_contacts(ctx, q, MAX_CONTACTS)
 {
 	m_data = new b3GpuRigidBodyPipelineInternalData;
-	m_data->m_config = config;
+	m_data->m_config = b3Config();
 	m_data->m_context = ctx;
 	m_data->m_device = device;
 	m_data->m_queue = q;
 
-	m_data->m_broadphase = broadphase;
-	m_data->m_narrowphase = narrowphase;
+	m_data->m_broadphase = new b3GpuParallelLinearBvhBroadphase(ctx, device, q);
+	m_data->m_narrowphase = new b3GpuNarrowPhase(ctx, device, q, m_data->m_config);
 	//m_data->m_jointSolver = new b3GpuPgsConstraintSolver(ctx, device, q, true);
-	m_data->m_contactSolver = new b3GpuJacobiContactSolver(ctx, device, q, config.m_maxBroadphasePairs);
+	m_data->m_contactSolver = new b3GpuPgsContactSolver(ctx, device, q, m_data->m_config.m_maxBroadphasePairs);
 	//m_data->m_raycaster = new b3GpuRaycast(ctx,device,q);
 
 	m_data->m_gravity.setValue(0.f,-9.8f,0.f);
@@ -156,6 +159,8 @@ void	b3GpuRigidBodyPipeline::stepSimulation(float deltaTime)
 	int numContacts = 0;
 	cl_mem contacts = 0;
 
+	printf("numBodies:%d \n", numBodies);
+	printf("numPairs:%d \n", numPairs);
 	if (numPairs)
 	{
 		//mark the contacts for each pair as 'unused'
@@ -173,7 +178,7 @@ void	b3GpuRigidBodyPipeline::stepSimulation(float deltaTime)
 		numContacts = m_contacts.m_pContactBuffersGPU[m_contacts.m_currentContactBuffer]->size();
 		contacts = m_contacts.m_pContactBuffersGPU[m_contacts.m_currentContactBuffer]->getBufferCL();
 	}
-	
+	printf("numContacts:%d \n", numContacts);
 
 	if (numContacts)
 	{

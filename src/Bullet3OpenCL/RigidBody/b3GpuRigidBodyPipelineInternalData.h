@@ -47,7 +47,7 @@ struct b3GpuRigidBodyPipelineInternalData
 	class b3GpuBroadphaseInterface* m_broadphase;
 	class b3GpuNarrowPhase*	m_narrowphase;
 	//class b3GpuPgsConstraintSolver* m_jointSolver;
-	class b3GpuJacobiContactSolver* m_contactSolver;
+	class b3GpuPgsContactSolver* m_contactSolver;
 	//class b3GpuRaycast* m_raycaster;
 
 	b3Vector3	m_gravity;

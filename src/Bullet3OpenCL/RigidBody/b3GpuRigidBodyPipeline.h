@@ -27,6 +27,7 @@ subject to the following restrictions:
 #include "Bullet3OpenCL/B3State/b3StateOverlappingPairs.h"
 #include "Bullet3OpenCL/B3State/b3StateRigidCollidables.h"
 #include "Bullet3OpenCL/B3State/b3StateRigidBodies.h"
+#include "Bullet3OpenCL/B3State/b3StateRigidConstraints.h"
 #include "Bullet3OpenCL/B3State/b3StateRigidContacts.h"
 
 
@@ -37,12 +38,14 @@ protected:
 
 public:
 	b3StateAabbs m_aabbs;
-	b3StateOverlappingPairs m_pairs;
 	b3StateRigidCollidables m_collidables;
 	b3StateRigidBodies m_rigidBodies;
+	b3StateRigidConstraints m_constraints;
+
+	b3StateOverlappingPairs m_pairs;
 	b3StateRigidContacts m_contacts;
 
-	b3GpuRigidBodyPipeline(cl_context ctx,cl_device_id device, cl_command_queue  q , class b3GpuNarrowPhase* narrowphase, class b3GpuBroadphaseInterface* broadphase, const b3Config& config);
+	b3GpuRigidBodyPipeline(cl_context ctx,cl_device_id device, cl_command_queue q);
 	virtual ~b3GpuRigidBodyPipeline();
 
 	void	stepSimulation(float deltaTime);

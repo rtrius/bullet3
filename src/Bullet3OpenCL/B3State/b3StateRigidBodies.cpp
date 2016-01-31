@@ -27,10 +27,10 @@ b3StateRigidBodies::~b3StateRigidBodies()
 {
 }
 
-int b3StateRigidBodies::registerRigidBody(int collidableIndex, float mass, const float* position, const float* orientation, const float* aabbMinPtr, const float* aabbMaxPtr, bool writeToGpu)
+int b3StateRigidBodies::registerRigidBody(int collidableIndex, float mass, const float* position, const float* orientation)
 {
-	b3Vector3 aabbMin = b3MakeVector3(aabbMinPtr[0], aabbMinPtr[1], aabbMinPtr[2]);
-	b3Vector3 aabbMax = b3MakeVector3(aabbMaxPtr[0], aabbMaxPtr[1], aabbMaxPtr[2]);
+	b3Vector3 aabbMin = b3MakeVector3(-1.f, -1.f, -1.f);
+	b3Vector3 aabbMax = b3MakeVector3(1.f, 1.f, 1.f);
 
 
 	if (m_numRigidBodies >= m_maxRigidBodies)
@@ -55,11 +55,6 @@ int b3StateRigidBodies::registerRigidBody(int collidableIndex, float mass, const
 	body.m_collidableIdx = collidableIndex;
 
 	body.m_invMass = mass ? 1.f / mass : 0.f;
-
-	if (writeToGpu)
-	{
-		m_bodyBufferGPU.copyFromHostPointer(&body, 1, m_numRigidBodies);
-	}
 
 	b3InertiaData& shapeInfo = m_inertiaBufferCPU[m_numRigidBodies];
 
@@ -101,10 +96,6 @@ int b3StateRigidBodies::registerRigidBody(int collidableIndex, float mass, const
 
 		shapeInfo.m_invInertiaWorld = m.scaled(invLocalInertia) * m.transpose();
 	}
-
-	if (writeToGpu)
-		m_inertiaBufferGPU.copyFromHostPointer(&shapeInfo, 1, m_numRigidBodies);
-
 
 	return m_numRigidBodies++;
 }
